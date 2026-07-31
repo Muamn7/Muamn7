@@ -9,6 +9,9 @@ sourceSets.main.resources.srcDirs = ["$rootDir/assets"]
 
 dependencies {
     api "com.badlogicgames.gdx:gdx:$gdxVersion"
+    // FreeType rasterises the Arabic font at runtime. The built-in bitmap font
+    // has no glyphs past ASCII, so without this half the game has no text.
+    api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
 
     // The simulation code (collision, stats, movement) is pure Java maths, so it
     // is testable without a GL context or the gdx natives.
