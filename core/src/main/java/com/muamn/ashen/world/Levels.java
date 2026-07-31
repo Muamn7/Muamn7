@@ -30,6 +30,9 @@ public final class Levels {
         // --- ground: a cobbled courtyard ringed by ash ---
         b.box("cobble", 0f, -0.5f, 0f, 24f, 1f, 24f, true);
         b.box("ash", 0f, -0.5f, 21f, 60f, 1f, 18f, true);
+        // A causeway north from the terrace to the boss arena.
+        b.box("stone_dark", 0f, -0.5f, 36f, 12f, 1f, 18f, true);
+        b.box("cobble", 0f, -0.5f, 52f, 34f, 1f, 32f, true);
         b.box("ash", 0f, -0.5f, -21f, 60f, 1f, 18f, true);
         b.box("ash", 21f, -0.5f, 0f, 18f, 1f, 24f, true);
         b.box("ash", -21f, -0.5f, 0f, 18f, 1f, 24f, true);
@@ -44,14 +47,24 @@ public final class Levels {
         }
 
         // --- perimeter wall, broken open in two places ---
-        wallRun(b, -30f, 30f, 29.4f, true, 6f, 1.2f, new float[][]{{-4f, 4f}});
+        wallRun(b, -30f, 30f, 29.4f, true, 6f, 1.2f, new float[][]{{-6f, 6f}});
         wallRun(b, -30f, 30f, -29.4f, true, 6f, 1.2f, new float[][]{});
         wallRun(b, -30f, 30f, 29.4f, false, 6f, 1.2f, new float[][]{{6f, 15f}});
         wallRun(b, -30f, 30f, -29.4f, false, 6f, 1.2f, new float[][]{});
 
+        // Walls along the causeway, so the approach reads as a corridor.
+        b.box("brick", -6.6f, 2.4f, 36f, 1.2f, 4.8f, 18f, true);
+        b.box("brick", 6.6f, 2.4f, 36f, 1.2f, 4.8f, 18f, true);
+
+        // The arena: a walled circle with a single way in.
+        arenaWall(b, 0f, 52f, 16f, 5.5f);
+        b.column("stone_dark", -10f, 0f, 52f, 0.8f, 6.5f, 8, true);
+        b.column("stone_dark", 10f, 0f, 52f, 0.8f, 6.5f, 8, true);
+        b.column("stone_dark", 0f, 0f, 62f, 0.8f, 6.5f, 8, true);
+
         // Keep the player inside even where the wall is broken.
-        b.blocker(0f, 4f, 30.6f, 62f, 10f, 1.5f);
         b.blocker(0f, 4f, -30.6f, 62f, 10f, 1.5f);
+        b.blocker(0f, 4f, 69f, 40f, 10f, 1.5f);
         b.blocker(30.6f, 4f, 0f, 1.5f, 10f, 62f);
         b.blocker(-30.6f, 4f, 0f, 1.5f, 10f, 62f);
 
@@ -83,6 +96,27 @@ public final class Levels {
         level.spawn.set(5.5f, 0.2f, -9.5f);
         level.spawnFacing = -22f;
 
+        // --- who lives here ---
+        level.addSpawn("hollow_soldier", -8f, -16f, 60f)
+             .addSpawn("hollow_soldier", 10f, 6f, 250f)
+             .addSpawn("hollow_soldier", -13f, 14f, 150f)
+             .addSpawn("hollow_archer", 12f, 21f, 200f)
+             .addSpawn("feral_hound", 3f, -18f, 200f)
+             .addSpawn("feral_hound", -3f, -20f, 190f)
+             .addSpawn("grave_ghoul", 16f, -14f, 300f)
+             .addSpawn("crag_spider", -18f, -6f, 90f)
+             .addSpawn("crypt_bat", 7f, 34f, 180f)
+             .addSpawn("bone_knight", 0f, 40f, 180f)
+             .addSpawn("fallen_knight", -4f, 20f, 170f);
+
+        // --- the boss behind the fog ---
+        BossArena arena = new BossArena("asylum_boss", "ashen_knight",
+                0f, 52f, 15.5f,
+                0f, 44.5f, 0f, 7f,
+                0f, 58f);
+        arena.buildVisual(textures);
+        level.arenas.add(arena);
+
         level.fogColor.set(0.40f, 0.42f, 0.41f, 1f);
         level.ambient.set(0.30f, 0.32f, 0.36f, 1f);
         level.lightColor.set(0.86f, 0.80f, 0.66f, 1f);
@@ -98,6 +132,22 @@ public final class Levels {
         level.props.add(fire);
 
         return level;
+    }
+
+    /** A ring of wall around an arena, open only where the fog gate stands. */
+    private static void arenaWall(LevelBuilder b, float cx, float cz,
+                                  float radius, float height) {
+        int segments = 20;
+        for (int i = 0; i < segments; i++) {
+            float a = i * 360f / segments;
+            // Leave the south side open; that is where the fog gate stands.
+            if (Math.abs(((a - 270f) % 360f + 540f) % 360f - 180f) < 18f) continue;
+            float x = cx + MathUtils.cosDeg(a) * radius;
+            float z = cz + MathUtils.sinDeg(a) * radius;
+            float segWidth = 2f * MathUtils.PI * radius / segments * 1.25f;
+            b.box("brick", x, height * 0.5f, z, segWidth, height, 2.2f, true);
+            b.box("stone_dark", x, height + 0.25f, z, segWidth * 1.1f, 0.5f, 2.6f, false);
+        }
     }
 
     /**

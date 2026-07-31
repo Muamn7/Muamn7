@@ -26,6 +26,16 @@ public class CollisionMesh {
     private final LongMap<IntArray> grid = new LongMap<>();
     private final BoundingBox bounds = new BoundingBox();
 
+    /**
+     * Optional extra collision layered on top, used for boss arena barriers.
+     *
+     * A boss fight has to seal itself in and open again afterwards, and rebuilding
+     * a level's whole spatial hash to add two dozen wall triangles would be
+     * absurd. Queries and raycasts fall through to the overlay with the indices
+     * offset past our own, so callers never need to know there are two meshes.
+     */
+    private CollisionMesh overlay;
+
     private final Vector3 t0 = new Vector3(), t1 = new Vector3(), t2 = new Vector3();
     private final Vector3 e1 = new Vector3(), e2 = new Vector3(), n = new Vector3();
     private final IntArray queryResult = new IntArray();
@@ -72,8 +82,22 @@ public class CollisionMesh {
         }
     }
 
-    public int triangleCount() {
+    /** Layers extra collision on top, or clears it with null. */
+    public void setOverlay(CollisionMesh overlay) {
+        this.overlay = overlay;
+    }
+
+    public CollisionMesh getOverlay() {
+        return overlay;
+    }
+
+    /** Triangles owned by this mesh, ignoring any overlay. */
+    public int ownTriangleCount() {
         return triangles.size;
+    }
+
+    public int triangleCount() {
+        return triangles.size + (overlay != null ? overlay.triangleCount() : 0);
     }
 
     public BoundingBox getBounds() {
@@ -81,11 +105,13 @@ public class CollisionMesh {
     }
 
     public Vector3 normalOf(int tri) {
-        return normals.get(tri);
+        if (tri < normals.size) return normals.get(tri);
+        return overlay.normalOf(tri - normals.size);
     }
 
     public float[] vertsOf(int tri) {
-        return triangles.get(tri);
+        if (tri < triangles.size) return triangles.get(tri);
+        return overlay.vertsOf(tri - triangles.size);
     }
 
     private static int cell(float v) {
@@ -121,8 +147,18 @@ public class CollisionMesh {
                 }
             }
         }
+        if (overlay != null) {
+            IntArray extra = overlay.query(minX, minY, minZ, maxX, maxY, maxZ);
+            // Copy before appending: the overlay hands back its own scratch array.
+            int base = triangles.size;
+            for (int i = 0; i < extra.size; i++) overlayScratch.add(extra.get(i) + base);
+            queryResult.addAll(overlayScratch);
+            overlayScratch.clear();
+        }
         return queryResult;
     }
+
+    private final IntArray overlayScratch = new IntArray();
 
     // ---- Ray casting ------------------------------------------------------
 
@@ -145,11 +181,11 @@ public class CollisionMesh {
         float best = -1f;
         for (int i = 0; i < candidates.size; i++) {
             int tri = candidates.get(i);
-            float[] v = triangles.get(tri);
+            float[] v = vertsOf(tri);
             float d = rayTriangle(origin, dir, v);
             if (d >= 0 && d <= maxDist && (best < 0 || d < best)) {
                 best = d;
-                if (outNormal != null) outNormal.set(normals.get(tri));
+                if (outNormal != null) outNormal.set(normalOf(tri));
             }
         }
         return best;

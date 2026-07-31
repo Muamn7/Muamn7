@@ -13,6 +13,9 @@ import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
 
 import com.muamn.ashen.AshenGame;
+import com.muamn.ashen.entity.CreatureFactory;
+import com.muamn.ashen.entity.CreatureRig;
+import com.muamn.ashen.entity.CreatureSpec;
 import com.muamn.ashen.Config;
 import com.muamn.ashen.render.RetroRenderer;
 import com.muamn.ashen.ui.Hud;
@@ -63,12 +66,13 @@ public class ModelViewerScreen extends ScreenAdapter {
         renderer.env().fogNear = 40f;
         renderer.env().fogFar = 120f;
 
-        model = AssetOverrides.loadModel(modelName);
+        model = buildCreature(modelName);
+        if (model == null) model = AssetOverrides.loadModel(modelName);
         if (model == null) {
             info = "model not found: " + modelName;
             Gdx.app.error("ModelViewer", info);
         } else {
-            instance = new ModelInstance(model);
+            instance = creatureRig != null ? creatureRig.instance : new ModelInstance(model);
             instance.calculateBoundingBox(bounds);
             bounds.getCenter(center);
             bounds.getDimensions(size);
@@ -110,6 +114,27 @@ public class ModelViewerScreen extends ScreenAdapter {
         hud.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 
+    /**
+     * Builds one of the procedural creature presets by name, so the geometry can
+     * be checked on its own before twenty enemies depend on it.
+     */
+    private com.badlogic.gdx.graphics.g3d.Model buildCreature(String name) {
+        CreatureSpec spec;
+        switch (name.toLowerCase()) {
+            case "hound":   spec = CreatureSpec.hound(); break;
+            case "spider":  spec = CreatureSpec.spider(); break;
+            case "bat":     spec = CreatureSpec.bat(); break;
+            case "serpent": spec = CreatureSpec.serpent(); break;
+            case "drake":   spec = CreatureSpec.drake(); break;
+            case "maggot":  spec = CreatureSpec.maggot(); break;
+            default: return null;
+        }
+        creatureRig = new CreatureRig(CreatureFactory.build(spec, game.textures), spec);
+        return creatureRig.getModel();
+    }
+
+    private CreatureRig creatureRig;
+
     private void playNext() {
         if (animator == null || model.animations.size == 0) return;
         animationIndex = (animationIndex + 1) % model.animations.size;
@@ -128,6 +153,8 @@ public class ModelViewerScreen extends ScreenAdapter {
             animationTimer -= dt;
             if (animationTimer <= 0f) playNext();
         }
+        // Walk the creature on the spot so the gait can be judged.
+        if (creatureRig != null) creatureRig.poseLocomotion(dt, 2.6f);
 
         camera.position.set(
                 center.x + MathUtils.cosDeg(angle) * distance,

@@ -1,7 +1,7 @@
 package com.muamn.ashen.entity;
 
 /**
- * An enemy archetype.
+ * An enemy archetype, loaded from {@code assets/data/enemies.json}.
  *
  * The timings here are the difficulty dial. {@code alertDelay}, {@code circleTime}
  * and {@code recoverTime} decide how much room a player gets to act, and they
@@ -45,49 +45,21 @@ public class EnemyDef {
     /** Chance of picking the heavy attack when in range. */
     public float heavyChance = 0.25f;
 
-    /** Imported model to use, or null for the procedural humanoid. */
-    public String modelName;
-    /** Weapon id from the library. */
+    /** Weapon id from the weapon library. */
     public String weaponId = "hand_axe";
 
-    public static EnemyDef hollowSoldier() {
-        EnemyDef d = new EnemyDef();
-        d.id = "hollow_soldier";
-        d.nameAr = "جندي جوّاف";
-        d.nameEn = "Hollow Soldier";
-        d.health = 220f;
-        d.souls = 100L;
-        d.poise = 22f;
-        d.weaponId = "broadsword";
-        return d;
-    }
+    /** How this enemy is built and drawn. */
+    public BodyDef body = new BodyDef();
 
-    /**
-     * The imported rigged creature: taller, tougher, slower to commit but with a
-     * long reach. Falls back to the procedural body if the model is absent.
-     */
-    public static EnemyDef reaper() {
-        EnemyDef d = new EnemyDef();
-        d.id = "hollow_reaper";
-        d.nameAr = "حاصد الرماد";
-        d.nameEn = "Ashen Reaper";
-        d.health = 520f;
-        d.souls = 600L;
-        d.poise = 48f;
-        d.absorption = 0.12f;
-        d.strength = 20;
-        d.dexterity = 16;
-        d.radius = 0.42f;
-        d.height = 2.10f;
-        d.walkSpeed = 2.1f;
-        d.runSpeed = 4.6f;
-        d.aggroRange = 15f;
-        d.alertDelay = 0.6f;
-        d.circleTime = 1.35f;
-        d.recoverTime = 0.85f;
-        d.heavyChance = 0.35f;
-        d.weaponId = "halberd";
-        d.modelName = "hollow_reaper";
-        return d;
+    /** True for bosses: they get an arena, a name bar and phases. */
+    public boolean boss;
+    /** Health fractions at which the boss changes phase, high to low. */
+    public float[] phaseThresholds = new float[0];
+    /** Per-phase multipliers applied to speed and aggression. */
+    public float[] phaseAggression = new float[0];
+
+    @Override
+    public String toString() {
+        return id + " (" + Math.round(health) + "hp, " + souls + " souls)";
     }
 }

@@ -64,6 +64,7 @@ public class TextureFactory implements Disposable {
             case "flesh_rot":   return flat(0x6A6A54, 0x4C4C3C, 1717);
             case "bone":        return flat(0xC9C2AC, 0x9C947E, 6161);
             case "ember":       return ember();
+            case "fog_gate":    return fogGate();
             case "shadow":      return radialAlpha(0x000000, 0.55f);
             default:            return flat(0x808080, 0x606060, 1);
         }
@@ -213,6 +214,28 @@ public class TextureFactory implements Disposable {
                 float n = fbm(x, y, 999, 4, 5f);
                 int c = n > 0.62f ? 0xFFD24A : (n > 0.45f ? 0xE0761C : 0x8C2A08);
                 px.drawPixel(x, y, rgba(c));
+            }
+        }
+        return px;
+    }
+
+    /**
+     * The boss fog wall: pale swirls that fade out top and bottom, so the gate
+     * reads as a curtain of mist rather than a rectangle of texture.
+     */
+    private Pixmap fogGate() {
+        Pixmap px = blank();
+        Color col = new Color();
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                float swirl = fbm(x, y, 1234, 4, 4f);
+                float band = fbm(x * 0.4f, y * 2.2f, 88, 3, 8f);
+                float v = MathUtils.clamp(swirl * 0.65f + band * 0.55f, 0f, 1f);
+                // Fade at the top and bottom edges so it blends into the arch.
+                float edge = MathUtils.clamp(Math.min(y, SIZE - 1 - y) / (SIZE * 0.28f), 0f, 1f);
+                float alpha = MathUtils.clamp(0.35f + v * 0.65f, 0f, 1f) * edge;
+                col.set(0.78f + v * 0.20f, 0.82f + v * 0.16f, 0.88f, alpha);
+                px.drawPixel(x, y, Color.rgba8888(col));
             }
         }
         return px;

@@ -25,6 +25,24 @@ public class Level implements Disposable {
     public float fogNear = 14f;
     public float fogFar = 62f;
 
+    /** Where an enemy stands when the area is fresh or has been rested at. */
+    public static class Spawn {
+        public final String enemyId;
+        public final float x, z, facing;
+
+        public Spawn(String enemyId, float x, float z, float facing) {
+            this.enemyId = enemyId;
+            this.x = x;
+            this.z = z;
+            this.facing = facing;
+        }
+    }
+
+    /** Enemy placements. Respawned wholesale when the player rests. */
+    public final Array<Spawn> spawns = new Array<>();
+    /** Boss encounters in this area. */
+    public final Array<BossArena> arenas = new Array<>();
+
     /** Extra instances drawn with the level, e.g. props with their own transform. */
     public final Array<ModelInstance> props = new Array<>();
     /** Models this level owns and must dispose. */
@@ -48,13 +66,29 @@ public class Level implements Disposable {
         out.clear();
         out.add(instance);
         out.addAll(props);
+        for (BossArena arena : arenas) {
+            ModelInstance fog = arena.fogInstance();
+            if (fog != null) out.add(fog);
+        }
         return out;
+    }
+
+    /**
+     * Adds an enemy placement. Named {@code addSpawn} rather than {@code spawn}
+     * so it never reads as a call on the {@link #spawn} player start point.
+     */
+    public Level addSpawn(String enemyId, float x, float z, float facing) {
+        spawns.add(new Spawn(enemyId, x, z, facing));
+        return this;
     }
 
     @Override
     public void dispose() {
+        for (BossArena arena : arenas) arena.dispose();
+        arenas.clear();
         for (Model m : ownedModels) m.dispose();
         ownedModels.clear();
         props.clear();
+        spawns.clear();
     }
 }

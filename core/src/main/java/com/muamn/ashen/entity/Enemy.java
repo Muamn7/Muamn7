@@ -59,6 +59,17 @@ public class Enemy implements Combatant {
     /** Set once so the death drop is only awarded a single time. */
     private boolean soulsAwarded;
 
+    /**
+     * Which phase a boss is in. Phases do not change the moveset - they sharpen
+     * it. A boss that suddenly gains new attacks at 50% is a different fight;
+     * one that gets faster and commits more often is the same fight turned up,
+     * which is what the player has spent the last two minutes learning.
+     */
+    private int phase;
+    private float aggression = 1f;
+    /** Set for one frame when the boss crosses a phase threshold. */
+    public boolean phaseChanged;
+
     public Enemy(EnemyDef def, EnemyVisual visual, WeaponDef weapon) {
         this.def = def;
         this.visual = visual;
@@ -83,6 +94,8 @@ public class Enemy implements Combatant {
         stateTime = 0f;
         poiseDamage = 0f;
         soulsAwarded = false;
+        phase = 0;
+        aggression = phaseAggression(0);
         stats.health = stats.maxHealth;
         attacks.cancel();
     }
@@ -158,6 +171,8 @@ public class Enemy implements Combatant {
 
     public void update(CollisionMesh mesh, float dt) {
         stateTime += dt;
+        phaseChanged = false;
+        updatePhase();
         if (poiseTimer > 0f) {
             poiseTimer -= dt;
             if (poiseTimer <= 0f) poiseDamage = 0f;
@@ -204,6 +219,35 @@ public class Enemy implements Combatant {
         updateVisual(dt);
     }
 
+    /** Advances the boss phase when health drops past the next threshold. */
+    private void updatePhase() {
+        if (def.phaseThresholds.length == 0 || state == State.DEAD) return;
+        float fraction = stats.healthFraction();
+        while (phase < def.phaseThresholds.length
+                && fraction <= def.phaseThresholds[phase]) {
+            phase++;
+            aggression = phaseAggression(phase);
+            phaseChanged = true;
+            // Crossing a threshold breaks the current swing and re-opens with
+            // the new tempo, so the change is something the player can see.
+            attacks.cancel();
+            setState(State.RECOVER);
+        }
+    }
+
+    private float phaseAggression(int index) {
+        if (def.phaseAggression.length == 0) return 1f;
+        return def.phaseAggression[Math.min(index, def.phaseAggression.length - 1)];
+    }
+
+    public int getPhase() {
+        return phase;
+    }
+
+    public int phaseCount() {
+        return def.phaseThresholds.length + 1;
+    }
+
     private void updateIdle(float distance) {
         body.velocity.x *= 0.85f;
         body.velocity.z *= 0.85f;
@@ -217,7 +261,7 @@ public class Enemy implements Combatant {
         body.velocity.x *= 0.8f;
         body.velocity.z *= 0.8f;
         faceTarget();
-        if (stateTime >= def.alertDelay) setState(State.APPROACH);
+        if (stateTime >= def.alertDelay / aggression) setState(State.APPROACH);
     }
 
     private void updateApproach(float distance, float dt) {
@@ -237,7 +281,8 @@ public class Enemy implements Combatant {
             return;
         }
 
-        float speed = distance > def.aggroRange * 0.5f ? def.runSpeed : def.walkSpeed;
+        float speed = (distance > def.aggroRange * 0.5f ? def.runSpeed : def.walkSpeed)
+                * aggression;
         moveToward(toTarget, speed, dt);
     }
 
@@ -259,15 +304,16 @@ public class Enemy implements Combatant {
         tmp.set(-toTarget.z, 0f, toTarget.x).nor().scl(circleSign);
         float drift = distance > attackRange * 1.25f ? 1f : (distance < attackRange * 0.8f ? -1f : 0f);
         tmp.mulAdd(toTarget.cpy().nor(), drift * 0.8f);
-        moveToward(tmp, def.walkSpeed, dt);
+        moveToward(tmp, def.walkSpeed * aggression, dt);
 
-        if (stateTime >= def.circleTime) chooseAttack(distance);
+        // A more aggressive phase spends less time spacing before committing.
+        if (stateTime >= def.circleTime / aggression) chooseAttack(distance);
     }
 
     private void chooseAttack(float distance) {
         AttackDef attack;
         // Heavy attacks come out when the enemy has time to commit to them.
-        boolean heavy = MathUtils.random() < def.heavyChance
+        boolean heavy = MathUtils.random() < def.heavyChance * aggression
                 && distance > weapon.moveset.light(0).reach * 0.5f;
         attack = heavy ? weapon.moveset.heavy(0) : weapon.moveset.light(0);
         attacks.begin(attack, heavy, 0);
@@ -296,7 +342,7 @@ public class Enemy implements Combatant {
         body.velocity.x *= 1f - Math.min(1f, 6f * dt);
         body.velocity.z *= 1f - Math.min(1f, 6f * dt);
         faceTarget();
-        if (stateTime >= def.recoverTime) {
+        if (stateTime >= def.recoverTime / aggression) {
             setState(target == null ? State.IDLE : State.CIRCLE);
             circleTimer = 0f;
         }

@@ -17,7 +17,7 @@ import com.muamn.ashen.camera.OrbitCamera;
 import com.muamn.ashen.combat.Combatant;
 import com.muamn.ashen.combat.WeaponDef;
 import com.muamn.ashen.combat.WeaponFactory;
-import com.muamn.ashen.entity.AnimatedVisual;
+import com.muamn.ashen.entity.BodyFactory;
 import com.muamn.ashen.entity.CharacterRig;
 import com.muamn.ashen.entity.Enemy;
 import com.muamn.ashen.entity.EnemyDef;
@@ -35,7 +35,7 @@ import com.muamn.ashen.save.SaveData;
 import com.muamn.ashen.save.SaveGame;
 import com.muamn.ashen.ui.BonfireMenu;
 import com.muamn.ashen.ui.Hud;
-import com.muamn.ashen.world.AssetOverrides;
+import com.muamn.ashen.world.BossArena;
 import com.muamn.ashen.world.Level;
 import com.muamn.ashen.world.Levels;
 
@@ -96,6 +96,11 @@ public class GameScreen extends ScreenAdapter {
     private SaveData save;
     private final BonfireMenu menu = new BonfireMenu();
 
+    /** The boss fight in progress, and the arena it belongs to. */
+    private BossArena activeArena;
+    private Enemy activeBoss;
+    private float bossBannerTimer;
+
     private Enemy lockedEnemy;
     private final Vector3 lockPoint = new Vector3();
     private final Vector3 tmp = new Vector3();
@@ -131,6 +136,11 @@ public class GameScreen extends ScreenAdapter {
 
         bonfire.set(save.bonfireX, save.bonfireY, save.bonfireZ);
         player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
+        if (game.spawnAt != null) {
+            String[] parts = game.spawnAt.split(",");
+            player.spawn(Float.parseFloat(parts[0].trim()), 0.4f,
+                    Float.parseFloat(parts[1].trim()), 0f);
+        }
 
         spawnEnemies();
 
@@ -226,39 +236,26 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void spawnEnemies() {
-        // The imported rig if it is present, otherwise the procedural hollow -
-        // the level must populate either way.
-        EnemyDef reaperDef = EnemyDef.reaper();
-        if (AssetOverrides.hasModel(reaperDef.modelName)) {
-            addEnemy(reaperDef, 3f, -18f, 200f);
-        } else {
-            addEnemy(EnemyDef.hollowSoldier(), 3f, -18f, 200f);
+        for (Level.Spawn spawn : level.spawns) {
+            addEnemy(game.bestiary.get(spawn.enemyId), spawn.x, spawn.z, spawn.facing);
         }
-        addEnemy(EnemyDef.hollowSoldier(), -8f, -16f, 60f);
-        addEnemy(EnemyDef.hollowSoldier(), 10f, 6f, 250f);
+        refreshCombatants();
+    }
 
+    private void refreshCombatants() {
         combatants.clear();
         combatants.add(player);
         for (Enemy e : enemies) combatants.add(e);
         player.setTargets(combatants);
     }
 
-    private void addEnemy(EnemyDef def, float x, float z, float facing) {
-        EnemyVisual visual;
-        Model imported = def.modelName != null ? AssetOverrides.loadModel(def.modelName) : null;
-        if (imported != null && imported.animations.size > 0) {
-            visual = new AnimatedVisual(imported, 1f);
-        } else {
-            if (imported != null) imported.dispose();
-            HumanoidSpec spec = HumanoidSpec.hollow();
-            visual = new RigVisual(
-                    new CharacterRig(HumanoidFactory.build(spec, game.textures, null), spec),
-                    def.runSpeed);
-        }
+    private Enemy addEnemy(EnemyDef def, float x, float z, float facing) {
+        EnemyVisual visual = BodyFactory.create(def.body, game.textures, def.runSpeed);
         Enemy enemy = new Enemy(def, visual, game.weapons.get(def.weaponId));
         enemy.spawn(x, 0.2f, z, facing);
         enemy.setTarget(player);
         enemies.add(enemy);
+        return enemy;
     }
 
     private boolean isTouchPlatform() {
@@ -331,7 +328,15 @@ public class GameScreen extends ScreenAdapter {
                     player.stats.souls, estus, aliveEnemies()));
         }
         hud.render(player.stats);
-        if (lockedEnemy != null && !lockedEnemy.dead()) {
+        if (activeBoss != null && !activeBoss.dead()) {
+            hud.bossBar(activeBoss.def.nameEn, activeBoss.stats.healthFraction(),
+                    activeBoss.getPhase(), activeBoss.phaseCount());
+            if (bossBannerTimer > 0f) {
+                bossBannerTimer -= Gdx.graphics.getDeltaTime();
+                hud.centreText(activeBoss.def.nameEn.toUpperCase(),
+                        Math.min(1f, bossBannerTimer), 2.4f);
+            }
+        } else if (lockedEnemy != null && !lockedEnemy.dead()) {
             hud.enemyBar(lockedEnemy.def.nameEn, lockedEnemy.stats.healthFraction());
         }
         if (toastTimer > 0f) hud.toast(toast, Math.min(1f, toastTimer));
@@ -492,6 +497,7 @@ public class GameScreen extends ScreenAdapter {
             }
         }
 
+        updateBossFight(dt);
         collectBloodstain();
 
         // Falling out of the world should never be unrecoverable.
@@ -499,6 +505,61 @@ public class GameScreen extends ScreenAdapter {
             player.spawn(level.spawn.x, level.spawn.y, level.spawn.z, level.spawnFacing);
             camera.snapTo(player.body.position);
         }
+    }
+
+    /**
+     * Fog gates, arena sealing and the boss itself.
+     *
+     * The barrier goes up the moment the fight starts and comes down the moment
+     * it ends - a boss you can walk away from is not a boss, and one you cannot
+     * leave after killing is a bug.
+     */
+    private void updateBossFight(float dt) {
+        for (BossArena arena : level.arenas) {
+            arena.update(dt);
+            if (arena.isCleared() || arena.isActive()) continue;
+            if (arena.checkEntry(player.body.position)) beginBossFight(arena);
+        }
+
+        if (activeArena == null) return;
+
+        if (activeBoss != null && activeBoss.dead()) {
+            endBossFight(true);
+            return;
+        }
+        // Dying mid-fight resets the encounter, same as the genre.
+        if (player.dead()) endBossFight(false);
+    }
+
+    private void beginBossFight(BossArena arena) {
+        activeArena = arena;
+        activeBoss = addEnemy(game.bestiary.get(arena.bossId),
+                arena.bossSpawn.x, arena.bossSpawn.z, 180f);
+        refreshCombatants();
+        // Seal the arena by layering its barrier onto the level collision.
+        level.collision.setOverlay(arena.barrier());
+        bossBannerTimer = 3.2f;
+        clearLockOn();
+    }
+
+    private void endBossFight(boolean defeated) {
+        if (activeArena == null) return;
+        level.collision.setOverlay(null);
+        if (defeated) {
+            activeArena.clear();
+            showToast("GREAT SOUL RELEASED");
+        } else {
+            // The player died: reset the gate so the fight can be taken again.
+            activeArena.markDormant();
+            if (activeBoss != null) {
+                enemies.removeValue(activeBoss, true);
+                activeBoss.visual.dispose();
+                refreshCombatants();
+            }
+        }
+        activeArena = null;
+        activeBoss = null;
+        bossBannerTimer = 0f;
     }
 
     private boolean tooFarToLock(Enemy enemy) {
@@ -562,12 +623,12 @@ public class GameScreen extends ScreenAdapter {
         showToast("Rested");
     }
 
+    /** Rebuilds the area's population from the level data, as a rest should. */
     private void respawnEnemies() {
-        for (Enemy enemy : enemies) {
-            enemy.spawn(enemy.body.position.x, enemy.body.position.y, enemy.body.position.z,
-                    enemy.facing());
-            enemy.setTarget(player);
-        }
+        endBossFight(false);
+        for (Enemy enemy : enemies) enemy.visual.dispose();
+        enemies.clear();
+        spawnEnemies();
         clearLockOn();
     }
 

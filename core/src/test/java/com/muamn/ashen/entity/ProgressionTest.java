@@ -82,18 +82,21 @@ class ProgressionTest {
     }
 
     @Test
-    void enemyDefsAreBalancedRelativeToEachOther() {
-        EnemyDef soldier = EnemyDef.hollowSoldier();
-        EnemyDef reaper = EnemyDef.reaper();
+    void aToughEnemyIsWorthMoreThanAWeakOne() {
+        // The shipped bestiary is validated in BestiaryTest; this pins the rule
+        // the economy depends on, using two defs built here so it stays a unit.
+        EnemyDef weak = new EnemyDef();
+        weak.id = "weak";
+        weak.health = 200f;
+        weak.souls = 100L;
 
-        assertTrue(reaper.health > soldier.health, "the reaper should be the tougher fight");
-        assertTrue(reaper.souls > soldier.souls, "a tougher fight should pay more");
-        assertTrue(reaper.poise > soldier.poise);
-        // Every enemy needs a punish window, or the fight is unwinnable by design.
-        for (EnemyDef def : new EnemyDef[]{soldier, reaper}) {
-            assertTrue(def.recoverTime > 0.3f, def.id + " has no punish window");
-            assertTrue(def.alertDelay > 0f, def.id + " aggros with no tell");
-            assertTrue(def.leashRange > def.aggroRange, def.id + " leashes inside its aggro range");
-        }
+        EnemyDef tough = new EnemyDef();
+        tough.id = "tough";
+        tough.health = 600f;
+        tough.souls = 500L;
+
+        assertTrue(tough.souls > weak.souls);
+        assertTrue(tough.souls / (double) tough.health >= weak.souls / (double) weak.health,
+                "a tougher fight should pay at least as well per point of health");
     }
 }

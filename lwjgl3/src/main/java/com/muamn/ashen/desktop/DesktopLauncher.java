@@ -50,6 +50,7 @@ public class DesktopLauncher {
         game.autopilot = Boolean.getBoolean("ashen.autopilot");
         game.viewModel = System.getProperty("ashen.viewModel");
         game.freezeAnimations = Boolean.getBoolean("ashen.freezeAnim");
+        game.spawnAt = System.getProperty("ashen.spawnAt");
         game.openMenuOnStart = Boolean.getBoolean("ashen.menu");
         String menuPage = System.getProperty("ashen.menuPage");
         if (menuPage != null) {

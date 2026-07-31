@@ -5,6 +5,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 
 import com.muamn.ashen.combat.WeaponLibrary;
+import com.muamn.ashen.entity.EnemyLibrary;
 import com.muamn.ashen.screens.GameScreen;
 import com.muamn.ashen.world.TextureFactory;
 
@@ -21,6 +22,8 @@ public class AshenGame extends Game {
     public TextureFactory textures;
     /** Weapons and their frame data, loaded from JSON. */
     public WeaponLibrary weapons;
+    /** The bestiary and the boss roster. */
+    public EnemyLibrary bestiary;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -37,6 +40,8 @@ public class AshenGame extends Game {
     public boolean autopilot;
     /** When set, opens the turntable model viewer for this imported model. */
     public String viewModel;
+    /** Overrides the player's start position as "x,z". Debug and screenshots. */
+    public String spawnAt;
     /** Holds imported rigs at their bind pose, to separate rig bugs from animation bugs. */
     public boolean freezeAnimations;
     /** Opens the bonfire menu immediately, for screenshots and UI work. */
@@ -66,6 +71,8 @@ public class AshenGame extends Game {
         textures = new TextureFactory();
         weapons = new WeaponLibrary();
         weapons.load();
+        bestiary = new EnemyLibrary();
+        bestiary.load();
         if (viewModel != null && !viewModel.isEmpty()) {
             setScreen(new com.muamn.ashen.screens.ModelViewerScreen(this, viewModel));
         } else {

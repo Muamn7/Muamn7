@@ -153,6 +153,52 @@ public class Hud implements Disposable {
         batch.end();
     }
 
+    /**
+     * The boss bar: wider, lower, and divided into phase ticks so the player can
+     * see how much of the fight is left rather than only how much health is.
+     */
+    public void bossBar(String name, float fraction, int phase, int phaseCount) {
+        int screenW = Gdx.graphics.getWidth();
+        int screenH = Gdx.graphics.getHeight();
+        float scale = MathUtils.clamp(screenW / 960f, 0.75f, 2.2f);
+        float w = MathUtils.clamp(screenW * 0.62f, 320f, 900f);
+        float h = 15f * scale;
+        float x = (screenW - w) * 0.5f;
+        float y = screenH * 0.10f;
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0f, 0f, 0f, 0.85f);
+        shapes.rect(x - BORDER * 2f, y - BORDER * 2f, w + BORDER * 4f, h + BORDER * 4f);
+        shapes.setColor(0.14f, 0.03f, 0.03f, 0.96f);
+        shapes.rect(x, y, w, h);
+        shapes.setColor(0.72f, 0.14f, 0.10f, 1f);
+        shapes.rect(x, y, w * MathUtils.clamp(fraction, 0f, 1f), h);
+        // Phase ticks.
+        shapes.setColor(0f, 0f, 0f, 0.7f);
+        for (int i = 1; i < phaseCount; i++) {
+            float tickX = x + w * (1f - i / (float) phaseCount);
+            shapes.rect(tickX - 1f, y, 2f, h);
+        }
+        shapes.setColor(1f, 1f, 1f, 0.09f);
+        shapes.rect(x, y + h * 0.62f, w * MathUtils.clamp(fraction, 0f, 1f), h * 0.20f);
+        shapes.end();
+
+        batch.begin();
+        font.getData().setScale(Math.max(1f, scale));
+        font.setColor(0.90f, 0.86f, 0.78f, 1f);
+        font.draw(batch, name, x, y + h + 26f * scale);
+        if (phase > 0) {
+            String tag = "PHASE " + (phase + 1);
+            font.setColor(0.88f, 0.60f, 0.26f, 1f);
+            font.draw(batch, tag, x + w - tag.length() * 10f * scale, y + h + 26f * scale);
+        }
+        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
     /** Short-lived message above the bars: pickups, weapon swaps, soul gains. */
     public void toast(String text, float alpha) {
         if (text == null || text.isEmpty()) return;
