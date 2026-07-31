@@ -83,7 +83,7 @@ public final class Areas {
         wallRun(b, -30f, 30f, 29.4f, true, 6f, 1.2f, new float[][]{{-6f, 6f}});
         wallRun(b, -30f, 30f, -29.4f, true, 6f, 1.2f, new float[][]{{-3f, 3f}});
         wallRun(b, -30f, 30f, 29.4f, false, 6f, 1.2f, new float[][]{{6f, 15f}});
-        wallRun(b, -30f, 30f, -29.4f, false, 6f, 1.2f, new float[][]{});
+        wallRun(b, -30f, 30f, -29.4f, false, 6f, 1.2f, new float[][]{{1.5f, 6.5f}});
         b.box("stone_dark", 0f, 5f, -29.4f, 8f, 1.4f, 1.6f, false);   // lintel over the breach
 
         // --- the causeway north to the boss ---
@@ -96,7 +96,9 @@ public final class Areas {
 
         b.blocker(0f, 4f, 69f, 40f, 10f, 1.5f);
         b.blocker(30.6f, 4f, 0f, 1.5f, 10f, 62f);
-        b.blocker(-30.6f, 4f, 0f, 1.5f, 10f, 62f);
+        // Split around the alcove: the fence has to stop where the secret starts.
+        b.blocker(-30.6f, 4f, -15.5f, 1.5f, 10f, 31f);
+        b.blocker(-30.6f, 4f, 20.5f, 1.5f, 10f, 21f);
         // Backstop behind the breach, so a missed trigger is a bump and not a fall.
         b.blocker(0f, 4f, -30.3f, 10f, 10f, 1.2f);
 
@@ -111,6 +113,13 @@ public final class Areas {
         b.column("stone_dark", 4.5f, 2f, 20f, 0.6f, 5f, 8, true);
         b.box("stone", 0f, 7.4f, 20f, 11f, 0.8f, 1.6f, true);
         b.box("stone", 0f, 8.1f, 20f, 9f, 0.6f, 1.2f, false);
+
+        // The alcove behind the west wall. Nothing marks it from the courtyard.
+        b.box("cobble", -33f, -0.5f, 5f, 10f, 1f, 8f, true);
+        b.box("brick", -38.5f, 2.5f, 5f, 1.2f, 5f, 9f, true);
+        b.box("brick", -33f, 2.5f, 0.6f, 12f, 5f, 1.2f, true);
+        b.box("brick", -33f, 2.5f, 9.4f, 12f, 5f, 1.2f, true);
+        b.box("stone_dark", -33f, 5.4f, 5f, 12f, 0.8f, 10f, false);
 
         rubble(b, -6.2f, -4.4f, 3);
         b.box("stone_dark", 7.4f, 0.3f, -7.2f, 2.4f, 0.6f, 1.8f, true);
@@ -143,6 +152,19 @@ public final class Areas {
         // South gap in the wall leads down into the town.
         level.portal(new Portal(TOWN, 0f, -29f, 3.4f, 0f, 38f, 180f,
                 "إلى بلدة الرماد", "To Ash Town", false));
+
+        // Two plates set into the causeway walls, firing across it at different
+        // heights of the run. There is no safe line - you watch the click and
+        // pick your moment, or you take one on the way through.
+        level.trap(Trap.dart(-5.6f, 29f, 90f, 46f))
+             .trap(Trap.dart(5.6f, 34f, 270f, 46f));
+
+        // Behind the west wall's blind end: the first secret in the game, put
+        // somewhere a player who tests walls at all will find it.
+        level.secret(new IllusoryWall("asylum_west", -29.4f, 0f, 4f, 90f,
+                5.2f, 6f, 1.2f, "brick"));
+        level.treasure("flask_ember", 1, -33f, 4f);
+        level.treasure("soul_of_a_hollow", 2, -33.5f, 6.5f);
 
         mood(level, 0.40f, 0.42f, 0.41f, 0.30f, 0.32f, 0.36f, 12f, 58f);
         addBonfireProps(level, textures);
@@ -269,9 +291,18 @@ public final class Areas {
             b.box("brick", x, 13.4f, 5.6f, 1.6f, 1.6f, 1.2f, true);
         }
 
-        // Towers at the ends.
+        // Towers at the ends. The east one is a shell around a chamber, opening
+        // west onto the rampart - and that opening is bricked up.
         b.column("brick", -32f, 0f, 8f, 4.2f, 17f, 10, true);
-        b.column("brick", 32f, 0f, 8f, 4.2f, 17f, 10, true);
+        b.box("stone_dark", 32f, -0.5f, 8f, 10f, 1f, 10f, true);
+        b.box("brick", 32f, 8.5f, 12.4f, 10f, 17f, 1.4f, true);
+        b.box("brick", 32f, 8.5f, 3.6f, 10f, 17f, 1.4f, true);
+        b.box("brick", 36.5f, 8.5f, 8f, 1.4f, 17f, 10f, true);
+        b.box("brick", 27.5f, 8.5f, 4.6f, 1.4f, 17f, 3.2f, true);
+        b.box("brick", 27.5f, 8.5f, 11.4f, 1.4f, 17f, 3.2f, true);
+        // Brick above the false panel, so the gap is only where the panel is.
+        b.box("brick", 27.5f, 11.5f, 8f, 1.4f, 11f, 4f, true);
+        b.box("stone_dark", 32f, 6.2f, 8f, 11f, 0.8f, 11f, false);
 
         // South approach: a ruined market with cover.
         for (int i = 0; i < 5; i++) {
@@ -289,7 +320,8 @@ public final class Areas {
 
         b.blocker(0f, 6f, 62f, 60f, 14f, 1.5f);
         b.blocker(0f, 6f, -52f, 68f, 14f, 1.5f);
-        b.blocker(33f, 6f, 0f, 1.5f, 14f, 110f);
+        // Past the east tower, not through it.
+        b.blocker(38f, 6f, 0f, 1.5f, 14f, 110f);
         b.blocker(-33f, 6f, 0f, 1.5f, 14f, 110f);
 
         Level level = finish(b, WALL, "السور المكسور", "The Broken Wall", textures);
@@ -320,6 +352,21 @@ public final class Areas {
 
         level.portal(new Portal(TOWN, 0f, -46f, 3.4f, 0f, -38f, 0f,
                 "إلى بلدة الرماد", "To Ash Town", false));
+
+        // Blades hung in the breach, on different clocks so the two never open
+        // at once. The breach is the only way north, so this is a toll.
+        level.trap(Trap.blade(-3.4f, 5f, 0f, 62f, 1.5f))
+             .trap(Trap.blade(3.4f, 11f, 0f, 62f, 2.1f));
+        // Spikes on the landing at the top of the east stair, where a player
+        // running from the archers stops looking at the floor.
+        level.trap(Trap.spikes(-30f, 27f, 48f, 2.4f));
+
+        // Inside the east tower. The tower is solid from every side, which is
+        // exactly why someone would try hitting it.
+        level.secret(new IllusoryWall("wall_tower", 27.5f, 0f, 8f, 90f,
+                3.8f, 6f, 1.4f, "brick"));
+        level.treasure("ember_lump", 1, 32f, 8f);
+        level.treasure("greenblood_leaf", 2, 33.5f, 9.5f);
 
         mood(level, 0.34f, 0.36f, 0.40f, 0.26f, 0.28f, 0.34f, 14f, 62f);
         addBonfireProps(level, textures);
@@ -355,7 +402,10 @@ public final class Areas {
 
         // Outer walls and a vaulted ceiling, so it reads as indoors. They stop at
         // z=29, where the hall opens into the sanctum.
-        b.box("brick", -17f, 5f, -9f, 2f, 10f, 76f, true);
+        // The west run is broken at z=-14, where the false panel sits.
+        b.box("brick", -17f, 5f, -31.5f, 2f, 10f, 31f, true);
+        b.box("brick", -17f, 5f, 6.5f, 2f, 10f, 45f, true);
+        b.box("brick", -17f, 7.5f, -14f, 2f, 5f, 4f, true);
         b.box("brick", 17f, 5f, -9f, 2f, 10f, 76f, true);
         b.box("brick", 0f, 5f, -47f, 36f, 10f, 2f, true);
         b.box("stone_dark", 0f, 10.4f, -9f, 36f, 1.2f, 78f, false);
@@ -370,6 +420,13 @@ public final class Areas {
         arenaWall(b, 0f, 46f, 13f, 5f);
 
         b.blocker(0f, 6f, -50f, 40f, 16f, 1.5f);
+
+        // The vault behind the west wall. Sealed on every side but the panel.
+        b.box("stone_dark", -22f, -0.5f, -14f, 12f, 1f, 9f, true);
+        b.box("brick", -28.5f, 3f, -14f, 1.2f, 8f, 10f, true);
+        b.box("brick", -22f, 3f, -18.9f, 13f, 8f, 1.2f, true);
+        b.box("brick", -22f, 3f, -9.1f, 13f, 8f, 1.2f, true);
+        b.box("stone_dark", -22f, 6.4f, -14f, 14f, 0.8f, 11f, false);
 
         rubble(b, -8f, -22f, 3);
         rubble(b, 9f, 6f, 4);
@@ -400,6 +457,20 @@ public final class Areas {
 
         level.portal(new Portal(TOWN, -9f, -44.5f, 3.4f, -28f, 0f, 90f,
                 "إلى بلدة الرماد", "To Ash Town", true));
+
+        // Spikes in the middle of two of the four bridges. Crossing a bridge in
+        // the dark is already a decision; this makes it a timed one.
+        level.trap(Trap.spikes(0f, -8f, 54f, 2.2f))
+             .trap(Trap.spikes(0f, 14f, 54f, 3.1f));
+        // A dart lane down the west colonnade, fired from the far end.
+        level.trap(Trap.dart(-9f, 34f, 180f, 52f));
+
+        // Behind the west wall at the darkest point of the hall.
+        level.secret(new IllusoryWall("temple_west", -17f, 0f, -14f, 90f,
+                4.0f, 5f, 2.0f, "brick"));
+        level.treasure("ember_core", 1, -21.5f, -14f);
+        level.treasure("soul_of_a_beast", 1, -22.5f, -12f);
+        level.treasure("resin_of_embers", 2, -22.5f, -16f);
 
         // Almost no light. The temple is meant to be read by torchlight.
         mood(level, 0.14f, 0.15f, 0.18f, 0.16f, 0.16f, 0.22f, 8f, 34f);

@@ -28,6 +28,13 @@ public class Pickup {
     public final Vector3 position = new Vector3();
     public final ModelInstance instance;
 
+    /**
+     * Set for loot placed by hand rather than dropped by something, so taking it
+     * can be remembered. Null for an ordinary drop, which is gone when you leave
+     * the area anyway.
+     */
+    public String treasureId;
+
     private float bob;
     private float settle;
 

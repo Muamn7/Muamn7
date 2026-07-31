@@ -82,6 +82,20 @@ public class CollisionMesh {
         }
     }
 
+    /**
+     * Empties the mesh, keeping it usable.
+     *
+     * Used where a small set of triangles changes at runtime - illusory walls -
+     * and rebuilding from scratch is cheaper than a mechanism for removing
+     * triangles from a spatial hash in place.
+     */
+    public void clear() {
+        triangles.clear();
+        normals.clear();
+        grid.clear();
+        bounds.inf();
+    }
+
     /** Layers extra collision on top, or clears it with null. */
     public void setOverlay(CollisionMesh overlay) {
         this.overlay = overlay;

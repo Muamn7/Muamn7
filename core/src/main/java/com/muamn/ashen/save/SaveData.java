@@ -42,6 +42,12 @@ public class SaveData {
     public String inventory = "";
     /** Item the use button spends. Empty means the Estus flask. */
     public String quickItem = "";
+    /**
+     * Ids of placed treasures taken and illusory walls opened, comma-separated.
+     * One field for both because they are the same kind of fact: something that
+     * happens once and must not come back when the area is rebuilt.
+     */
+    public String found = "";
 
     // ---- world ----
     /** Area the player is standing in. */

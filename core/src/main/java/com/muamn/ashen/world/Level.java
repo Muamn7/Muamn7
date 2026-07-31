@@ -25,6 +25,23 @@ public class Level implements Disposable {
     public float fogNear = 14f;
     public float fogFar = 62f;
 
+    /** An item lying somewhere on purpose, rather than dropped by something. */
+    public static class Treasure {
+        /** Stable identity, so a save can remember it was taken. */
+        public final String id;
+        public final String itemId;
+        public final int count;
+        public final float x, z;
+
+        public Treasure(String id, String itemId, int count, float x, float z) {
+            this.id = id;
+            this.itemId = itemId;
+            this.count = count;
+            this.x = x;
+            this.z = z;
+        }
+    }
+
     /** Where an enemy stands when the area is fresh or has been rested at. */
     public static class Spawn {
         public final String enemyId;
@@ -46,6 +63,21 @@ public class Level implements Disposable {
     public final Array<Portal> portals = new Array<>();
     /** Bonfires in this area, in world coordinates. */
     public final Array<Vector3> bonfires = new Array<>();
+    /** Hazards in this area. */
+    public final Array<Trap> traps = new Array<>();
+    /** Walls that are not walls. */
+    public final Array<IllusoryWall> secrets = new Array<>();
+    /** Loot placed by hand, usually behind one of those walls. */
+    public final Array<Treasure> treasures = new Array<>();
+
+    /**
+     * Collision for the illusory walls.
+     *
+     * Kept as an overlay rather than mixed into the level's own triangles so a
+     * wall opening costs one small rebuild instead of the whole spatial hash,
+     * and so {@code ownTriangleCount} still measures the level itself.
+     */
+    private final CollisionMesh secretCollision = new CollisionMesh();
 
     /** Human-readable area name, shown when the player arrives. */
     public String nameAr = "";
@@ -61,7 +93,50 @@ public class Level implements Disposable {
         this.model = model;
         this.instance = new ModelInstance(model);
         this.collision = collision;
+        this.collision.setOverlay(secretCollision);
         ownedModels.add(model);
+    }
+
+    /**
+     * The mesh a boss barrier layers onto.
+     *
+     * The barrier goes on top of the secrets rather than on top of the level,
+     * because the level's overlay slot is already the secrets mesh and only one
+     * of the two would survive.
+     */
+    public CollisionMesh barrierHost() {
+        return secretCollision;
+    }
+
+    public Level trap(Trap trap) {
+        traps.add(trap);
+        return this;
+    }
+
+    /** Adds an illusory wall and rebuilds the secret collision. */
+    public Level secret(IllusoryWall wall) {
+        secrets.add(wall);
+        rebuildSecretCollision();
+        return this;
+    }
+
+    public Level treasure(String itemId, int count, float x, float z) {
+        treasures.add(new Treasure(id + "#" + treasures.size, itemId, count, x, z));
+        return this;
+    }
+
+    /**
+     * Rebuilds the collision for whichever walls are still standing.
+     *
+     * Cheap enough to do on every reveal: it is a handful of triangles, and the
+     * alternative - removing triangles from a spatial hash in place - is a whole
+     * mechanism to maintain for something that happens a dozen times a game.
+     */
+    public void rebuildSecretCollision() {
+        CollisionMesh barrier = secretCollision.getOverlay();
+        secretCollision.clear();
+        secretCollision.setOverlay(barrier);
+        for (IllusoryWall wall : secrets) wall.addCollision(secretCollision);
     }
 
     /** Registers a model whose lifetime is tied to this level. */
@@ -77,6 +152,12 @@ public class Level implements Disposable {
         for (BossArena arena : arenas) {
             ModelInstance fog = arena.fogInstance();
             if (fog != null) out.add(fog);
+        }
+        for (Trap trap : traps) {
+            if (trap.instance() != null) out.add(trap.instance());
+        }
+        for (IllusoryWall wall : secrets) {
+            if (wall.instance() != null) out.add(wall.instance());
         }
         return out;
     }
@@ -120,6 +201,11 @@ public class Level implements Disposable {
     public void dispose() {
         for (BossArena arena : arenas) arena.dispose();
         arenas.clear();
+        for (Trap trap : traps) trap.dispose();
+        traps.clear();
+        for (IllusoryWall wall : secrets) wall.dispose();
+        secrets.clear();
+        treasures.clear();
         portals.clear();
         bonfires.clear();
         for (Model m : ownedModels) m.dispose();

@@ -45,7 +45,9 @@ import com.muamn.ashen.ui.ShopMenu;
 import com.muamn.ashen.ui.Hud;
 import com.muamn.ashen.world.BossArena;
 import com.muamn.ashen.world.Level;
+import com.muamn.ashen.world.IllusoryWall;
 import com.muamn.ashen.world.Pickup;
+import com.muamn.ashen.world.Trap;
 import com.muamn.ashen.world.Areas;
 import com.muamn.ashen.world.Portal;
 
@@ -93,6 +95,19 @@ public class GameScreen extends ScreenAdapter {
      * randomness must not allow.
      */
     private final java.util.Random loot = new java.util.Random();
+
+    /**
+     * Treasures taken and illusory walls opened, by id.
+     *
+     * One set for both: they are the same kind of fact - something in the world
+     * that happens once and must not come back when the area is rebuilt. It
+     * rides in the save as one comma-separated string, the same way the
+     * inventory does and for the same reason.
+     */
+    private final com.badlogic.gdx.utils.ObjectSet<String> found =
+            new com.badlogic.gdx.utils.ObjectSet<>();
+    /** Reused so a trap hit allocates nothing during a fight. */
+    private final com.muamn.ashen.combat.HitInfo trapHit = new com.muamn.ashen.combat.HitInfo();
 
     // ---- player weapon ----
     private WeaponDef weapon;
@@ -208,6 +223,9 @@ public class GameScreen extends ScreenAdapter {
         dialogue = new DialogueBox();
         shop = new ShopMenu(game.items, game.audio);
         spawnNpcs();
+        buildHazards();
+        applyFoundSecrets();
+        spawnTreasures();
         if (game.openMenuOnStart) menu.open(game.menuPage);
         if (game.talkTo != null) openConversationById(game.talkTo);
 
@@ -252,6 +270,9 @@ public class GameScreen extends ScreenAdapter {
         player.spawn(at.x, at.y, at.z, facing);
         spawnEnemies();
         spawnNpcs();
+        buildHazards();
+        applyFoundSecrets();
+        spawnTreasures();
         // Swing the camera round behind the arrival facing. Keeping the old yaw
         // would drop the player into a new area looking back the way they came.
         camera.yaw = facing + 180f;
@@ -308,6 +329,13 @@ public class GameScreen extends ScreenAdapter {
         estusMax = Math.max(1, data.estusMax);
         estus = estusMax;
 
+        found.clear();
+        if (data.found != null && !data.found.isEmpty()) {
+            for (String id : data.found.split(",")) {
+                String trimmed = id.trim();
+                if (!trimmed.isEmpty()) found.add(trimmed);
+            }
+        }
         player.inventory.decode(data.inventory, game.items);
         // An armed item that is no longer carried, or no longer exists, falls
         // back to the flask rather than leaving a dead button.
@@ -338,6 +366,13 @@ public class GameScreen extends ScreenAdapter {
 
         save.inventory = player.inventory.encode();
         save.quickItem = player.quickItem;
+
+        StringBuilder ids = new StringBuilder();
+        for (String id : found) {
+            if (ids.length() > 0) ids.append(',');
+            ids.append(id);
+        }
+        save.found = ids.toString();
 
         save.areaId = currentArea;
         save.bonfireArea = bonfireArea;
@@ -705,6 +740,8 @@ public class GameScreen extends ScreenAdapter {
 
         updatePickups(dt);
 
+        updateTraps(dt);
+        updateSecrets(dt);
         updateBossFight(dt);
         collectBloodstain();
         // Portals are disabled mid-boss: the arena is sealed for a reason.
@@ -747,7 +784,7 @@ public class GameScreen extends ScreenAdapter {
                 arena.bossSpawn.x, arena.bossSpawn.z, 180f);
         refreshCombatants();
         // Seal the arena by layering its barrier onto the level collision.
-        level.collision.setOverlay(arena.barrier());
+        level.barrierHost().setOverlay(arena.barrier());
         bossBannerTimer = 3.2f;
         clearLockOn();
         game.audio.play(SoundBank.FOG_GATE, 0.8f, 1f);
@@ -757,7 +794,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void endBossFight(boolean defeated) {
         if (activeArena == null) return;
-        level.collision.setOverlay(null);
+        level.barrierHost().setOverlay(null);
         if (defeated) {
             activeArena.clear();
             showToast("GREAT SOUL RELEASED");
@@ -824,6 +861,83 @@ public class GameScreen extends ScreenAdapter {
         showToast("Estus " + estus + "/" + estusMax);
     }
 
+    // ---- traps and secrets ------------------------------------------------
+
+    /**
+     * Runs the hazards.
+     *
+     * Trap damage goes through the same {@code applyHit} path as a sword, with
+     * no attacker attached. That is not laziness - it means a trap respects roll
+     * i-frames, can be caught on a shield, and breaks poise, all of which the
+     * player has already been taught to expect from everything else that hurts.
+     */
+    private void updateTraps(float dt) {
+        for (Trap trap : level.traps) {
+            float damage = trap.update(dt, player.dead() ? null : player.body.position);
+            if (trap.justFired()) {
+                game.audio.playAt(trap.kind == Trap.Kind.BLADE
+                                ? SoundBank.SWING_HEAVY : SoundBank.STAGGER,
+                        trap.position, 0.7f, Audio.vary(0.06f));
+            }
+            if (damage <= 0f) continue;
+
+            trapHit.set(null, damage, 34f);
+            trapHit.direction.set(player.body.position).sub(trap.position);
+            trapHit.direction.y = 0f;
+            if (trapHit.direction.len2() < 1e-6f) trapHit.direction.set(0f, 0f, 1f);
+            trapHit.direction.nor();
+            player.hitCenter(trapHit.point);
+            player.applyHit(trapHit);
+        }
+    }
+
+    /** Reveals an illusory wall if the swing in progress is aimed at one. */
+    private void updateSecrets(float dt) {
+        boolean swinging = player.getState() == Player.State.ATTACKING
+                && player.attacks.phase() == com.muamn.ashen.combat.AttackRunner.Phase.ACTIVE;
+        for (IllusoryWall wall : level.secrets) {
+            wall.update(dt);
+            if (!swinging || wall.isOpen()) continue;
+            if (!wall.struckBy(player.body.position, player.getFacing(), weapon.maxReach() + 0.7f)) {
+                continue;
+            }
+            if (!wall.strike()) continue;
+            level.rebuildSecretCollision();
+            found.add(wall.id);
+            game.audio.play(SoundBank.FOG_GATE, 0.8f, 1.25f);
+            showToast("The wall was not there");
+            writeSave();
+        }
+    }
+
+    /** Builds the geometry for this area's traps and unopened walls. */
+    private void buildHazards() {
+        for (Trap trap : level.traps) trap.buildVisual(game.textures);
+        for (IllusoryWall wall : level.secrets) wall.buildVisual(game.textures);
+    }
+
+    /** Puts the area's placed loot on the ground, minus whatever is already taken. */
+    private void spawnTreasures() {
+        for (Level.Treasure treasure : level.treasures) {
+            if (found.contains(treasure.id)) continue;
+            if (!game.items.has(treasure.itemId)) continue;
+            Pickup pickup = new Pickup(treasure.itemId, treasure.count,
+                    treasure.x, 0f, treasure.z, pickupModel);
+            pickup.tint(com.badlogic.gdx.graphics.Color.valueOf(
+                    game.items.get(treasure.itemId).glow));
+            pickup.treasureId = treasure.id;
+            pickups.add(pickup);
+        }
+    }
+
+    /** Marks the walls this save has already opened, before anything is drawn. */
+    private void applyFoundSecrets() {
+        for (IllusoryWall wall : level.secrets) {
+            if (found.contains(wall.id)) wall.openSilently();
+        }
+        level.rebuildSecretCollision();
+    }
+
     // ---- loot -------------------------------------------------------------
 
     /**
@@ -870,6 +984,10 @@ public class GameScreen extends ScreenAdapter {
             if (def.consumable() && player.quickItem.isEmpty()) player.quickItem = def.id;
             showToast(def.nameEn + (taken > 1 ? " x" + taken : ""));
             game.audio.play(SoundBank.PICKUP, 0.8f, Audio.vary(0.06f));
+            if (pickup.treasureId != null) {
+                found.add(pickup.treasureId);
+                writeSave();
+            }
             pickups.removeIndex(i);
         }
     }

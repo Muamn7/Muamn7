@@ -27,6 +27,9 @@ public final class WorldValidator {
 
     /** Scratch, so the checks below allocate nothing per placement. */
     private static final Vector3 TEMP = new Vector3();
+    private static final Vector3 RAY_FROM = new Vector3();
+    private static final Vector3 RAY_DIR = new Vector3();
+    private static final Vector3 RAY_HIT = new Vector3();
 
     private WorldValidator() {}
 
@@ -109,6 +112,81 @@ public final class WorldValidator {
                             problems.add(id + ": the exit to " + portal.targetArea
                                     + " is inside arena '" + arena.id + "'");
                         }
+                    }
+                }
+            }
+
+            // --- hazards and secrets ---
+            for (String id : Areas.ALL) {
+                Level level = built.get(id);
+                if (level == null) continue;
+
+                for (Trap trap : level.traps) {
+                    if (trap.damage <= 0f) {
+                        problems.add(id + ": a " + trap.kind + " trap does no damage");
+                    }
+                    // Every trap has to telegraph. One that goes live on the frame
+                    // it decides to is a memory test, not a hazard.
+                    if (trap.telegraph < 0.15f) {
+                        problems.add(id + ": a " + trap.kind + " trap warns for only "
+                                + trap.telegraph + "s, which cannot be reacted to");
+                    }
+                    if (trap.active <= 0f) {
+                        problems.add(id + ": a " + trap.kind + " trap is never live");
+                    }
+                    for (BossArena arena : level.arenas) {
+                        if (arena.contains(trap.position)) {
+                            problems.add(id + ": a trap sits inside arena '" + arena.id + "'");
+                        }
+                    }
+                    for (Vector3 fire : level.bonfires) {
+                        if (fire.dst(trap.position) < 5f) {
+                            problems.add(id + ": a trap is within five metres of a bonfire");
+                        }
+                    }
+                }
+
+                ObjectSet<String> secretIds = new ObjectSet<>();
+                for (IllusoryWall wall : level.secrets) {
+                    if (!secretIds.add(wall.id)) {
+                        problems.add(id + ": two illusory walls share the id '" + wall.id + "'");
+                    }
+                }
+                for (Level.Treasure treasure : level.treasures) {
+                    if (!items.has(treasure.itemId)) {
+                        problems.add(id + ": treasure holds unknown item '"
+                                + treasure.itemId + "'");
+                    }
+                    if (treasure.count <= 0) {
+                        problems.add(id + ": a treasure holds nothing");
+                    }
+                }
+                // A secret with nothing behind it is a wall that wastes a swing.
+                if (level.secrets.size > 0 && level.treasures.size == 0) {
+                    problems.add(id + ": has an illusory wall but nothing behind it");
+                }
+                // The whole illusion rests on the wall being solid. If the overlay
+                // is not wired, it looks perfect and the player walks straight
+                // through it - which nothing else in the build would notice.
+                if (level.secrets.size > 0
+                        && level.collision.triangleCount() <= level.collision.ownTriangleCount()) {
+                    problems.add(id + ": illusory walls are not in the collision at all");
+                }
+                for (IllusoryWall wall : level.secrets) {
+                    TEMP.set(wall.position.x, wall.position.y + wall.height * 0.4f,
+                            wall.position.z);
+                    boolean solid = false;
+                    for (int step = 0; step < 4 && !solid; step++) {
+                        float angle = step * 90f;
+                        RAY_FROM.set(TEMP).add(
+                                com.badlogic.gdx.math.MathUtils.sinDeg(angle) * 3f, 0f,
+                                com.badlogic.gdx.math.MathUtils.cosDeg(angle) * 3f);
+                        RAY_DIR.set(TEMP).sub(RAY_FROM).nor();
+                        solid = level.collision.raycast(RAY_FROM, RAY_DIR, 4f, RAY_HIT) >= 0;
+                    }
+                    if (!solid) {
+                        problems.add(id + ": illusory wall '" + wall.id
+                                + "' can be walked through");
                     }
                 }
             }
