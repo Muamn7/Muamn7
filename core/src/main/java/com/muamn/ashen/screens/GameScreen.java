@@ -13,6 +13,8 @@ import com.badlogic.gdx.utils.Array;
 
 import com.muamn.ashen.AshenGame;
 import com.muamn.ashen.Config;
+import com.muamn.ashen.audio.Audio;
+import com.muamn.ashen.audio.SoundBank;
 import com.muamn.ashen.camera.OrbitCamera;
 import com.muamn.ashen.combat.Combatant;
 import com.muamn.ashen.combat.WeaponDef;
@@ -158,6 +160,7 @@ public class GameScreen extends ScreenAdapter {
         weapon.upgrade = MathUtils.clamp(save.weaponUpgrade, 0, 10);
 
         player = new Player(rig, weapon);
+        player.audio = game.audio;
         applySave(save);
         equip(weapon);
 
@@ -189,8 +192,12 @@ public class GameScreen extends ScreenAdapter {
         hud.showDebug = game.debugOverlay;
 
         pickupModel = Pickup.buildModel(game.textures);
-        menu = new BonfireMenu(game.items);
+        menu = new BonfireMenu(game.items, game.audio);
         if (game.openMenuOnStart) menu.open(game.menuPage);
+
+        // The ambience starts with the world, not with the first area change.
+        game.audio.setListener(player.body.position);
+        game.audio.playMusic(SoundBank.AMBIENCE_WIND);
 
         if (isTouchPlatform()) {
             touchControls = new TouchControls();
@@ -230,6 +237,8 @@ public class GameScreen extends ScreenAdapter {
         camera.yaw = facing + 180f;
         camera.snapTo(player.body.position);
         areaBannerTimer = 3f;
+        game.audio.play(SoundBank.AREA_CHANGE, 0.8f, 1f);
+        game.audio.playMusic(SoundBank.AMBIENCE_WIND);
 
         // Arriving somewhere new is a checkpoint worth keeping.
         writeSave();
@@ -352,6 +361,7 @@ public class GameScreen extends ScreenAdapter {
     private Enemy addEnemy(EnemyDef def, float x, float z, float facing) {
         EnemyVisual visual = BodyFactory.create(def.body, game.textures, def.runSpeed);
         Enemy enemy = new Enemy(def, visual, game.weapons.get(def.weaponId));
+        enemy.audio = game.audio;
         enemy.spawn(x, 0.2f, z, facing);
         enemy.setTarget(player);
         enemies.add(enemy);
@@ -586,6 +596,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void simulate(float dt) {
+        game.audio.setListener(player.body.position);
         camera.applyLook(controls.look.x, controls.look.y);
         // Look deltas are consumed by the first substep; later substeps get zero.
         controls.look.setZero();
@@ -630,6 +641,7 @@ public class GameScreen extends ScreenAdapter {
             if (reward > 0) {
                 player.stats.souls += reward;
                 showToast("+" + reward);
+                game.audio.play(SoundBank.SOULS, 0.7f, Audio.vary(0.05f));
                 dropLoot(enemy);
             }
         }
@@ -681,6 +693,9 @@ public class GameScreen extends ScreenAdapter {
         level.collision.setOverlay(arena.barrier());
         bossBannerTimer = 3.2f;
         clearLockOn();
+        game.audio.play(SoundBank.FOG_GATE, 0.8f, 1f);
+        game.audio.play(SoundBank.BOSS_ROAR, 1f, 1f);
+        game.audio.playMusic(SoundBank.MUSIC_BOSS);
     }
 
     private void endBossFight(boolean defeated) {
@@ -701,6 +716,9 @@ public class GameScreen extends ScreenAdapter {
         activeArena = null;
         activeBoss = null;
         bossBannerTimer = 0f;
+        // Back to wind. The bed is what tells the player the fight is over, well
+        // before the health bar has finished draining off the screen.
+        game.audio.playMusic(SoundBank.AMBIENCE_WIND);
     }
 
     private boolean tooFarToLock(Enemy enemy) {
@@ -744,6 +762,7 @@ public class GameScreen extends ScreenAdapter {
     private void drinkEstus() {
         if (estus <= 0 || player.stats.health >= player.stats.maxHealth) return;
         estus--;
+        game.audio.play(SoundBank.DRINK, 0.85f, 1f);
         player.stats.heal(player.stats.maxHealth * ESTUS_HEAL_FRACTION);
         showToast("Estus " + estus + "/" + estusMax);
     }
@@ -793,6 +812,7 @@ public class GameScreen extends ScreenAdapter {
             // first consumable found is usable without opening a menu.
             if (def.consumable() && player.quickItem.isEmpty()) player.quickItem = def.id;
             showToast(def.nameEn + (taken > 1 ? " x" + taken : ""));
+            game.audio.play(SoundBank.PICKUP, 0.8f, Audio.vary(0.06f));
             pickups.removeIndex(i);
         }
     }
@@ -910,6 +930,7 @@ public class GameScreen extends ScreenAdapter {
         estus = estusMax;
         respawnEnemies();
         writeSave();
+        game.audio.play(SoundBank.BONFIRE_REST, 0.9f, 1f);
         showToast("Rested");
     }
 

@@ -12,6 +12,8 @@ import com.muamn.ashen.combat.CombatMath;
 import com.muamn.ashen.combat.Combatant;
 import com.muamn.ashen.combat.HitInfo;
 import com.muamn.ashen.combat.WeaponDef;
+import com.muamn.ashen.audio.Audio;
+import com.muamn.ashen.audio.SoundBank;
 import com.muamn.ashen.input.ControlState;
 import com.muamn.ashen.world.CharacterBody;
 import com.muamn.ashen.world.CollisionMesh;
@@ -45,6 +47,15 @@ public class Player implements Combatant {
     /** Flat damage added to every swing while a resin is on the blade. */
     private float buffDamage;
     private float buffTimer;
+
+    /**
+     * Where the player's own sounds go. Null is a supported state - a headless
+     * run has no audio device and the player still has to move.
+     */
+    public Audio audio;
+    /** Metres walked since the last footstep. Steps are paced by distance, not
+     * by time, so walking and sprinting sound like walking and sprinting. */
+    private float strideDistance;
 
     private WeaponDef weapon;
 
@@ -314,6 +325,8 @@ public class Player implements Combatant {
             setState(State.GROUNDED);
         }
 
+        updateFootsteps(dt);
+
         // Turn toward the intended heading. Committed actions keep their facing.
         float turnRate = committed() ? 0f : Config.TURN_SPEED * 57.29578f * dt;
         facing = approachAngle(facing, targetFacing, turnRate);
@@ -424,6 +437,14 @@ public class Player implements Combatant {
         attacks.begin(attack, heavy, chain);
         bufferedAttack = 0;
         setState(State.ATTACKING);
+        if (audio != null) {
+            // Pitched by the weapon's own speed, so a dagger and a greatsword do
+            // not sound like the same swing played at the same rate.
+            audio.play(heavy ? SoundBank.SWING_HEAVY : SoundBank.SWING_LIGHT,
+                    heavy ? 0.85f : 0.7f,
+                    MathUtils.clamp(0.55f / Math.max(0.12f, attack.active + attack.windup),
+                            0.8f, 1.35f) * Audio.vary(0.05f));
+        }
         return true;
     }
 
@@ -582,6 +603,7 @@ public class Player implements Combatant {
         // A parried swing costs the parrier nothing but a sliver of stamina.
         if (hit.wasParried) {
             stats.drainStamina(4f);
+            if (audio != null) audio.play(SoundBank.PARRY, 1f, Audio.vary(0.04f));
             return;
         }
         tookHit = true;
@@ -624,6 +646,14 @@ public class Player implements Combatant {
         }
 
         stats.damage(CombatMath.afterDefence(damage, 0.10f));
+
+        if (audio != null) {
+            if (blocked) audio.play(SoundBank.HIT_GUARD, 0.9f, Audio.vary(0.07f));
+            else if (hit.critical) audio.play(SoundBank.CRITICAL, 1f, 1f);
+            else audio.play(SoundBank.HIT_FLESH, 0.9f, Audio.vary(0.08f));
+            // The grunt sits under the impact rather than replacing it.
+            if (!blocked) audio.play(SoundBank.HURT, 0.55f, Audio.vary(0.10f));
+        }
 
         // Knockback, scaled down when the blow was caught on a guard.
         float push = blocked ? 1.2f : 3.0f;
@@ -674,9 +704,65 @@ public class Player implements Combatant {
     }
 
     private void setState(State next) {
+        State previous = state;
         state = next;
         stateTime = 0f;
         if (next != State.ROLLING) invulnerable = false;
+        cueForState(previous, next);
+    }
+
+    /**
+     * One sound per state entry, fired from the single place states change so a
+     * new transition cannot be added without one.
+     */
+    private void cueForState(State previous, State next) {
+        if (audio == null || previous == next) return;
+        switch (next) {
+            case ROLLING:
+            case BACKSTEPPING:
+                audio.play(SoundBank.ROLL, 0.75f, Audio.vary(0.06f));
+                break;
+            case PARRYING:
+                // The swish of the shield coming up; the ring only happens if it
+                // actually catches something, and that is fired from applyHit.
+                audio.play(SoundBank.SWING_LIGHT, 0.35f, 1.5f);
+                break;
+            case STAGGERED:
+                audio.play(SoundBank.STAGGER, 0.8f, Audio.vary(0.08f));
+                break;
+            case DEAD:
+                audio.play(SoundBank.DEATH, 1f, 1f);
+                break;
+            case GROUNDED:
+                if (previous == State.AIRBORNE && body.landingImpact > 3.5f) {
+                    audio.play(SoundBank.LAND,
+                            MathUtils.clamp(body.landingImpact / 14f, 0.25f, 1f),
+                            Audio.vary(0.05f));
+                }
+                strideDistance = 0f;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Paces footsteps by ground covered. Called once per simulation step. */
+    private void updateFootsteps(float dt) {
+        if (audio == null) return;
+        if (state != State.GROUNDED || !body.grounded) return;
+        float speed = groundSpeed();
+        if (speed < 0.4f) {
+            strideDistance = 0f;
+            return;
+        }
+        strideDistance += speed * dt;
+        // A longer stride when running, so the rate does not become a machine gun.
+        float stride = speed > Config.WALK_SPEED * 1.4f ? 1.85f : 1.35f;
+        if (strideDistance < stride) return;
+        strideDistance -= stride;
+        audio.play(SoundBank.FOOTSTEP,
+                MathUtils.clamp(speed / Config.RUN_SPEED, 0.35f, 1f) * 0.7f,
+                Audio.vary(0.12f));
     }
 
     /** Heading in degrees for a direction vector, matching the model's +Z front. */

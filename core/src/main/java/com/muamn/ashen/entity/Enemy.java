@@ -11,6 +11,8 @@ import com.muamn.ashen.combat.CombatMath;
 import com.muamn.ashen.combat.Combatant;
 import com.muamn.ashen.combat.HitInfo;
 import com.muamn.ashen.combat.WeaponDef;
+import com.muamn.ashen.audio.Audio;
+import com.muamn.ashen.audio.SoundBank;
 import com.muamn.ashen.world.CharacterBody;
 import com.muamn.ashen.world.CollisionMesh;
 
@@ -33,6 +35,12 @@ public class Enemy implements Combatant {
     public final Stats stats = new Stats();
     public final AttackRunner attacks = new AttackRunner();
     public final EnemyDef def;
+
+    /**
+     * Where this enemy's sounds go, positioned in the world so a fight two rooms
+     * away is heard as one. Null when the game is running without audio.
+     */
+    public Audio audio;
     public final EnemyVisual visual;
 
     private WeaponDef weapon;
@@ -318,6 +326,12 @@ public class Enemy implements Combatant {
         attack = heavy ? weapon.moveset.heavy(0) : weapon.moveset.light(0);
         attacks.begin(attack, heavy, 0);
         setState(State.ATTACK);
+        if (audio != null) {
+            audio.playAt(heavy ? SoundBank.SWING_HEAVY
+                            : SoundBank.SWING_LIGHT,
+                    body.position, 0.7f,
+                    Audio.vary(0.08f));
+        }
     }
 
     private void updateAttack(float dt) {
@@ -393,6 +407,16 @@ public class Enemy implements Combatant {
         }
         stats.damage(damage);
 
+        if (audio != null) {
+            // Skeletons and stone crack; everything else is wet.
+            String impact = def.body.kind == BodyDef.Kind.CREATURE
+                    ? SoundBank.HIT_FLESH
+                    : SoundBank.HIT_BONE;
+            if (hit.critical) impact = SoundBank.CRITICAL;
+            audio.playAt(impact, body.position, 0.85f,
+                    Audio.vary(0.08f));
+        }
+
         poiseDamage += hit.poise;
         poiseTimer = CombatMath.POISE_RECOVERY;
         if (poiseDamage >= def.poise || hit.critical) {
@@ -415,6 +439,12 @@ public class Enemy implements Combatant {
         if (stats.isDead()) {
             attacks.cancel();
             setState(State.DEAD);
+            if (audio != null) {
+                // A boss dying is the loudest thing in the game, and unpitched.
+                audio.playAt(SoundBank.ENEMY_DEATH, body.position,
+                        def.boss ? 1f : 0.8f,
+                        def.boss ? 0.62f : Audio.vary(0.14f));
+            }
         }
     }
 

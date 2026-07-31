@@ -26,6 +26,8 @@ public class AshenGame extends Game {
     public EnemyLibrary bestiary;
     /** Consumables and reinforcement materials. */
     public com.muamn.ashen.item.ItemLibrary items;
+    /** Synthesised sound effects and music beds. */
+    public com.muamn.ashen.audio.Audio audio;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -59,6 +61,8 @@ public class AshenGame extends Game {
      * unit tests - it runs in CI as a separate launch instead.
      */
     public boolean validateWorld;
+    /** Skips synthesising and loading the sound bank. CI and screenshots. */
+    public boolean muteAudio;
 
     public AshenGame() {
         this(false, false);
@@ -85,6 +89,8 @@ public class AshenGame extends Game {
         bestiary.load();
         items = new com.muamn.ashen.item.ItemLibrary();
         items.load();
+        audio = new com.muamn.ashen.audio.Audio();
+        if (!muteAudio) audio.load();
         if (validateWorld) {
             runWorldValidation();
             return;
@@ -117,5 +123,6 @@ public class AshenGame extends Game {
     public void dispose() {
         if (screen != null) screen.dispose();
         if (textures != null) textures.dispose();
+        if (audio != null) audio.dispose();
     }
 }

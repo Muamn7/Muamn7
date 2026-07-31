@@ -27,3 +27,7 @@ assets/imported/models/tree*
 # Runtime save files (Gdx.files.local resolves to the run working directory)
 ashen-save.json*
 assets/ashen-save.json*
+
+# The sound bank is synthesised on first launch into the same local directory.
+audio-cache/
+assets/audio-cache/

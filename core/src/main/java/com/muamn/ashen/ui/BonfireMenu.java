@@ -13,6 +13,8 @@ import com.badlogic.gdx.utils.Disposable;
 import com.muamn.ashen.combat.WeaponDef;
 import com.muamn.ashen.entity.Player;
 import com.muamn.ashen.entity.Stats;
+import com.muamn.ashen.audio.Audio;
+import com.muamn.ashen.audio.SoundBank;
 import com.muamn.ashen.item.ItemDef;
 import com.muamn.ashen.item.ItemLibrary;
 
@@ -41,6 +43,7 @@ public class BonfireMenu implements Disposable {
     };
 
     private final ItemLibrary items;
+    private final Audio audio;
 
     private final ShapeRenderer shapes = new ShapeRenderer();
     private final SpriteBatch batch = new SpriteBatch();
@@ -59,8 +62,9 @@ public class BonfireMenu implements Disposable {
     private boolean prevTouched;
     private float inputCooldown;
 
-    public BonfireMenu(ItemLibrary items) {
+    public BonfireMenu(ItemLibrary items, Audio audio) {
         this.items = items;
+        this.audio = audio;
     }
 
     public boolean isOpen() {
@@ -97,8 +101,11 @@ public class BonfireMenu implements Disposable {
         heldCount = player.inventory.ids().size;
         int items = itemCount();
         if (cursor >= items) cursor = items - 1;
+
+        int before = cursor;
         if (pressed(Input.Keys.UP) || pressed(Input.Keys.W)) cursor = Math.floorMod(cursor - 1, items);
         if (pressed(Input.Keys.DOWN) || pressed(Input.Keys.S)) cursor = Math.floorMod(cursor + 1, items);
+        if (cursor != before) cue(SoundBank.MENU_MOVE, 1f);
 
         boolean confirm = pressed(Input.Keys.ENTER) || pressed(Input.Keys.SPACE)
                 || pressed(Input.Keys.E);
@@ -163,11 +170,13 @@ public class BonfireMenu implements Disposable {
     private void levelUp(Stats stats, int attribute) {
         long cost = Stats.soulsToLevel(stats.level);
         if (stats.souls < cost) {
+            cue(SoundBank.MENU_DENY, 1f);
             toast("Not enough souls");
             return;
         }
         stats.souls -= cost;
         stats.level++;
+        cue(SoundBank.LEVEL_UP, 1f);
         switch (attribute) {
             case 0: stats.vigor++; break;
             case 1: stats.endurance++; break;
@@ -193,23 +202,27 @@ public class BonfireMenu implements Disposable {
     private void reinforce(Player player, WeaponDef weapon) {
         Stats stats = player.stats;
         if (weapon.upgrade >= 10) {
+            cue(SoundBank.MENU_DENY, 1f);
             toast("Already at +10");
             return;
         }
         String material = reinforceMaterial(weapon.upgrade + 1);
         int need = reinforceMaterialCount(weapon.upgrade + 1);
         if (!player.inventory.has(material, need)) {
+            cue(SoundBank.MENU_DENY, 1f);
             toast("Need " + need + "x " + materialLabel(material));
             return;
         }
         long cost = reinforceCost(weapon);
         if (stats.souls < cost) {
+            cue(SoundBank.MENU_DENY, 1f);
             toast("Not enough souls");
             return;
         }
         player.inventory.remove(material, need);
         stats.souls -= cost;
         weapon.upgrade++;
+        cue(SoundBank.REINFORCE, 1f);
         toast(weapon.nameEn + " +" + weapon.upgrade);
     }
 
@@ -262,10 +275,16 @@ public class BonfireMenu implements Disposable {
         ItemDef def = items.get(held.get(cursor));
         if (def.consumable()) {
             player.quickItem = def.id;
+            cue(SoundBank.PICKUP, 0.7f);
             toast(def.nameEn + " ready");
         } else {
             toast(def.descEn);
         }
+    }
+
+    /** Menu sounds, skipped entirely when there is no audio. */
+    private void cue(String id, float volume) {
+        if (audio != null) audio.play(id, volume, 1f);
     }
 
     private void toast(String text) {
