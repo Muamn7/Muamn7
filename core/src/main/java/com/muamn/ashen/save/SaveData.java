@@ -34,6 +34,10 @@ public class SaveData {
     public int weaponUpgrade;
 
     // ---- world ----
+    /** Area the player is standing in. */
+    public String areaId = "asylum_courtyard";
+    /** Area whose bonfire the player last rested at, and respawns to. */
+    public String bonfireArea = "asylum_courtyard";
     public String bonfireId = "asylum_courtyard";
     public float bonfireX;
     public float bonfireY;

@@ -42,6 +42,8 @@ public class AshenGame extends Game {
     public String viewModel;
     /** Overrides the player's start position as "x,z". Debug and screenshots. */
     public String spawnAt;
+    /** Starts in a named area instead of the saved one. Debug and screenshots. */
+    public String startArea;
     /** Holds imported rigs at their bind pose, to separate rig bugs from animation bugs. */
     public boolean freezeAnimations;
     /** Opens the bonfire menu immediately, for screenshots and UI work. */
@@ -49,6 +51,12 @@ public class AshenGame extends Game {
     /** Which page that menu opens on. */
     public com.muamn.ashen.ui.BonfireMenu.Page menuPage =
             com.muamn.ashen.ui.BonfireMenu.Page.ROOT;
+    /**
+     * Builds every area, reports anything broken and quits. Building an area needs
+     * textures, and textures need a GL context, so this check cannot live in the
+     * unit tests - it runs in CI as a separate launch instead.
+     */
+    public boolean validateWorld;
 
     public AshenGame() {
         this(false, false);
@@ -73,11 +81,32 @@ public class AshenGame extends Game {
         weapons.load();
         bestiary = new EnemyLibrary();
         bestiary.load();
+        if (validateWorld) {
+            runWorldValidation();
+            return;
+        }
         if (viewModel != null && !viewModel.isEmpty()) {
             setScreen(new com.muamn.ashen.screens.ModelViewerScreen(this, viewModel));
         } else {
             setScreen(new GameScreen(this));
         }
+    }
+
+    /** Prints the world's problems and exits non-zero if there are any. */
+    private void runWorldValidation() {
+        com.badlogic.gdx.utils.Array<String> problems =
+                com.muamn.ashen.world.WorldValidator.validate(textures, bestiary, weapons);
+        if (problems.size == 0) {
+            Gdx.app.log("Ashen", "world validation passed");
+            Gdx.app.exit();
+            return;
+        }
+        for (String problem : problems) Gdx.app.error("Ashen", "world: " + problem);
+        Gdx.app.error("Ashen", problems.size + " world problem(s)");
+        // Gdx.app.exit() would run the normal shutdown and return 0; this must fail
+        // the build.
+        dispose();
+        System.exit(1);
     }
 
     @Override

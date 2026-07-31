@@ -21,6 +21,8 @@ import com.muamn.ashen.AshenGame;
  *   -Dashen.debug=true          show the frame/state readout
  *   -Dashen.screenshot=PATH     write a PNG once the world has settled
  *   -Dashen.exitAfter=SECONDS   quit automatically, for CI
+ *   -Dashen.validateWorld=true  check every area, then exit (non-zero if broken)
+ *   -Dashen.area=ID             start in a named area rather than the saved one
  * </pre>
  */
 public class DesktopLauncher {
@@ -51,7 +53,9 @@ public class DesktopLauncher {
         game.viewModel = System.getProperty("ashen.viewModel");
         game.freezeAnimations = Boolean.getBoolean("ashen.freezeAnim");
         game.spawnAt = System.getProperty("ashen.spawnAt");
+        game.startArea = System.getProperty("ashen.area");
         game.openMenuOnStart = Boolean.getBoolean("ashen.menu");
+        game.validateWorld = Boolean.getBoolean("ashen.validateWorld");
         String menuPage = System.getProperty("ashen.menuPage");
         if (menuPage != null) {
             game.openMenuOnStart = true;

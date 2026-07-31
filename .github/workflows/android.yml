@@ -92,6 +92,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libopenal1
 
+      # Builds every area and checks the world graph: no portal to a missing area,
+      # no unreachable area, no boss arena with something of the level inside it.
+      # It needs a GL context to build textures, so it cannot be a unit test.
+      - name: Validate the world
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./gradlew :lwjgl3:run --no-daemon -Dashen.validateWorld=true
+
       # Runs the real game on llvmpipe with scripted input, so a crash in the
       # renderer, the level build or the movement code fails the build.
       - name: Run the game for 20 seconds

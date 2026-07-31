@@ -42,6 +42,14 @@ public class Level implements Disposable {
     public final Array<Spawn> spawns = new Array<>();
     /** Boss encounters in this area. */
     public final Array<BossArena> arenas = new Array<>();
+    /** Ways out of this area. */
+    public final Array<Portal> portals = new Array<>();
+    /** Bonfires in this area, in world coordinates. */
+    public final Array<Vector3> bonfires = new Array<>();
+
+    /** Human-readable area name, shown when the player arrives. */
+    public String nameAr = "";
+    public String nameEn = "";
 
     /** Extra instances drawn with the level, e.g. props with their own transform. */
     public final Array<ModelInstance> props = new Array<>();
@@ -73,6 +81,32 @@ public class Level implements Disposable {
         return out;
     }
 
+    /** Adds a way out of this area. */
+    public Level portal(Portal portal) {
+        portals.add(portal);
+        return this;
+    }
+
+    /** Adds a bonfire at ground level. */
+    public Level bonfire(float x, float z) {
+        bonfires.add(new Vector3(x, 0f, z));
+        return this;
+    }
+
+    /** The bonfire nearest a point, or null if this area has none. */
+    public Vector3 nearestBonfire(Vector3 to) {
+        Vector3 best = null;
+        float bestDistance = Float.MAX_VALUE;
+        for (Vector3 fire : bonfires) {
+            float d = fire.dst2(to);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = fire;
+            }
+        }
+        return best;
+    }
+
     /**
      * Adds an enemy placement. Named {@code addSpawn} rather than {@code spawn}
      * so it never reads as a call on the {@link #spawn} player start point.
@@ -86,6 +120,8 @@ public class Level implements Disposable {
     public void dispose() {
         for (BossArena arena : arenas) arena.dispose();
         arenas.clear();
+        portals.clear();
+        bonfires.clear();
         for (Model m : ownedModels) m.dispose();
         ownedModels.clear();
         props.clear();

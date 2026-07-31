@@ -213,6 +213,36 @@ public class Hud implements Disposable {
         batch.end();
     }
 
+    /** The area name, faded in on arrival. */
+    public void areaTitle(String name, float alpha) {
+        if (name == null || name.isEmpty() || alpha <= 0f) return;
+        int screenW = Gdx.graphics.getWidth();
+        float scale = MathUtils.clamp(screenW / 960f, 0.9f, 2.4f) * 1.6f;
+        batch.begin();
+        font.getData().setScale(scale);
+        font.setColor(0.92f, 0.88f, 0.74f, MathUtils.clamp(alpha, 0f, 1f));
+        float w = name.length() * 9.6f * scale;
+        font.draw(batch, name, (screenW - w) * 0.5f, Gdx.graphics.getHeight() * 0.80f);
+        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
+    /** A one-line prompt near the bottom, for doors and pickups. */
+    public void prompt(String text) {
+        if (text == null || text.isEmpty()) return;
+        int screenW = Gdx.graphics.getWidth();
+        float scale = MathUtils.clamp(screenW / 960f, 0.85f, 2.0f);
+        batch.begin();
+        font.getData().setScale(scale);
+        font.setColor(0.88f, 0.85f, 0.76f, 0.95f);
+        float w = text.length() * 9f * scale;
+        font.draw(batch, text, (screenW - w) * 0.5f, Gdx.graphics.getHeight() * 0.26f);
+        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
     /** Full-screen tint, used for the death fade. */
     public void overlay(float r, float g, float b, float alpha) {
         if (alpha <= 0f) return;

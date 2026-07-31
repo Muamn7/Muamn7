@@ -37,7 +37,8 @@ import com.muamn.ashen.ui.BonfireMenu;
 import com.muamn.ashen.ui.Hud;
 import com.muamn.ashen.world.BossArena;
 import com.muamn.ashen.world.Level;
-import com.muamn.ashen.world.Levels;
+import com.muamn.ashen.world.Areas;
+import com.muamn.ashen.world.Portal;
 
 /**
  * The playable screen: level, player, enemies, camera, HUD.
@@ -101,6 +102,13 @@ public class GameScreen extends ScreenAdapter {
     private Enemy activeBoss;
     private float bossBannerTimer;
 
+    /** Area currently loaded, and the area the bonfire we respawn to is in. */
+    private String currentArea = Areas.ASYLUM;
+    private String bonfireArea = Areas.ASYLUM;
+    /** Set when a portal has been taken; the swap happens outside the step loop. */
+    private Portal pendingPortal;
+    private float areaBannerTimer;
+
     private Enemy lockedEnemy;
     private final Vector3 lockPoint = new Vector3();
     private final Vector3 tmp = new Vector3();
@@ -118,14 +126,19 @@ public class GameScreen extends ScreenAdapter {
         renderer = new RetroRenderer();
         renderer.onDisplayResize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
-        level = Levels.asylumCourtyard(game.textures);
+        save = saveGame.load();
+        currentArea = Areas.exists(save.areaId) ? save.areaId : Areas.ASYLUM;
+        if (game.startArea != null && Areas.exists(game.startArea)) {
+            currentArea = game.startArea;
+            save.bonfireArea = "";
+        }
+        level = Areas.build(currentArea, game.textures);
         applyLevelMood();
 
         HumanoidSpec spec = HumanoidSpec.knight();
         CharacterRig rig = new CharacterRig(
                 HumanoidFactory.build(spec, game.textures, "player"), spec);
 
-        save = saveGame.load();
         weaponIndex = indexOfWeapon(save.weaponId);
         weapon = game.weapons.all().get(weaponIndex);
         weapon.upgrade = MathUtils.clamp(save.weaponUpgrade, 0, 10);
@@ -134,8 +147,16 @@ public class GameScreen extends ScreenAdapter {
         applySave(save);
         equip(weapon);
 
+        bonfireArea = Areas.exists(save.bonfireArea) ? save.bonfireArea : Areas.ASYLUM;
         bonfire.set(save.bonfireX, save.bonfireY, save.bonfireZ);
-        player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
+        // Start at the bonfire if we saved in this area, otherwise at the area's
+        // own entrance - a save can name a bonfire that lives somewhere else.
+        if (bonfireArea.equals(currentArea)) {
+            player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
+        } else {
+            player.spawn(level.spawn.x, level.spawn.y, level.spawn.z, level.spawnFacing);
+        }
+        areaBannerTimer = 3f;
         if (game.spawnAt != null) {
             String[] parts = game.spawnAt.split(",");
             player.spawn(Float.parseFloat(parts[0].trim()), 0.4f,
@@ -162,6 +183,56 @@ public class GameScreen extends ScreenAdapter {
             desktopControls = new DesktopControls();
             Gdx.input.setCursorCatched(true);
         }
+    }
+
+    /**
+     * Swaps to another area.
+     *
+     * Areas are rebuilt rather than kept in memory: a phone has no room for four
+     * levels at once, and rebuilding one is a few milliseconds of box-stacking.
+     * Everything that belongs to the player - stats, souls, weapon, Estus -
+     * survives; everything that belongs to the area is thrown away and remade.
+     */
+    private void enterArea(String areaId, Vector3 at, float facing) {
+        endBossFight(false);
+        for (Enemy enemy : enemies) enemy.visual.dispose();
+        enemies.clear();
+        clearLockOn();
+
+        if (level != null) level.dispose();
+        currentArea = areaId;
+        level = Areas.build(areaId, game.textures);
+        applyLevelMood();
+
+        player.spawn(at.x, at.y, at.z, facing);
+        spawnEnemies();
+        // Swing the camera round behind the arrival facing. Keeping the old yaw
+        // would drop the player into a new area looking back the way they came.
+        camera.yaw = facing + 180f;
+        camera.snapTo(player.body.position);
+        areaBannerTimer = 3f;
+
+        // Arriving somewhere new is a checkpoint worth keeping.
+        writeSave();
+    }
+
+    /** Takes a portal the player is standing in, if any. */
+    private void checkPortals() {
+        if (pendingPortal != null) return;
+        for (Portal portal : level.portals) {
+            if (!portal.contains(player.body.position)) continue;
+            if (portal.requiresInteract && !controls.interactPressed) continue;
+            pendingPortal = portal;
+            return;
+        }
+    }
+
+    /** The portal under the player, for the on-screen prompt. */
+    private Portal portalPrompt() {
+        for (Portal portal : level.portals) {
+            if (portal.contains(player.body.position)) return portal;
+        }
+        return null;
     }
 
     private int indexOfWeapon(String id) {
@@ -212,7 +283,9 @@ public class GameScreen extends ScreenAdapter {
         save.weaponId = weapon.id;
         save.weaponUpgrade = weapon.upgrade;
 
-        save.bonfireId = level.id;
+        save.areaId = currentArea;
+        save.bonfireArea = bonfireArea;
+        save.bonfireId = bonfireArea;
         save.bonfireX = bonfire.x;
         save.bonfireY = bonfire.y;
         save.bonfireZ = bonfire.z;
@@ -304,6 +377,15 @@ public class GameScreen extends ScreenAdapter {
         }
         if (steps == 8) accumulator = 0f;
 
+        // Swap areas outside the fixed-step loop, so no substep runs against a
+        // level that is halfway through being replaced.
+        if (pendingPortal != null) {
+            Portal portal = pendingPortal;
+            pendingPortal = null;
+            enterArea(portal.targetArea, portal.targetPosition, portal.targetFacing);
+        }
+        if (areaBannerTimer > 0f) areaBannerTimer -= dt;
+
         camera.update(player.body.position, level.collision, dt);
         hud.update(player.stats, dt);
 
@@ -325,7 +407,8 @@ public class GameScreen extends ScreenAdapter {
                     "fps %d | %s | %s +%d | spd %.1f | souls %d | estus %d | enemies %d",
                     Gdx.graphics.getFramesPerSecond(), player.getState(),
                     weapon.nameEn, weapon.upgrade, player.groundSpeed(),
-                    player.stats.souls, estus, aliveEnemies()));
+                    player.stats.souls, estus, aliveEnemies())
+                    + " | " + currentArea);
         }
         hud.render(player.stats);
         if (activeBoss != null && !activeBoss.dead()) {
@@ -340,6 +423,15 @@ public class GameScreen extends ScreenAdapter {
             hud.enemyBar(lockedEnemy.def.nameEn, lockedEnemy.stats.healthFraction());
         }
         if (toastTimer > 0f) hud.toast(toast, Math.min(1f, toastTimer));
+
+        if (areaBannerTimer > 0f && activeBoss == null) {
+            hud.areaTitle(level.nameEn, Math.min(1f, areaBannerTimer));
+        }
+        Portal prompt = portalPrompt();
+        if (prompt != null && activeArena == null) {
+            hud.prompt(prompt.requiresInteract
+                    ? prompt.labelEn + "   [E]" : prompt.labelEn);
+        }
 
         if (player.dead()) {
             float t = MathUtils.clamp(deathTimer / DEATH_FADE, 0f, 1f);
@@ -464,6 +556,15 @@ public class GameScreen extends ScreenAdapter {
         // Look deltas are consumed by the first substep; later substeps get zero.
         controls.look.setZero();
 
+        if (areaBannerTimer > 0f && activeBoss == null) {
+            hud.areaTitle(level.nameEn, Math.min(1f, areaBannerTimer));
+        }
+        Portal prompt = portalPrompt();
+        if (prompt != null && activeArena == null) {
+            hud.prompt(prompt.requiresInteract
+                    ? prompt.labelEn + "   [E]" : prompt.labelEn);
+        }
+
         if (player.dead()) {
             deathTimer += dt;
             player.update(controls, level.collision, camera.yaw, null, dt);
@@ -499,6 +600,8 @@ public class GameScreen extends ScreenAdapter {
 
         updateBossFight(dt);
         collectBloodstain();
+        // Portals are disabled mid-boss: the arena is sealed for a reason.
+        if (activeArena == null) checkPortals();
 
         // Falling out of the world should never be unrecoverable.
         if (player.body.position.y < -25f) {
@@ -609,7 +712,11 @@ public class GameScreen extends ScreenAdapter {
 
     /** Interacting near a bonfire opens its menu rather than resting outright. */
     private void tryRest() {
-        if (player.body.position.dst(bonfire) > BONFIRE_RANGE) return;
+        Vector3 nearest = level.nearestBonfire(player.body.position);
+        if (nearest == null || player.body.position.dst(nearest) > BONFIRE_RANGE) return;
+        // Sitting at a new bonfire makes it the one you come back to.
+        bonfire.set(nearest);
+        bonfireArea = currentArea;
         menu.open();
     }
 
@@ -648,12 +755,17 @@ public class GameScreen extends ScreenAdapter {
         hasBloodstain = bloodstainSouls > 0;
         player.stats.souls = 0;
 
-        player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
         estus = estusMax;
         deathTimer = 0f;
         save.deaths++;
-        respawnEnemies();
-        camera.snapTo(player.body.position);
+        if (!bonfireArea.equals(currentArea)) {
+            tmp.set(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f);
+            enterArea(bonfireArea, tmp, 180f);
+        } else {
+            player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
+            respawnEnemies();
+            camera.snapTo(player.body.position);
+        }
         // Save on death, so the souls you just lost stay lost. Anything else and
         // dying could be undone by closing the app.
         writeSave();
