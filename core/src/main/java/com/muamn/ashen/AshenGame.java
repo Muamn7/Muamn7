@@ -28,6 +28,8 @@ public class AshenGame extends Game {
     public com.muamn.ashen.item.ItemLibrary items;
     /** Synthesised sound effects and music beds. */
     public com.muamn.ashen.audio.Audio audio;
+    /** The people still standing, and what they sell. */
+    public com.muamn.ashen.npc.NpcLibrary npcs;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -52,6 +54,10 @@ public class AshenGame extends Game {
     public boolean freezeAnimations;
     /** Opens the bonfire menu immediately, for screenshots and UI work. */
     public boolean openMenuOnStart;
+    /** Starts a conversation with this npc id on the first frame. Screenshots. */
+    public String talkTo;
+    /** Skips straight to that character's stock, if they have any. Screenshots. */
+    public boolean openShopOnStart;
     /** Which page that menu opens on. */
     public com.muamn.ashen.ui.BonfireMenu.Page menuPage =
             com.muamn.ashen.ui.BonfireMenu.Page.ROOT;
@@ -89,6 +95,8 @@ public class AshenGame extends Game {
         bestiary.load();
         items = new com.muamn.ashen.item.ItemLibrary();
         items.load();
+        npcs = new com.muamn.ashen.npc.NpcLibrary();
+        npcs.load();
         audio = new com.muamn.ashen.audio.Audio();
         if (!muteAudio) audio.load();
         if (validateWorld) {
@@ -105,7 +113,8 @@ public class AshenGame extends Game {
     /** Prints the world's problems and exits non-zero if there are any. */
     private void runWorldValidation() {
         com.badlogic.gdx.utils.Array<String> problems =
-                com.muamn.ashen.world.WorldValidator.validate(textures, bestiary, weapons);
+                com.muamn.ashen.world.WorldValidator.validate(
+                        textures, bestiary, weapons, npcs, items);
         if (problems.size == 0) {
             Gdx.app.log("Ashen", "world validation passed");
             Gdx.app.exit();

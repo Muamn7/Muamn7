@@ -1,0 +1,118 @@
+{
+  "_comment": [
+    "The people still standing in Ash Town, and what they will say and sell.",
+    "",
+    "'area' matches an id in Areas.java. 'lines' are spoken in order and then",
+    "the last one repeats, which is how a Souls NPC behaves once you have heard",
+    "everything they had to say.",
+    "",
+    "'shop' entries are all unlimited on purpose. A merchant who could sell the",
+    "higher reinforcement materials would undo the boss gating those materials",
+    "exist to create, so merchants stock consumables and the lowest tier only -",
+    "and ItemsTest asserts exactly that."
+  ],
+
+  "npcs": [
+    {
+      "id": "keeper",
+      "nameAr": "حارسة الرماد",
+      "nameEn": "The Ash Keeper",
+      "area": "ash_town",
+      "x": 3.2, "z": 25.5, "facing": 200,
+      "body": {
+        "kind": "HUMANOID", "preset": "knight", "scale": 0.97, "bulk": 0.88,
+        "armor": "cloth_dark", "cloth": "cloth_dark", "trim": "leather",
+        "helmet": false, "tabard": true, "pauldrons": false, "tint": "9AA0B4"
+      },
+      "lines": [
+        { "ar": "ما زلت تحمل اسمك؟ إذن لم يمض عليك طويل.",
+          "en": "You still carry a name? Then you have not been here long." },
+        { "ar": "النار في هذه البلدة خامدة منذ سقط السور. أبقِ نارك مشتعلة.",
+          "en": "The fires here went out when the wall fell. Keep yours lit." },
+        { "ar": "شمالًا المصح، وجنوبًا السور، وغربًا ما لا يُذكر اسمه.",
+          "en": "North is the asylum, south the wall, and west what we do not name." }
+      ]
+    },
+    {
+      "id": "pedlar",
+      "nameAr": "البائع المتجول",
+      "nameEn": "The Pedlar",
+      "area": "ash_town",
+      "x": -3.6, "z": -2.0, "facing": 30,
+      "body": {
+        "kind": "HUMANOID", "preset": "hollow", "scale": 0.94, "bulk": 1.05,
+        "hunch": 0.18, "armor": "leather", "cloth": "cloth_dark", "trim": "iron",
+        "helmet": false, "tint": "B49A78"
+      },
+      "lines": [
+        { "ar": "أرواح؟ عندي بضاعة. لا تسأل من أين.",
+          "en": "Souls, is it? I have goods. Do not ask where from." },
+        { "ar": "الجميع يشتري قبل السور. قليلون يعودون ليشتروا بعده.",
+          "en": "Everyone buys before the wall. Few come back to buy after it." }
+      ],
+      "shop": [
+        { "item": "charred_bread", "price": 120 },
+        { "item": "soothing_ash", "price": 400 },
+        { "item": "dried_root", "price": 180 },
+        { "item": "greenblood_leaf", "price": 600 },
+        { "item": "homeward_bone", "price": 900 },
+        { "item": "ember_shard", "price": 700 },
+        { "item": "resin_of_frost", "price": 1100 }
+      ]
+    },
+    {
+      "id": "gravedigger",
+      "nameAr": "حفّار القبور",
+      "nameEn": "The Gravedigger",
+      "area": "ash_town",
+      "x": -10.5, "z": 12.0, "facing": 120,
+      "body": {
+        "kind": "HUMANOID", "preset": "hollow", "scale": 1.02, "bulk": 1.12,
+        "hunch": 0.30, "armor": "leather", "cloth": "cloth_dark", "trim": "leather",
+        "helmet": false, "tint": "8C8470"
+      },
+      "lines": [
+        { "ar": "أحفر منذ سنين. الأرض لم تعد تقبل أحدًا.",
+          "en": "I have dug for years. The ground stopped accepting them." },
+        { "ar": "إن مت، عد وخذ ما تركت. مرة واحدة فقط — ثم يبتلعه الرماد.",
+          "en": "If you die, come back for what you dropped. Once - after that the ash takes it." }
+      ]
+    },
+    {
+      "id": "watchman",
+      "nameAr": "حارس السور",
+      "nameEn": "The Watchman",
+      "area": "broken_wall",
+      "x": 6.0, "z": 20.0, "facing": 340,
+      "body": {
+        "kind": "HUMANOID", "preset": "knight", "scale": 1.04, "bulk": 1.10,
+        "armor": "iron", "cloth": "cloth_dark", "trim": "iron",
+        "helmet": true, "tabard": false, "tint": "A8ACB0"
+      },
+      "lines": [
+        { "ar": "لا تصعد إلى الممشى. الرماة هناك لا يعرفون وجهك.",
+          "en": "Do not go up on the walk. The archers up there do not know your face." },
+        { "ar": "خلف تلك البوابة ملك من عظم. صددتُه مرة. مرة واحدة كانت تكفي.",
+          "en": "Past that gate is a king of bone. I held him once. Once was enough." }
+      ]
+    },
+    {
+      "id": "hermit",
+      "nameAr": "ناسك الأعماق",
+      "nameEn": "The Hermit",
+      "area": "deep_temple",
+      "x": -9.0, "z": -22.0, "facing": 180,
+      "body": {
+        "kind": "HUMANOID", "preset": "hollow", "scale": 0.90, "bulk": 0.82,
+        "hunch": 0.42, "armor": "cloth_dark", "cloth": "cloth_dark", "trim": "leather",
+        "helmet": false, "tint": "6E7486"
+      },
+      "lines": [
+        { "ar": "الجسور أربعة. الحفرة أعمق مما تبدو، وليست عميقة كفاية لتقتلك.",
+          "en": "There are four bridges. The pit is deeper than it looks, and not deep enough to kill you." },
+        { "ar": "لا تنزل حاملًا شيئًا تخشى فقدانه.",
+          "en": "Do not go down carrying anything you fear to lose." }
+      ]
+    }
+  ]
+}

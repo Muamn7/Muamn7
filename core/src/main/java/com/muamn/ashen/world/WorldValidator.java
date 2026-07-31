@@ -7,6 +7,9 @@ import com.badlogic.gdx.utils.ObjectSet;
 
 import com.muamn.ashen.combat.WeaponLibrary;
 import com.muamn.ashen.entity.EnemyLibrary;
+import com.muamn.ashen.item.ItemLibrary;
+import com.muamn.ashen.npc.NpcDef;
+import com.muamn.ashen.npc.NpcLibrary;
 
 /**
  * Builds every area and checks the world holds together.
@@ -30,7 +33,9 @@ public final class WorldValidator {
     /** @return a list of problems; empty means the world is sound. */
     public static Array<String> validate(TextureFactory textures,
                                          EnemyLibrary bestiary,
-                                         WeaponLibrary weapons) {
+                                         WeaponLibrary weapons,
+                                         NpcLibrary people,
+                                         ItemLibrary items) {
         Array<String> problems = new Array<>();
         ObjectMap<String, Level> built = new ObjectMap<>();
 
@@ -104,6 +109,43 @@ public final class WorldValidator {
                             problems.add(id + ": the exit to " + portal.targetArea
                                     + " is inside arena '" + arena.id + "'");
                         }
+                    }
+                }
+            }
+
+            // --- the people ---
+            for (NpcDef npc : people.all()) {
+                if (!Areas.exists(npc.area)) {
+                    problems.add("npc '" + npc.id + "' stands in unknown area '"
+                            + npc.area + "'");
+                    continue;
+                }
+                if (npc.lines.size == 0) {
+                    problems.add("npc '" + npc.id + "' has nothing to say");
+                }
+                Level home = built.get(npc.area);
+                if (home == null) continue;
+                for (BossArena arena : home.arenas) {
+                    if (arena.contains(TEMP.set(npc.x, 0f, npc.z))) {
+                        problems.add("npc '" + npc.id + "' stands inside arena '"
+                                + arena.id + "' and would be sealed in with the boss");
+                    }
+                }
+                for (Level.Spawn spawn : home.spawns) {
+                    float dx = spawn.x - npc.x, dz = spawn.z - npc.z;
+                    if (dx * dx + dz * dz < 9f) {
+                        problems.add("npc '" + npc.id + "' shares a spot with '"
+                                + spawn.enemyId + "'");
+                    }
+                }
+                for (NpcDef.Offer offer : npc.shop) {
+                    if (!items.has(offer.itemId)) {
+                        problems.add("npc '" + npc.id + "' sells unknown item '"
+                                + offer.itemId + "'");
+                        continue;
+                    }
+                    if (offer.price <= 0) {
+                        problems.add("npc '" + npc.id + "' gives away " + offer.itemId);
                     }
                 }
             }

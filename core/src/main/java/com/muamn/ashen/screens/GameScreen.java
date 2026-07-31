@@ -31,6 +31,8 @@ import com.muamn.ashen.entity.RigVisual;
 import com.muamn.ashen.input.ControlState;
 import com.muamn.ashen.item.ItemDef;
 import com.muamn.ashen.item.LootTable;
+import com.muamn.ashen.npc.Npc;
+import com.muamn.ashen.npc.NpcDef;
 import com.muamn.ashen.input.DesktopControls;
 import com.muamn.ashen.input.TouchControls;
 import com.muamn.ashen.render.RetroRenderer;
@@ -38,6 +40,8 @@ import com.muamn.ashen.render.RetroShader;
 import com.muamn.ashen.save.SaveData;
 import com.muamn.ashen.save.SaveGame;
 import com.muamn.ashen.ui.BonfireMenu;
+import com.muamn.ashen.ui.DialogueBox;
+import com.muamn.ashen.ui.ShopMenu;
 import com.muamn.ashen.ui.Hud;
 import com.muamn.ashen.world.BossArena;
 import com.muamn.ashen.world.Level;
@@ -108,6 +112,14 @@ public class GameScreen extends ScreenAdapter {
     private boolean hasBloodstain;
     private String toast = "";
     private float toastTimer;
+
+    // ---- people ----
+    private final Array<Npc> npcs = new Array<>();
+    private final Array<NpcDef> npcDefs = new Array<>();
+    private DialogueBox dialogue;
+    private ShopMenu shop;
+    /** Who the player is mid-conversation with, or null. */
+    private Npc talkingTo;
 
     private final SaveGame saveGame = new SaveGame();
     private SaveData save;
@@ -193,7 +205,11 @@ public class GameScreen extends ScreenAdapter {
 
         pickupModel = Pickup.buildModel(game.textures);
         menu = new BonfireMenu(game.items, game.audio);
+        dialogue = new DialogueBox();
+        shop = new ShopMenu(game.items, game.audio);
+        spawnNpcs();
         if (game.openMenuOnStart) menu.open(game.menuPage);
+        if (game.talkTo != null) openConversationById(game.talkTo);
 
         // The ambience starts with the world, not with the first area change.
         game.audio.setListener(player.body.position);
@@ -223,6 +239,9 @@ public class GameScreen extends ScreenAdapter {
         // Loot dropped in the area you are leaving is gone. Carrying it across
         // would mean an item lying in a place it was never dropped.
         pickups.clear();
+        endConversation();
+        for (Npc npc : npcs) npc.dispose();
+        npcs.clear();
         clearLockOn();
 
         if (level != null) level.dispose();
@@ -232,6 +251,7 @@ public class GameScreen extends ScreenAdapter {
 
         player.spawn(at.x, at.y, at.z, facing);
         spawnEnemies();
+        spawnNpcs();
         // Swing the camera round behind the arrival facing. Keeping the old yaw
         // would drop the player into a new area looking back the way they came.
         camera.yaw = facing + 180f;
@@ -390,14 +410,21 @@ public class GameScreen extends ScreenAdapter {
         elapsed += dt;
         if (toastTimer > 0f) toastTimer -= dt;
 
-        // The menu owns input and freezes the world while it is up.
+        // Menus own input and freeze the world while they are up. Shop first:
+        // it is opened from a conversation and has to be the one that closes.
+        if (shop.isOpen()) {
+            if (!shop.update(dt, player)) endConversation();
+            frozenFrame(dt);
+            return;
+        }
+        if (dialogue.isOpen()) {
+            updateConversation(dt);
+            frozenFrame(dt);
+            return;
+        }
         if (menu.isOpen()) {
             menu.update(dt, player, weapon, this::rest);
-            controls.reset();
-            camera.update(player.body.position, level.collision, dt);
-            hud.update(player.stats, dt);
-            renderScene();
-            renderHud();
+            frozenFrame(dt);
             return;
         }
 
@@ -425,6 +452,7 @@ public class GameScreen extends ScreenAdapter {
 
         camera.update(player.body.position, level.collision, dt);
         hud.update(player.stats, dt);
+        for (Npc npc : npcs) npc.update(dt);
 
         renderScene();
         renderHud();
@@ -433,10 +461,29 @@ public class GameScreen extends ScreenAdapter {
         controls.clearEdges();
     }
 
+    /** Draws a frame with the world paused behind whatever menu is up. */
+    private void frozenFrame(float dt) {
+        controls.reset();
+        camera.update(player.body.position, level.collision, dt);
+        hud.update(player.stats, dt);
+        renderScene();
+        renderHud();
+    }
+
     private void renderHud() {
         if (menu.isOpen()) {
             hud.render(player.stats);
             menu.render(player, weapon);
+            return;
+        }
+        if (shop.isOpen()) {
+            hud.render(player.stats);
+            shop.render(player);
+            return;
+        }
+        if (dialogue.isOpen()) {
+            hud.render(player.stats);
+            dialogue.render();
             return;
         }
         if (hud.showDebug) {
@@ -467,6 +514,11 @@ public class GameScreen extends ScreenAdapter {
         }
         if (toastTimer > 0f) hud.toast(toast, Math.min(1f, toastTimer));
 
+        Npc near = npcInReach();
+        if (near != null && activeArena == null) {
+            hud.prompt("Talk to " + near.def.nameEn + "   [E]");
+        }
+
         if (areaBannerTimer > 0f && activeBoss == null) {
             hud.areaTitle(level.nameEn, Math.min(1f, areaBannerTimer));
         }
@@ -493,6 +545,7 @@ public class GameScreen extends ScreenAdapter {
             renderList.add(weaponInstance);
         }
         for (Enemy enemy : enemies) renderList.add(enemy.visual.instance());
+        for (Npc npc : npcs) renderList.add(npc.visual.instance());
         for (Pickup pickup : pickups) renderList.add(pickup.instance);
         renderer.renderScene(camera.camera, renderList);
         renderer.endScene();
@@ -625,7 +678,11 @@ public class GameScreen extends ScreenAdapter {
 
         if (controls.cycleItemPressed) cycleQuickItem();
         if (controls.usePressed) useQuickItem();
-        if (controls.interactPressed) tryRest();
+        if (controls.interactPressed) {
+            Npc near = npcInReach();
+            if (near != null) startConversation(near);
+            else tryRest();
+        }
 
         Vector3 lockTarget = null;
         if (lockedEnemy != null) {
@@ -910,6 +967,116 @@ public class GameScreen extends ScreenAdapter {
         writeSave();
     }
 
+    // ---- people -----------------------------------------------------------
+
+    private void spawnNpcs() {
+        game.npcs.inArea(currentArea, npcDefs);
+        for (NpcDef def : npcDefs) {
+            npcs.add(new Npc(def, BodyFactory.create(def.body, game.textures, 3f)));
+        }
+    }
+
+    /** The character close enough to talk to, or null. */
+    private Npc npcInReach() {
+        for (Npc npc : npcs) {
+            if (npc.inRange(player.body.position)) return npc;
+        }
+        return null;
+    }
+
+    /** Screenshot harness: drops straight into a named character's conversation. */
+    private void openConversationById(String npcId) {
+        for (Npc npc : npcs) {
+            if (!npc.def.id.equals(npcId)) continue;
+            if (game.openShopOnStart && npc.def.isMerchant()) {
+                talkingTo = npc;
+                shop.open(npc.def);
+            } else {
+                startConversation(npc);
+            }
+            return;
+        }
+    }
+
+    private void startConversation(Npc npc) {
+        talkingTo = npc;
+        showLine(npc);
+    }
+
+    private void showLine(Npc npc) {
+        NpcDef.Line line = npc.currentLine();
+        if (line == null) {
+            openShopOrLeave(npc);
+            return;
+        }
+        String hint = npc.saidEverything()
+                ? (npc.def.isMerchant() ? "[E] trade" : "[E] leave")
+                : "[E]";
+        dialogue.show(npc.def.nameEn, line.en, hint);
+    }
+
+    /**
+     * Advances the conversation.
+     *
+     * The first press finishes the line being typed out; only a press against a
+     * fully-shown line moves on. A player who reads faster than the reveal
+     * should never lose a sentence for pressing on time.
+     */
+    private void updateConversation(float dt) {
+        dialogue.update(dt);
+        boolean advance = Gdx.input.isKeyJustPressed(Input.Keys.E)
+                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+                || justTapped();
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+            endConversation();
+            return;
+        }
+        if (!advance) return;
+        if (!dialogue.isFullyRevealed()) {
+            dialogue.revealAll();
+            return;
+        }
+        if (talkingTo == null) {
+            endConversation();
+            return;
+        }
+        if (talkingTo.advance()) {
+            showLine(talkingTo);
+            if (game.audio != null) game.audio.play(SoundBank.MENU_MOVE, 0.6f, 0.85f);
+        } else {
+            openShopOrLeave(talkingTo);
+        }
+    }
+
+    private void openShopOrLeave(Npc npc) {
+        if (npc.def.isMerchant()) {
+            dialogue.close();
+            shop.open(npc.def);
+        } else {
+            endConversation();
+        }
+    }
+
+    private void endConversation() {
+        dialogue.close();
+        shop.close();
+        talkingTo = null;
+        // Swallow the press that closed it, so the same tap does not immediately
+        // reopen the conversation on the next frame.
+        controls.reset();
+    }
+
+    /** A fresh screen tap, used to advance dialogue on a phone. */
+    private boolean justTapped() {
+        boolean touched = Gdx.input.isTouched();
+        boolean tapped = touched && !dialogueWasTouched;
+        dialogueWasTouched = touched;
+        return tapped;
+    }
+
+    private boolean dialogueWasTouched;
+
     /** Interacting near a bonfire opens its menu rather than resting outright. */
     private void tryRest() {
         Vector3 nearest = level.nearestBonfire(player.body.position);
@@ -994,6 +1161,10 @@ public class GameScreen extends ScreenAdapter {
     @Override
     public void dispose() {
         writeSave();
+        for (Npc npc : npcs) npc.dispose();
+        npcs.clear();
+        if (dialogue != null) dialogue.dispose();
+        if (shop != null) shop.dispose();
         if (menu != null) menu.dispose();
         if (pickupModel != null) pickupModel.dispose();
         if (renderer != null) renderer.dispose();

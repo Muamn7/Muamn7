@@ -1,7 +1,6 @@
 package com.muamn.ashen.entity;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.JsonReader;
@@ -100,37 +99,8 @@ public class EnemyLibrary {
         }
 
         JsonValue body = v.get("body");
-        if (body != null) def.body = parseBody(body);
+        if (body != null) def.body = BodyDef.parse(body);
         return def;
-    }
-
-    private BodyDef parseBody(JsonValue v) {
-        BodyDef body = new BodyDef();
-        body.kind = BodyDef.Kind.valueOf(v.getString("kind", "HUMANOID"));
-        body.preset = v.getString("preset", body.preset);
-        body.model = v.getString("model", null);
-
-        body.scale = v.getFloat("scale", 1f);
-        body.bulk = v.getFloat("bulk", 1f);
-        body.hunch = v.getFloat("hunch", 0f);
-        body.armLength = v.getFloat("armLength", 1f);
-        body.legPairs = v.getInt("legPairs", -1);
-
-        body.armor = v.getString("armor", null);
-        body.cloth = v.getString("cloth", null);
-        body.skin = v.getString("skin", null);
-        body.trim = v.getString("trim", null);
-        if (v.has("helmet")) body.helmet = v.getBoolean("helmet");
-        if (v.has("tabard")) body.tabard = v.getBoolean("tabard");
-        if (v.has("pauldrons")) body.pauldrons = v.getBoolean("pauldrons");
-
-        body.bodyMaterial = v.getString("bodyMaterial", null);
-        body.limbMaterial = v.getString("limbMaterial", null);
-        body.detailMaterial = v.getString("detailMaterial", null);
-
-        String tint = v.getString("tint", null);
-        if (tint != null) body.tint.set(Color.valueOf(tint));
-        return body;
     }
 
     public EnemyDef get(String id) {
