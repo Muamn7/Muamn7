@@ -3,8 +3,15 @@ package com.muamn.ashen.entity;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.Array;
 
 import com.muamn.ashen.Config;
+import com.muamn.ashen.combat.AttackDef;
+import com.muamn.ashen.combat.AttackRunner;
+import com.muamn.ashen.combat.CombatMath;
+import com.muamn.ashen.combat.Combatant;
+import com.muamn.ashen.combat.HitInfo;
+import com.muamn.ashen.combat.WeaponDef;
 import com.muamn.ashen.input.ControlState;
 import com.muamn.ashen.world.CharacterBody;
 import com.muamn.ashen.world.CollisionMesh;
@@ -12,19 +19,22 @@ import com.muamn.ashen.world.CollisionMesh;
 /**
  * The player character: a state machine over a {@link CharacterBody}.
  *
- * Committed actions are the point. Once a roll starts, input stops steering it -
- * you chose a direction and now you live with it. That single rule is most of
- * what separates Souls movement from an action game where dodging is free, and
- * it is why the state machine owns velocity outright instead of blending inputs
+ * Committed actions are the point. Once a roll or a swing starts, input stops
+ * steering it - you chose, and now you live with it. That single rule is most of
+ * what separates Souls combat from an action game where dodging is free, and it
+ * is why the state machine owns velocity outright instead of blending inputs
  * into it every frame.
  */
-public class Player {
+public class Player implements Combatant {
 
-    public enum State { GROUNDED, ROLLING, BACKSTEPPING, AIRBORNE, DEAD }
+    public enum State { GROUNDED, ROLLING, BACKSTEPPING, AIRBORNE, ATTACKING, STAGGERED, DEAD }
 
     public final CharacterBody body = new CharacterBody();
     public final Stats stats = new Stats();
     public final CharacterRig rig;
+    public final AttackRunner attacks = new AttackRunner();
+
+    private WeaponDef weapon;
 
     private State state = State.GROUNDED;
     private float stateTime;
@@ -41,17 +51,98 @@ public class Player {
     private final Vector2 flatMove = new Vector2();
 
     private float time;
-    /** Set while a roll's invulnerability window is open. */
     private boolean invulnerable;
+    private boolean guarding;
 
-    public Player(CharacterRig rig) {
+    /** Poise absorbed since the last hit, and how long until it resets. */
+    private float poiseDamage;
+    private float poiseTimer;
+    /** Base poise. Armour raises this in Part 3; for now it is a flat value. */
+    public float poise = 42f;
+
+    /** Angle the last hit came from, for the stagger pose. */
+    private float staggerAngle;
+    private float staggerDuration = CombatMath.STAGGER_DURATION;
+
+    /** Set for one frame when an attack of ours connected, for feedback. */
+    public boolean dealtHit;
+    /** Set for one frame when we took a hit. */
+    public boolean tookHit;
+
+    private Array<Combatant> targets = new Array<>();
+
+    /** Follow-up queued during the current swing. 0 none, 1 light, 2 heavy. */
+    private int bufferedAttack;
+    /** Time left in which a roll can be cancelled into a rolling attack. */
+    private float rollAttackWindow;
+
+    public Player(CharacterRig rig, WeaponDef weapon) {
         this.rig = rig;
+        this.weapon = weapon;
         body.radius = Config.PLAYER_RADIUS;
         body.height = Config.PLAYER_HEIGHT;
     }
 
     public State getState() {
         return state;
+    }
+
+    public void setTargets(Array<Combatant> targets) {
+        this.targets = targets;
+    }
+
+    public void setWeapon(WeaponDef weapon) {
+        this.weapon = weapon;
+    }
+
+    @Override
+    public WeaponDef weapon() {
+        return weapon;
+    }
+
+    @Override
+    public int team() {
+        return 0;
+    }
+
+    @Override
+    public CharacterBody body() {
+        return body;
+    }
+
+    @Override
+    public Stats stats() {
+        return stats;
+    }
+
+    @Override
+    public float facing() {
+        return facing;
+    }
+
+    @Override
+    public boolean invulnerable() {
+        return invulnerable || state == State.DEAD;
+    }
+
+    @Override
+    public boolean blocking() {
+        return guarding && state != State.ROLLING && state != State.STAGGERED;
+    }
+
+    @Override
+    public Vector3 hitCenter(Vector3 out) {
+        return out.set(body.position.x, body.position.y + body.height * 0.58f, body.position.z);
+    }
+
+    @Override
+    public float hitRadius() {
+        return body.radius + 0.12f;
+    }
+
+    @Override
+    public boolean dead() {
+        return state == State.DEAD;
     }
 
     public boolean isInvulnerable() {
@@ -72,6 +163,9 @@ public class Player {
         facing = targetFacing = facingDeg;
         state = State.GROUNDED;
         stateTime = 0f;
+        attacks.cancel();
+        poiseDamage = 0f;
+        bufferedAttack = 0;
         stats.health = stats.maxHealth;
         stats.stamina = stats.maxStamina;
     }
@@ -79,20 +173,32 @@ public class Player {
     /**
      * One fixed simulation step.
      *
-     * @param cameraYaw yaw of the camera, so movement is camera-relative
+     * @param cameraYaw  yaw of the camera, so movement is camera-relative
      * @param lockTarget position being locked on to, or null
      */
     public void update(ControlState input, CollisionMesh mesh, float cameraYaw,
                        Vector3 lockTarget, float dt) {
         time += dt;
         stateTime += dt;
+        dealtHit = false;
+        tookHit = false;
+
+        if (poiseTimer > 0f) {
+            poiseTimer -= dt;
+            if (poiseTimer <= 0f) poiseDamage = 0f;
+        }
+        if (rollAttackWindow > 0f) rollAttackWindow -= dt;
 
         if (state == State.DEAD) {
             body.velocity.x = 0f;
             body.velocity.z = 0f;
             body.step(mesh, dt);
+            rig.poseDeath(Math.min(stateTime / 0.9f, 1f));
+            rig.place(body.position, facing);
             return;
         }
+
+        guarding = input.guardHeld && state == State.GROUNDED && stats.stamina > 0f;
 
         // Camera-relative movement basis, flattened to the ground plane.
         float fx = -MathUtils.sinDeg(cameraYaw), fz = -MathUtils.cosDeg(cameraYaw);
@@ -104,14 +210,17 @@ public class Player {
         if (wishLen > 1e-4f) wish.scl(1f / wishLen);
 
         switch (state) {
-            case GROUNDED:   updateGrounded(input, wishLen, lockTarget, dt); break;
-            case ROLLING:    updateRoll(dt); break;
+            case GROUNDED:     updateGrounded(input, wishLen, lockTarget, dt); break;
+            case ROLLING:      updateRoll(input, dt); break;
             case BACKSTEPPING: updateBackstep(dt); break;
-            case AIRBORNE:   updateAirborne(wishLen, dt); break;
+            case AIRBORNE:     updateAirborne(wishLen, dt); break;
+            case ATTACKING:    updateAttacking(input, lockTarget, dt); break;
+            case STAGGERED:    updateStaggered(dt); break;
             default: break;
         }
 
-        boolean actionBlocksRegen = state == State.ROLLING || state == State.BACKSTEPPING;
+        boolean actionBlocksRegen = state == State.ROLLING || state == State.BACKSTEPPING
+                || state == State.ATTACKING || guarding;
         stats.update(dt, actionBlocksRegen);
 
         body.step(mesh, dt);
@@ -123,17 +232,20 @@ public class Player {
         }
 
         // Turn toward the intended heading. Committed actions keep their facing.
-        float turnRate = (state == State.ROLLING || state == State.BACKSTEPPING)
-                ? 0f : Config.TURN_SPEED * 57.29578f * dt;
+        float turnRate = committed() ? 0f : Config.TURN_SPEED * 57.29578f * dt;
         facing = approachAngle(facing, targetFacing, turnRate);
 
         updatePose(dt);
     }
 
-    private void updateGrounded(ControlState input, float wishLen, Vector3 lockTarget, float dt) {
-        boolean wantsRoll = input.rollPressed;
+    private boolean committed() {
+        return state == State.ROLLING || state == State.BACKSTEPPING
+                || state == State.STAGGERED
+                || (state == State.ATTACKING && attacks.phase() != AttackRunner.Phase.WINDUP);
+    }
 
-        if (wantsRoll) {
+    private void updateGrounded(ControlState input, float wishLen, Vector3 lockTarget, float dt) {
+        if (input.rollPressed) {
             if (wishLen > 0.2f) {
                 if (stats.spendStamina(Config.ROLL_STAMINA)) {
                     lockedDir.set(wish);
@@ -148,13 +260,30 @@ public class Player {
             }
         }
 
-        boolean sprinting = input.sprintHeld && wishLen > 0.1f && stats.stamina > 0f;
+        boolean sprinting = input.sprintHeld && wishLen > 0.1f && stats.stamina > 0f && !guarding;
+
+        if (input.attackLightPressed || input.attackHeavyPressed) {
+            AttackDef chosen;
+            boolean heavy = input.attackHeavyPressed;
+            int chain = 0;
+            if (rollAttackWindow > 0f) {
+                chosen = weapon.moveset.rolling;
+            } else if (sprinting) {
+                chosen = weapon.moveset.running;
+            } else {
+                chosen = heavy ? weapon.moveset.heavy(0) : weapon.moveset.light(0);
+            }
+            if (startAttack(chosen, heavy, chain, lockTarget)) return;
+        }
+
         if (sprinting) {
             stats.drainStamina(Config.SPRINT_STAMINA_PER_SEC * dt);
             if (stats.stamina <= 0f) sprinting = false;
         }
 
-        float speed = sprinting ? Config.RUN_SPEED : Config.WALK_SPEED * MathUtils.clamp(wishLen / 0.9f, 0f, 1f);
+        float speed = sprinting ? Config.RUN_SPEED
+                : Config.WALK_SPEED * MathUtils.clamp(wishLen / 0.9f, 0f, 1f);
+        if (guarding) speed *= 0.55f;
         if (wishLen <= 0.05f) speed = 0f;
 
         // Accelerate rather than snap, so direction changes have weight.
@@ -177,7 +306,80 @@ public class Player {
         }
     }
 
-    private void updateRoll(float dt) {
+    /** @return true if the attack started. */
+    private boolean startAttack(AttackDef attack, boolean heavy, int chain, Vector3 lockTarget) {
+        // Attacks go through even on low stamina; you just pay for it afterwards.
+        if (stats.stamina <= 0f) return false;
+        stats.drainStamina(attack.staminaCost);
+        if (lockTarget != null) {
+            tmp.set(lockTarget).sub(body.position);
+            targetFacing = facing = headingOf(tmp);
+        }
+        attacks.begin(attack, heavy, chain);
+        bufferedAttack = 0;
+        setState(State.ATTACKING);
+        return true;
+    }
+
+    private void updateAttacking(ControlState input, Vector3 lockTarget, float dt) {
+        AttackDef attack = attacks.current();
+        if (attack == null) {
+            setState(State.GROUNDED);
+            return;
+        }
+
+        // Rolling out of recovery is the escape hatch, and it costs stamina.
+        if (input.rollPressed && attacks.phase() == AttackRunner.Phase.RECOVERY
+                && stats.spendStamina(Config.ROLL_STAMINA)) {
+            attacks.cancel();
+            lockedDir.set(wish.len2() > 0.04f ? wish
+                    : tmp.set(MathUtils.sinDeg(facing), 0f, MathUtils.cosDeg(facing)));
+            targetFacing = facing = headingOf(lockedDir);
+            setState(State.ROLLING);
+            return;
+        }
+
+        if (input.attackLightPressed) bufferedAttack = 1;
+        else if (input.attackHeavyPressed) bufferedAttack = 2;
+
+        // Slow tracking during the windup only: you can adjust your aim, not
+        // steer a swing that has already left.
+        if (lockTarget != null && attacks.phase() == AttackRunner.Phase.WINDUP) {
+            tmp.set(lockTarget).sub(body.position);
+            targetFacing = headingOf(tmp);
+            facing = approachAngle(facing, targetFacing, 260f * dt);
+        }
+
+        float speed = attacks.stepSpeed();
+        body.velocity.x = MathUtils.sinDeg(facing) * speed;
+        body.velocity.z = MathUtils.cosDeg(facing) * speed;
+
+        if (attacks.resolveHits(this, weapon, targets) > 0) dealtHit = true;
+
+        boolean finished = attacks.update(dt);
+
+        if (!finished && bufferedAttack != 0 && attacks.canChain()) {
+            boolean heavy = bufferedAttack == 2;
+            int next = attacks.getChainIndex() + 1;
+            AttackDef follow = heavy ? weapon.moveset.heavy(next) : weapon.moveset.light(next);
+            if (stats.stamina > 0f) {
+                stats.drainStamina(follow.staminaCost);
+                attacks.begin(follow, heavy, next);
+                stateTime = 0f;
+            }
+            bufferedAttack = 0;
+        } else if (finished) {
+            setState(State.GROUNDED);
+        }
+    }
+
+    private void updateStaggered(float dt) {
+        body.velocity.x *= 1f - Math.min(1f, 7f * dt);
+        body.velocity.z *= 1f - Math.min(1f, 7f * dt);
+        if (stateTime >= staggerDuration) setState(State.GROUNDED);
+    }
+
+    private void updateRoll(ControlState input, float dt) {
         float t = stateTime / Config.ROLL_DURATION;
         invulnerable = t >= Config.ROLL_IFRAME_START && t <= Config.ROLL_IFRAME_END;
 
@@ -188,6 +390,7 @@ public class Player {
 
         if (t >= 1f) {
             invulnerable = false;
+            rollAttackWindow = 0.28f;
             setState(State.GROUNDED);
         }
     }
@@ -203,9 +406,58 @@ public class Player {
     private void updateAirborne(float wishLen, float dt) {
         // Very little air control, by design.
         if (wishLen > 0.05f) {
-            body.velocity.x = MathUtils.lerp(body.velocity.x, wish.x * Config.WALK_SPEED, Math.min(1f, 1.6f * dt));
-            body.velocity.z = MathUtils.lerp(body.velocity.z, wish.z * Config.WALK_SPEED, Math.min(1f, 1.6f * dt));
+            body.velocity.x = MathUtils.lerp(body.velocity.x, wish.x * Config.WALK_SPEED,
+                    Math.min(1f, 1.6f * dt));
+            body.velocity.z = MathUtils.lerp(body.velocity.z, wish.z * Config.WALK_SPEED,
+                    Math.min(1f, 1.6f * dt));
             targetFacing = headingOf(wish);
+        }
+    }
+
+    @Override
+    public void applyHit(HitInfo hit) {
+        if (invulnerable()) return;
+        tookHit = true;
+
+        float damage = hit.damage;
+        boolean blocked = blocking()
+                && CombatMath.isFrontal(facing, hit.direction, CombatMath.GUARD_ARC);
+
+        if (blocked) {
+            float cost = CombatMath.guardStamina(weapon, damage);
+            damage = CombatMath.damageThroughGuard(weapon, damage);
+            hit.wasBlocked = true;
+            if (!stats.spendStamina(cost)) {
+                // Guard broken: the rest of the stamina goes and you are opened up.
+                stats.drainStamina(stats.stamina);
+                staggerAngle = CombatMath.angleDifference(facing, headingOf(hit.direction));
+                staggerDuration = CombatMath.GUARD_BREAK_DURATION;
+                hit.staggered = true;
+                setState(State.STAGGERED);
+            }
+        } else {
+            poiseDamage += hit.poise;
+            poiseTimer = CombatMath.POISE_RECOVERY;
+            if (poiseDamage >= poise || hit.critical) {
+                poiseDamage = 0f;
+                staggerAngle = CombatMath.angleDifference(facing, headingOf(hit.direction));
+                staggerDuration = CombatMath.STAGGER_DURATION;
+                hit.staggered = true;
+                attacks.cancel();
+                setState(State.STAGGERED);
+            }
+        }
+
+        stats.damage(CombatMath.afterDefence(damage, 0.10f));
+
+        // Knockback, scaled down when the blow was caught on a guard.
+        float push = blocked ? 1.2f : 3.0f;
+        body.velocity.x += hit.direction.x * push;
+        body.velocity.z += hit.direction.z * push;
+
+        if (stats.isDead()) {
+            attacks.cancel();
+            setState(State.DEAD);
         }
     }
 
@@ -220,8 +472,20 @@ public class Player {
             case AIRBORNE:
                 rig.poseFall(body.velocity.y);
                 break;
+            case ATTACKING:
+                if (attacks.current() != null) {
+                    rig.poseAttack(attacks.current(), attacks.normalisedTime());
+                }
+                break;
+            case STAGGERED:
+                rig.poseStagger(stateTime / staggerDuration, staggerAngle);
+                break;
+            case DEAD:
+                rig.poseDeath(Math.min(stateTime / 0.9f, 1f));
+                break;
             default:
-                rig.poseLocomotion(dt, groundSpeed(), Config.RUN_SPEED, time);
+                if (guarding) rig.poseGuard(dt, groundSpeed(), Config.RUN_SPEED, time);
+                else rig.poseLocomotion(dt, groundSpeed(), Config.RUN_SPEED, time);
                 break;
         }
         rig.place(body.position, facing);

@@ -1,0 +1,144 @@
+{
+  "_comment": [
+    "The sixteen weapons. Each inherits its class moveset from movesets.json.",
+    "  physical    - base damage before scaling",
+    "  scaling     - attribute grades, E through S",
+    "  requirement - below this, scaling is lost and damage is heavily penalised",
+    "  critical    - riposte and backstab multiplier, in percent",
+    "  model       - parameters for the procedurally built weapon mesh; an",
+    "                imported model of the same id is used instead when present",
+    "  guardAbsorb - fraction of damage blocked when guarding with this weapon",
+    "  stability   - fraction of the blocked damage NOT taken as stamina"
+  ],
+
+  "weapons": [
+    {
+      "id": "longsword", "nameAr": "السيف الطويل", "nameEn": "Longsword",
+      "class": "STRAIGHT_SWORD", "weight": 3.0, "physical": 82, "critical": 100,
+      "requirement": { "strength": 10, "dexterity": 10 },
+      "scaling": { "strength": "D", "dexterity": "D" },
+      "guardAbsorb": 0.45, "stability": 0.30,
+      "model": { "kind": "SWORD", "length": 1.05, "width": 0.085, "thickness": 0.020, "guard": 0.30, "blade": "steel", "grip": "leather" }
+    },
+    {
+      "id": "broadsword", "nameAr": "السيف العريض", "nameEn": "Broadsword",
+      "class": "STRAIGHT_SWORD", "weight": 4.0, "physical": 92, "critical": 100,
+      "requirement": { "strength": 13, "dexterity": 10 },
+      "scaling": { "strength": "C", "dexterity": "E" },
+      "guardAbsorb": 0.48, "stability": 0.32,
+      "model": { "kind": "SWORD", "length": 1.02, "width": 0.125, "thickness": 0.024, "guard": 0.34, "blade": "iron", "grip": "leather" }
+    },
+    {
+      "id": "bastard_sword", "nameAr": "سيف اللقيط", "nameEn": "Bastard Sword",
+      "class": "GREATSWORD", "weight": 9.0, "physical": 116, "critical": 100,
+      "requirement": { "strength": 16, "dexterity": 10 },
+      "scaling": { "strength": "C", "dexterity": "D" },
+      "guardAbsorb": 0.55, "stability": 0.38,
+      "model": { "kind": "SWORD", "length": 1.48, "width": 0.115, "thickness": 0.028, "guard": 0.42, "blade": "steel", "grip": "leather" }
+    },
+    {
+      "id": "zweihander", "nameAr": "الزوايهاندر", "nameEn": "Zweihander",
+      "class": "ULTRA_GREATSWORD", "weight": 15.0, "physical": 130, "critical": 100,
+      "requirement": { "strength": 24, "dexterity": 10 },
+      "scaling": { "strength": "C" },
+      "guardAbsorb": 0.58, "stability": 0.40,
+      "model": { "kind": "SWORD", "length": 1.92, "width": 0.135, "thickness": 0.032, "guard": 0.52, "blade": "iron", "grip": "leather" }
+    },
+    {
+      "id": "falchion", "nameAr": "الفالشيون", "nameEn": "Falchion",
+      "class": "CURVED_SWORD", "weight": 2.5, "physical": 76, "critical": 100,
+      "requirement": { "strength": 9, "dexterity": 13 },
+      "scaling": { "strength": "E", "dexterity": "C" },
+      "guardAbsorb": 0.42, "stability": 0.26,
+      "model": { "kind": "CURVED", "length": 1.00, "width": 0.105, "thickness": 0.019, "guard": 0.26, "curve": 0.16, "blade": "steel", "grip": "leather" }
+    },
+    {
+      "id": "uchigatana", "nameAr": "الأوتشيغاتانا", "nameEn": "Uchigatana",
+      "class": "KATANA", "weight": 5.0, "physical": 88, "critical": 100,
+      "requirement": { "strength": 14, "dexterity": 16 },
+      "scaling": { "strength": "D", "dexterity": "B" },
+      "guardAbsorb": 0.40, "stability": 0.24,
+      "model": { "kind": "CURVED", "length": 1.26, "width": 0.070, "thickness": 0.016, "guard": 0.18, "curve": 0.09, "blade": "steel", "grip": "cloth_dark" }
+    },
+    {
+      "id": "dagger", "nameAr": "الخنجر", "nameEn": "Dagger",
+      "class": "DAGGER", "weight": 0.5, "physical": 56, "critical": 130,
+      "requirement": { "strength": 5, "dexterity": 8 },
+      "scaling": { "strength": "E", "dexterity": "C" },
+      "guardAbsorb": 0.28, "stability": 0.18,
+      "model": { "kind": "SWORD", "length": 0.44, "width": 0.055, "thickness": 0.014, "guard": 0.16, "blade": "steel", "grip": "leather" }
+    },
+    {
+      "id": "estoc", "nameAr": "الإستوك", "nameEn": "Estoc",
+      "class": "THRUSTING_SWORD", "weight": 4.5, "physical": 78, "critical": 110,
+      "requirement": { "strength": 10, "dexterity": 12 },
+      "scaling": { "strength": "E", "dexterity": "C" },
+      "guardAbsorb": 0.44, "stability": 0.28,
+      "model": { "kind": "SWORD", "length": 1.32, "width": 0.048, "thickness": 0.026, "guard": 0.30, "blade": "steel", "grip": "leather" }
+    },
+    {
+      "id": "hand_axe", "nameAr": "الفأس اليدوي", "nameEn": "Hand Axe",
+      "class": "AXE", "weight": 3.0, "physical": 87, "critical": 100,
+      "requirement": { "strength": 12, "dexterity": 8 },
+      "scaling": { "strength": "C", "dexterity": "E" },
+      "guardAbsorb": 0.40, "stability": 0.28,
+      "model": { "kind": "AXE", "length": 0.80, "headWidth": 0.26, "headDepth": 0.16, "haft": 0.045, "blade": "iron", "grip": "wood" }
+    },
+    {
+      "id": "greataxe", "nameAr": "الفأس العظيم", "nameEn": "Greataxe",
+      "class": "GREATAXE", "weight": 16.0, "physical": 138, "critical": 100,
+      "requirement": { "strength": 32, "dexterity": 8 },
+      "scaling": { "strength": "B" },
+      "guardAbsorb": 0.52, "stability": 0.36,
+      "model": { "kind": "AXE", "length": 1.62, "headWidth": 0.46, "headDepth": 0.28, "haft": 0.062, "blade": "iron", "grip": "wood" }
+    },
+    {
+      "id": "mace", "nameAr": "الصولجان", "nameEn": "Mace",
+      "class": "HAMMER", "weight": 4.0, "physical": 96, "critical": 100,
+      "requirement": { "strength": 14, "dexterity": 8 },
+      "scaling": { "strength": "C" },
+      "guardAbsorb": 0.42, "stability": 0.30,
+      "model": { "kind": "MACE", "length": 0.86, "headRadius": 0.10, "haft": 0.042, "blade": "iron", "grip": "leather" }
+    },
+    {
+      "id": "great_club", "nameAr": "الهراوة العظيمة", "nameEn": "Great Club",
+      "class": "GREAT_HAMMER", "weight": 17.0, "physical": 146, "critical": 100,
+      "requirement": { "strength": 30, "dexterity": 8 },
+      "scaling": { "strength": "B" },
+      "guardAbsorb": 0.50, "stability": 0.34,
+      "model": { "kind": "MACE", "length": 1.55, "headRadius": 0.20, "haft": 0.075, "blade": "wood", "grip": "leather" }
+    },
+    {
+      "id": "spear", "nameAr": "الرمح", "nameEn": "Spear",
+      "class": "SPEAR", "weight": 4.5, "physical": 80, "critical": 100,
+      "requirement": { "strength": 12, "dexterity": 13 },
+      "scaling": { "strength": "D", "dexterity": "C" },
+      "guardAbsorb": 0.44, "stability": 0.30,
+      "model": { "kind": "SPEAR", "length": 2.35, "headLength": 0.30, "haft": 0.038, "blade": "steel", "grip": "wood" }
+    },
+    {
+      "id": "halberd", "nameAr": "الحربة", "nameEn": "Halberd",
+      "class": "HALBERD", "weight": 11.0, "physical": 108, "critical": 100,
+      "requirement": { "strength": 18, "dexterity": 14 },
+      "scaling": { "strength": "C", "dexterity": "D" },
+      "guardAbsorb": 0.48, "stability": 0.32,
+      "model": { "kind": "HALBERD", "length": 2.20, "headWidth": 0.30, "haft": 0.046, "blade": "iron", "grip": "wood" }
+    },
+    {
+      "id": "short_bow", "nameAr": "القوس القصير", "nameEn": "Short Bow",
+      "class": "BOW", "weight": 2.0, "physical": 62, "critical": 100,
+      "requirement": { "strength": 7, "dexterity": 14 },
+      "scaling": { "dexterity": "B" },
+      "guardAbsorb": 0.15, "stability": 0.10,
+      "model": { "kind": "BOW", "length": 1.30, "thickness": 0.028, "blade": "wood", "grip": "leather" }
+    },
+    {
+      "id": "sorcerer_staff", "nameAr": "عصا الساحر", "nameEn": "Sorcerer's Staff",
+      "class": "CATALYST", "weight": 2.0, "physical": 40, "critical": 100,
+      "requirement": { "strength": 7, "intelligence": 12 },
+      "scaling": { "intelligence": "B" },
+      "guardAbsorb": 0.20, "stability": 0.12,
+      "model": { "kind": "STAFF", "length": 1.20, "headRadius": 0.075, "haft": 0.034, "blade": "gold", "grip": "wood" }
+    }
+  ]
+}

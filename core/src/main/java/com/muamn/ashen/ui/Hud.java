@@ -125,6 +125,48 @@ public class Hud implements Disposable {
         batch.end();
     }
 
+    /** A boss-style bar across the bottom for the locked-on target. */
+    public void enemyBar(String name, float fraction) {
+        int screenW = Gdx.graphics.getWidth();
+        int screenH = Gdx.graphics.getHeight();
+        float scale = MathUtils.clamp(screenW / 960f, 0.75f, 2.2f);
+        float w = MathUtils.clamp(screenW * 0.42f, 240f, 620f);
+        float h = 11f * scale;
+        float x = (screenW - w) * 0.5f;
+        float y = screenH * 0.13f;
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0f, 0f, 0f, 0.78f);
+        shapes.rect(x - BORDER, y - BORDER, w + BORDER * 2f, h + BORDER * 2f);
+        shapes.setColor(0.12f, 0.03f, 0.03f, 0.95f);
+        shapes.rect(x, y, w, h);
+        shapes.setColor(0.66f, 0.16f, 0.12f, 1f);
+        shapes.rect(x, y, w * MathUtils.clamp(fraction, 0f, 1f), h);
+        shapes.end();
+
+        batch.begin();
+        font.getData().setScale(Math.max(1f, scale * 0.85f));
+        font.draw(batch, name, x, y + h + 20f * scale);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
+    /** Short-lived message above the bars: pickups, weapon swaps, soul gains. */
+    public void toast(String text, float alpha) {
+        if (text == null || text.isEmpty()) return;
+        int screenW = Gdx.graphics.getWidth();
+        float scale = MathUtils.clamp(screenW / 960f, 0.75f, 2.0f);
+        batch.begin();
+        font.getData().setScale(Math.max(1f, scale));
+        font.setColor(0.90f, 0.86f, 0.72f, MathUtils.clamp(alpha, 0f, 1f));
+        font.draw(batch, text, 26f * scale, Gdx.graphics.getHeight() * 0.72f);
+        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
     /** Full-screen tint, used for the death fade. */
     public void overlay(float r, float g, float b, float alpha) {
         if (alpha <= 0f) return;

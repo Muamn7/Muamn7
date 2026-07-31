@@ -4,6 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 
+import com.muamn.ashen.combat.WeaponLibrary;
 import com.muamn.ashen.screens.GameScreen;
 import com.muamn.ashen.world.TextureFactory;
 
@@ -18,6 +19,8 @@ public class AshenGame extends Game {
 
     /** Procedural texture cache, shared by every level and character. */
     public TextureFactory textures;
+    /** Weapons and their frame data, loaded from JSON. */
+    public WeaponLibrary weapons;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -56,6 +59,8 @@ public class AshenGame extends Game {
                 + " gl=" + Gdx.gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_VERSION));
 
         textures = new TextureFactory();
+        weapons = new WeaponLibrary();
+        weapons.load();
         if (viewModel != null && !viewModel.isEmpty()) {
             setScreen(new com.muamn.ashen.screens.ModelViewerScreen(this, viewModel));
         } else {

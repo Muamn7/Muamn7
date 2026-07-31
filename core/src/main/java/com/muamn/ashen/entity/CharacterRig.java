@@ -7,6 +7,8 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 
+import com.muamn.ashen.combat.AttackDef;
+
 /**
  * Drives a {@link HumanoidFactory} skeleton with hand-written poses.
  *
@@ -160,6 +162,139 @@ public class CharacterRig {
         setRot(shoulderR, -18f * arc, 0f, 12f);
         setRot(elbowL, -46f * arc, 0f, 0f);
         setRot(elbowR, -34f * arc, 0f, 0f);
+        instance.calculateTransforms();
+    }
+
+    /**
+     * Swinging a weapon. {@code t} is 0..1 across the whole attack, and the
+     * windup/active split tells the pose where the commitment point is.
+     *
+     * Poses are built around the weapon arm so the blade's path matches the
+     * hitbox the combat code sweeps - if the animation lags the hitbox, hits
+     * land visibly early and the game feels broken even when it is correct.
+     */
+    public void poseAttack(AttackDef attack, float t) {
+        clear();
+        float duration = Math.max(attack.duration(), 1e-4f);
+        float windupEnd = attack.windup / duration;
+        float activeEnd = attack.activeEnd() / duration;
+
+        float wind;      // 0 at rest, 1 fully wound up
+        float release;   // 0 before the swing, 1 at full follow-through
+        if (t < windupEnd) {
+            wind = windupEnd <= 0f ? 1f : t / windupEnd;
+            wind = wind * wind * (3f - 2f * wind);   // smoothstep
+            release = 0f;
+        } else {
+            wind = 1f;
+            float span = Math.max(activeEnd - windupEnd, 1e-4f);
+            release = MathUtils.clamp((t - windupEnd) / span, 0f, 1f);
+            // Overshoot then settle, so the follow-through has weight.
+            if (t > activeEnd) {
+                float settle = MathUtils.clamp((t - activeEnd) / Math.max(1f - activeEnd, 1e-4f),
+                        0f, 1f);
+                release = 1f - settle * 0.75f;
+                wind = 1f - settle;
+            }
+        }
+
+        switch (attack.motion) {
+            case THRUST: {
+                float extend = release;
+                setRot(torso, hunch - 6f * wind + 4f * extend, 18f * wind - 26f * extend, 0f);
+                setRot(shoulderR, -34f * wind - 42f * extend, 0f, 8f);
+                setRot(elbowR, -96f * wind + 88f * extend, 0f, 0f);
+                setRot(shoulderL, -12f * wind, 0f, -14f);
+                setRot(elbowL, -40f - 20f * wind, 0f, 0f);
+                setRot(hipL, 16f * extend, 0f, 0f);
+                setRot(hipR, -20f * extend, 0f, 0f);
+                setRot(kneeL, -22f - 18f * extend, 0f, 0f);
+                setRot(kneeR, -12f, 0f, 0f);
+                hips.translation.y = restHipY - 0.05f * extend;
+                break;
+            }
+            case SWING_V: {
+                float raise = wind;
+                float chop = release;
+                setRot(torso, hunch - 26f * raise + 46f * chop, 10f * raise - 12f * chop, 0f);
+                setRot(shoulderR, -150f * raise + 190f * chop, 0f, 10f);
+                setRot(elbowR, -20f - 40f * raise + 30f * chop, 0f, 0f);
+                setRot(shoulderL, -120f * raise + 150f * chop, 0f, -10f);
+                setRot(elbowL, -30f - 30f * raise, 0f, 0f);
+                setRot(hipL, 10f * chop, 0f, 0f);
+                setRot(hipR, -14f * chop, 0f, 0f);
+                setRot(kneeL, -18f - 26f * chop, 0f, 0f);
+                setRot(kneeR, -14f - 10f * chop, 0f, 0f);
+                hips.translation.y = restHipY + 0.06f * raise - 0.14f * chop;
+                head.rotation.setEulerAngles(0f, 14f * chop, 0f);
+                break;
+            }
+            default: {   // SWING_H
+                float coil = wind;
+                float sweep = release;
+                // Wind across the body, then rotate the whole torso through the swing.
+                setRot(torso, hunch + 6f * coil, 62f * coil - 108f * sweep, 0f);
+                setRot(shoulderR, -70f * coil + 30f * sweep, -20f * coil + 40f * sweep, 18f);
+                setRot(elbowR, -70f * coil + 52f * sweep, 0f, 0f);
+                setRot(shoulderL, 26f * coil - 34f * sweep, 0f, -16f);
+                setRot(elbowL, -34f - 26f * coil, 0f, 0f);
+                setRot(hipL, -12f * coil + 18f * sweep, 0f, 0f);
+                setRot(hipR, 12f * coil - 16f * sweep, 0f, 0f);
+                setRot(kneeL, -14f - 16f * sweep, 0f, 0f);
+                setRot(kneeR, -14f - 10f * coil, 0f, 0f);
+                hips.translation.y = restHipY - 0.05f * sweep;
+                break;
+            }
+        }
+
+        instance.calculateTransforms();
+    }
+
+    /** Reeling from a hit taken from {@code relativeAngle} degrees off the front. */
+    public void poseStagger(float t, float relativeAngle) {
+        clear();
+        float arc = MathUtils.sin(MathUtils.clamp(t, 0f, 1f) * MathUtils.PI);
+        float side = MathUtils.clamp(relativeAngle / 90f, -1f, 1f);
+        setRot(torso, hunch - 30f * arc, 22f * side * arc, 0f);
+        setRot(head, 18f * arc, -12f * side * arc, 0f);
+        setRot(shoulderL, -40f * arc, 0f, -26f - 14f * arc);
+        setRot(shoulderR, -34f * arc, 0f, 22f + 12f * arc);
+        setRot(elbowL, -58f - 24f * arc, 0f, 0f);
+        setRot(elbowR, -50f - 20f * arc, 0f, 0f);
+        setRot(hipL, -16f * arc, 0f, 0f);
+        setRot(hipR, 12f * arc, 0f, 0f);
+        setRot(kneeL, -26f - 14f * arc, 0f, 0f);
+        setRot(kneeR, -18f - 10f * arc, 0f, 0f);
+        hips.translation.y = restHipY - 0.08f * arc;
+        instance.calculateTransforms();
+    }
+
+    /** Holding guard: weapon up, body turned side-on. */
+    public void poseGuard(float dt, float speed, float runSpeed, float time) {
+        poseLocomotion(dt, speed, runSpeed, time);
+        setRot(torso, hunch + 4f, 34f, 0f);
+        setRot(shoulderL, -74f, 0f, -30f);
+        setRot(elbowL, -78f, 0f, 0f);
+        setRot(shoulderR, -30f, 0f, 14f);
+        setRot(elbowR, -62f, 0f, 0f);
+        instance.calculateTransforms();
+    }
+
+    /** Collapsing. {@code t} runs 0..1 and stays at 1. */
+    public void poseDeath(float t) {
+        clear();
+        float fall = MathUtils.clamp(t, 0f, 1f);
+        float ease = fall * fall;
+        setRot(hips, -82f * ease, 0f, 0f);
+        hips.translation.y = restHipY * (1f - 0.72f * ease);
+        setRot(torso, hunch + 24f * ease, 0f, 12f * ease);
+        setRot(head, 26f * ease, 0f, 0f);
+        setRot(shoulderL, -30f * ease, 0f, -40f * ease);
+        setRot(shoulderR, -24f * ease, 0f, 34f * ease);
+        setRot(hipL, 44f * ease, 0f, 0f);
+        setRot(hipR, 30f * ease, 0f, 0f);
+        setRot(kneeL, -70f * ease, 0f, 0f);
+        setRot(kneeR, -50f * ease, 0f, 0f);
         instance.calculateTransforms();
     }
 
