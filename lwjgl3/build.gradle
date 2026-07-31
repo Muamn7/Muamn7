@@ -1,0 +1,40 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+application {
+    mainClass = 'com.muamn.ashen.desktop.DesktopLauncher'
+}
+
+// Assets live at the repo root so every platform shares one copy.
+sourceSets.main.resources.srcDirs = ["$rootDir/assets"]
+
+dependencies {
+    implementation project(':core')
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+}
+
+run {
+    workingDir = rootProject.file('assets')
+    // LWJGL3 on macOS must own the first thread.
+    if (org.gradle.internal.os.OperatingSystem.current() == org.gradle.internal.os.OperatingSystem.MAC_OS) {
+        jvmArgs += "-XstartOnFirstThread"
+    }
+    // Forward -Dashen.* switches (headless smoke test, screenshots) to the game.
+    systemProperties System.getProperties().findAll { k, v -> k.toString().startsWith('ashen.') }
+}
+
+tasks.register('dist', Jar) {
+    dependsOn configurations.runtimeClasspath
+    manifest { attributes 'Main-Class': application.mainClass }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+    archiveBaseName = 'ashen-desktop'
+    archiveClassifier = ''
+}

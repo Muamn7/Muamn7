@@ -1,0 +1,17 @@
+.gradle/
+build/
+*/build/
+out/
+bin/
+local.properties
+.idea/
+*.iml
+.DS_Store
+*.log
+*.hprof
+captures/
+android/libs/
+!gradle/wrapper/gradle-wrapper.jar
+*.keystore
+!debug.keystore
+screenshots/

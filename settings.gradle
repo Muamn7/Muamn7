@@ -1,0 +1,34 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        mavenCentral()
+        google()
+        maven { url = uri("https://oss.sonatype.org/content/repositories/snapshots/") }
+    }
+}
+
+rootProject.name = 'ashen'
+
+include ':core'
+include ':lwjgl3'
+
+// The :android module needs the Android SDK plus the Google Maven repo. Both are
+// unreachable in some sandboxes, and an unconditional include makes even
+// `:lwjgl3:run` fail at configuration time. Include it only when an SDK is
+// actually reachable, so desktop work never depends on it.
+def hasSdk = System.getenv('ANDROID_HOME') || System.getenv('ANDROID_SDK_ROOT') ||
+        file('local.properties').exists()
+if (hasSdk) {
+    include ':android'
+} else {
+    logger.lifecycle('[ashen] Android SDK not found - skipping :android module. ' +
+            'Set ANDROID_HOME or create local.properties with sdk.dir to build the APK.')
+}

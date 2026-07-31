@@ -1,0 +1,25 @@
+apply plugin: 'java-library'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+sourceSets.main.resources.srcDirs = ["$rootDir/assets"]
+
+dependencies {
+    api "com.badlogicgames.gdx:gdx:$gdxVersion"
+
+    // The simulation code (collision, stats, movement) is pure Java maths, so it
+    // is testable without a GL context or the gdx natives.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

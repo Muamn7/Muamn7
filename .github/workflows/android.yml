@@ -1,0 +1,113 @@
+name: Build APK
+
+# The development sandbox cannot reach dl.google.com, so the Android SDK is
+# unavailable there and the APK is built here instead. Every push produces a
+# downloadable, installable debug APK under the run's Artifacts section.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests
+        run: ./gradlew :core:test --no-daemon
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: core/build/reports/tests/test
+          if-no-files-found: ignore
+
+  apk:
+    name: Debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # settings.gradle only includes the :android module when an SDK is present.
+      - name: Point the build at the SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Assemble debug APK
+        run: ./gradlew :android:assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ashen-debug-apk
+          path: android/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  smoke:
+    name: Headless smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install a software GL stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libopenal1
+
+      # Runs the real game on llvmpipe with scripted input, so a crash in the
+      # renderer, the level build or the movement code fails the build.
+      - name: Run the game for 20 seconds
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            ./gradlew :lwjgl3:run --no-daemon \
+              -Dashen.exitAfter=20 \
+              -Dashen.autopilot=true \
+              -Dashen.debug=true \
+              -Dashen.screenshotAt=15 \
+              -Dashen.screenshot=$PWD/screenshots/ci.png
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshot
+          path: screenshots/ci.png
+          if-no-files-found: warn

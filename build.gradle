@@ -1,0 +1,24 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+    dependencies {
+        if (System.getenv('ANDROID_HOME') || System.getenv('ANDROID_SDK_ROOT') ||
+                file('local.properties').exists()) {
+            classpath "com.android.tools.build:gradle:$androidPluginVersion"
+        }
+    }
+}
+
+// Repositories are declared once, in settings.gradle
+// (dependencyResolutionManagement). Do not add them per-project.
+
+allprojects {
+    apply plugin: 'eclipse'
+    apply plugin: 'idea'
+
+    version = project.property('gameVersion')
+    ext.appName = 'Ashen'
+}
