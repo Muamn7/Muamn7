@@ -236,79 +236,101 @@ public final class ArabicShaper {
     // ---- step two: direction ----------------------------------------------
 
     /**
-     * Reverses the whole string, then un-reverses the runs that are not Arabic.
+     * Reorders a right-to-left string for a renderer that only draws forwards.
      *
-     * A number inside an Arabic sentence still reads left to right - "5 souls"
-     * written backwards as "5" is fine but "125" as "521" is a different number,
-     * and that is the kind of bug that survives review because nobody reads the
-     * digits.
+     * A number inside an Arabic sentence still reads left to right - "125"
+     * reversed to "521" is a different number, and that is the kind of bug that
+     * survives review because nobody reads the digits.
+     *
+     * The subtlety is punctuation. A colon or a bracket has no direction of its
+     * own; it belongs to whatever sits either side of it. So the runs are worked
+     * out in logical order, before anything moves: a neutral joins a
+     * left-to-right run only when it is enclosed by strong left-to-right
+     * characters on both sides. Deciding this after reversing - which is what an
+     * earlier version did - orphans the punctuation at the run's edges, and
+     * "الأرواح: 0" comes out with the colon on the wrong side of the count.
      */
     static String reverseArabicRuns(String shaped) {
-        char[] chars = shaped.toCharArray();
-        // Reverse everything.
-        for (int a = 0, b = chars.length - 1; a < b; a++, b--) {
-            char t = chars[a];
-            chars[a] = chars[b];
-            chars[b] = t;
+        int n = shaped.length();
+        boolean[] ltr = new boolean[n];
+        for (int i = 0; i < n; i++) ltr[i] = isStrongLtr(shaped.charAt(i));
+
+        // A neutral belongs to a left-to-right run only if one surrounds it.
+        for (int i = 0; i < n; i++) {
+            if (ltr[i] || !isNeutral(shaped.charAt(i))) continue;
+            int j = i;
+            while (j < n && isNeutral(shaped.charAt(j)) && !ltr[j]) j++;
+            // At the edges of the string a neutral run has only one neighbour,
+            // so it takes that one's direction. That is what keeps the closing
+            // bracket of a trailing "(0)" with the number rather than stranding
+            // it, mirrored, at the far end of the row.
+            boolean strongBefore = i > 0 ? ltr[i - 1] : (j < n && ltr[j]);
+            boolean strongAfter = j < n ? ltr[j] : (i > 0 && ltr[i - 1]);
+            if (strongBefore && strongAfter) {
+                for (int k = i; k < j; k++) ltr[k] = true;
+            }
+            i = j - 1;
         }
-        // Then put each left-to-right run back the way round it was.
-        int i = 0;
-        while (i < chars.length) {
-            if (!isLeftToRight(chars[i])) {
-                i++;
+
+        // Walk backwards, emitting each left-to-right run forwards.
+        StringBuilder out = new StringBuilder(n);
+        int i = n - 1;
+        while (i >= 0) {
+            if (!ltr[i]) {
+                // Brackets in right-to-left context point the other way.
+                out.append(mirrorOf(shaped.charAt(i)));
+                i--;
                 continue;
             }
             int start = i;
-            while (i < chars.length && isLeftToRight(chars[i])) i++;
-            // The spaces on either side belong to the Arabic around the run, not
-            // to the run. Dragging them inside moves the gap to the wrong side of
-            // the number when the run is reversed back.
-            int end = i - 1;
-            while (end > start && chars[end] == ' ') end--;
-            while (start < end && chars[start] == ' ') start++;
-            for (int a = start, b = end; a < b; a++, b--) {
-                char t = chars[a];
-                chars[a] = chars[b];
-                chars[b] = t;
-            }
+            while (start > 0 && ltr[start - 1]) start--;
+            out.append(shaped, start, i + 1);
+            i = start - 1;
         }
-        return new String(chars);
+        return out.toString();
     }
 
-    /**
-     * True for characters that keep their own order inside an Arabic sentence:
-     * digits, Latin letters, and the spaces and punctuation between them.
-     */
-    private static boolean isLeftToRight(char c) {
+    /** Digits and Latin letters, which carry a direction of their own. */
+    private static boolean isStrongLtr(char c) {
         if (c >= '0' && c <= '9') return true;
         if (c >= 'A' && c <= 'Z') return true;
         if (c >= 'a' && c <= 'z') return true;
-        if (c >= 'À' && c <= 'ɏ') return true;   // accented Latin
-        return c == '.' || c == ',' || c == ':' || c == '+' || c == '-'
-                || c == '/' || c == '%' || c == '\'' || c == ' ';
+        return c >= '\u00C0' && c <= '\u024F';   // accented Latin
+    }
+
+    /** Punctuation and spaces, which take their direction from their neighbours. */
+    private static boolean isNeutral(char c) {
+        return c == ' ' || c == '.' || c == ',' || c == ':' || c == ';'
+                || c == '+' || c == '-' || c == '/' || c == '%' || c == '\''
+                || c == '(' || c == ')' || c == '[' || c == ']' || c == '#'
+                || c == '!' || c == '?' || c == '"';
     }
 
     /**
-     * Mirrors the brackets in a right-to-left string.
+     * The mirror of a bracket, for one sitting in right-to-left context.
      *
-     * After reversing, an opening bracket has ended up where a closing one
-     * belongs. Nothing else in the punctuation set is directional.
+     * Reordering moves an opening bracket to where a closing one belongs, so it
+     * has to change shape as well as position. Nothing else in the punctuation
+     * set is directional.
      */
+    static char mirrorOf(char c) {
+        switch (c) {
+            case '(': return ')';
+            case ')': return '(';
+            case '[': return ']';
+            case ']': return '[';
+            case '{': return '}';
+            case '}': return '{';
+            case '<': return '>';
+            case '>': return '<';
+            default:  return c;
+        }
+    }
+
+    /** Mirrors every bracket in a string. Exposed for tests. */
     public static String mirrorBrackets(String text) {
         char[] chars = text.toCharArray();
-        for (int i = 0; i < chars.length; i++) {
-            switch (chars[i]) {
-                case '(': chars[i] = ')'; break;
-                case ')': chars[i] = '('; break;
-                case '[': chars[i] = ']'; break;
-                case ']': chars[i] = '['; break;
-                case '{': chars[i] = '}'; break;
-                case '}': chars[i] = '{'; break;
-                case '<': chars[i] = '>'; break;
-                case '>': chars[i] = '<'; break;
-                default: break;
-            }
-        }
+        for (int i = 0; i < chars.length; i++) chars[i] = mirrorOf(chars[i]);
         return new String(chars);
     }
 }

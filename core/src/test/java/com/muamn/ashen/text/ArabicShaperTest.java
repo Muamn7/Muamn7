@@ -151,6 +151,35 @@ class ArabicShaperTest {
         assertEquals("ب 12 ب", out);
     }
 
+    /**
+     * The one that was actually wrong on screen: "الأرواح: 0" came out with the
+     * colon on the far side of the count, because a colon was being treated as
+     * strongly left-to-right and swept into the number's run.
+     */
+    @Test
+    void punctuationBetweenArabicAndANumberStaysWithTheArabic() {
+        // Reversed for display, the count comes first and the colon stays put
+        // against the word it belongs to.
+        assertEquals("0 :بب", ArabicShaper.reverseArabicRuns("بب: 0"));
+    }
+
+    @Test
+    void punctuationInsideANumericRunIsCarriedWithIt() {
+        // Brackets enclosed by digits belong to the run and must not be split off.
+        assertEquals("120   (0)بب", ArabicShaper.reverseArabicRuns("بب120   (0)"));
+    }
+
+    @Test
+    void aDashBetweenTwoArabicRunsStaysWhereItIs() {
+        assertEquals("جج - بب", ArabicShaper.reverseArabicRuns("بب - جج"));
+    }
+
+    @Test
+    void decimalsAndTimesSurviveIntact() {
+        assertEquals("12.5بب", ArabicShaper.reverseArabicRuns("بب12.5"));
+        assertEquals("3/4بب", ArabicShaper.reverseArabicRuns("بب3/4"));
+    }
+
     // ---- the whole pipeline ------------------------------------------------
 
     @Test

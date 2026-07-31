@@ -3,7 +3,6 @@ package com.muamn.ashen.ui;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
@@ -17,14 +16,18 @@ import com.muamn.ashen.audio.Audio;
 import com.muamn.ashen.audio.SoundBank;
 import com.muamn.ashen.item.ItemDef;
 import com.muamn.ashen.item.ItemLibrary;
+import com.muamn.ashen.text.Strings;
+import com.muamn.ashen.text.Text;
 
 /**
  * The menu you get for resting at a bonfire: rest, level up, reinforce.
  *
  * Rows are laid out once and their rectangles kept, so a tap maps to a row with
- * the same arithmetic that drew it - no second layout to keep in sync. Labels
- * are English because the built-in bitmap font has no Arabic glyphs; the font
- * and the RTL layout are Part 4's job.
+ * the same arithmetic that drew it - no second layout to keep in sync.
+ *
+ * Labels are keys rather than words, and each row is drawn from the side the
+ * current language starts on, so an Arabic menu reads from the right edge in
+ * rather than merely being Arabic words in an English layout.
  */
 public class BonfireMenu implements Disposable {
 
@@ -35,19 +38,21 @@ public class BonfireMenu implements Disposable {
         void rest();
     }
 
+    /** Keys, not words: the labels are looked up in whichever language is on. */
     private static final String[] ROOT_ITEMS = {
-            "Rest", "Level Up", "Reinforce Weapon", "Items", "Leave"
+            Strings.REST, Strings.LEVEL_UP, Strings.REINFORCE, Strings.ITEMS, Strings.LEAVE
     };
     private static final String[] ATTRIBUTES = {
-            "Vigor", "Endurance", "Strength", "Dexterity", "Intelligence", "Faith"
+            Strings.VIGOR, Strings.ENDURANCE, Strings.STRENGTH,
+            Strings.DEXTERITY, Strings.INTELLIGENCE, Strings.FAITH
     };
 
     private final ItemLibrary items;
     private final Audio audio;
+    private final Text text;
 
     private final ShapeRenderer shapes = new ShapeRenderer();
     private final SpriteBatch batch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont();
 
     private boolean open;
     private Page page = Page.ROOT;
@@ -62,9 +67,10 @@ public class BonfireMenu implements Disposable {
     private boolean prevTouched;
     private float inputCooldown;
 
-    public BonfireMenu(ItemLibrary items, Audio audio) {
+    public BonfireMenu(ItemLibrary items, Audio audio, Text text) {
         this.items = items;
         this.audio = audio;
+        this.text = text;
     }
 
     public boolean isOpen() {
@@ -171,7 +177,7 @@ public class BonfireMenu implements Disposable {
         long cost = Stats.soulsToLevel(stats.level);
         if (stats.souls < cost) {
             cue(SoundBank.MENU_DENY, 1f);
-            toast("Not enough souls");
+            toast(Strings.get(Strings.NOT_ENOUGH_SOULS));
             return;
         }
         stats.souls -= cost;
@@ -196,34 +202,35 @@ public class BonfireMenu implements Disposable {
                 healthBefore + (stats.maxHealth - maxHealthBefore));
         stats.stamina = Math.min(stats.maxStamina,
                 staminaBefore + (stats.maxStamina - maxStaminaBefore));
-        toast("Level " + stats.level);
+        toast(Strings.get(Strings.LEVEL) + " " + stats.level);
     }
 
     private void reinforce(Player player, WeaponDef weapon) {
         Stats stats = player.stats;
         if (weapon.upgrade >= 10) {
             cue(SoundBank.MENU_DENY, 1f);
-            toast("Already at +10");
+            toast(Strings.get(Strings.FULLY_REINFORCED));
             return;
         }
         String material = reinforceMaterial(weapon.upgrade + 1);
         int need = reinforceMaterialCount(weapon.upgrade + 1);
         if (!player.inventory.has(material, need)) {
             cue(SoundBank.MENU_DENY, 1f);
-            toast("Need " + need + "x " + materialLabel(material));
+            toast(Strings.get(Strings.NEED_MATERIAL) + " " + need
+                    + "x " + materialLabel(material));
             return;
         }
         long cost = reinforceCost(weapon);
         if (stats.souls < cost) {
             cue(SoundBank.MENU_DENY, 1f);
-            toast("Not enough souls");
+            toast(Strings.get(Strings.NOT_ENOUGH_SOULS));
             return;
         }
         player.inventory.remove(material, need);
         stats.souls -= cost;
         weapon.upgrade++;
         cue(SoundBank.REINFORCE, 1f);
-        toast(weapon.nameEn + " +" + weapon.upgrade);
+        toast(weaponName(weapon) + " +" + weapon.upgrade);
     }
 
     /** Reinforcement gets steeply more expensive, as it should. */
@@ -257,11 +264,24 @@ public class BonfireMenu implements Disposable {
     /** Short label for the toast, so the message fits on a phone. */
     private static String materialLabel(String materialId) {
         switch (materialId) {
-            case "ember_shard": return "Shard";
-            case "ember_lump":  return "Lump";
-            case "ember_core":  return "Core";
-            default:            return "Heart";
+            case "ember_shard": return Strings.get(Strings.SHARD);
+            case "ember_lump":  return Strings.get(Strings.LUMP);
+            case "ember_core":  return Strings.get(Strings.CORE);
+            default:            return Strings.get(Strings.HEART);
         }
+    }
+
+    /** Content names come from the data files, which carry both languages. */
+    private static String name(ItemDef def) {
+        return Strings.rtl() ? def.nameAr : def.nameEn;
+    }
+
+    private static String description(ItemDef def) {
+        return Strings.rtl() ? def.descAr : def.descEn;
+    }
+
+    private static String weaponName(WeaponDef weapon) {
+        return Strings.rtl() ? weapon.nameAr : weapon.nameEn;
     }
 
     /**
@@ -276,9 +296,9 @@ public class BonfireMenu implements Disposable {
         if (def.consumable()) {
             player.quickItem = def.id;
             cue(SoundBank.PICKUP, 0.7f);
-            toast(def.nameEn + " ready");
+            toast(name(def) + " " + Strings.get(Strings.READY));
         } else {
-            toast(def.descEn);
+            toast(description(def));
         }
     }
 
@@ -361,64 +381,85 @@ public class BonfireMenu implements Disposable {
         shapes.rect(rowX - 22f * scale, panelY, rowW + 44f * scale, panelH);
         shapes.end();
 
-        batch.begin();
-        font.getData().setScale(scale);
-        font.setColor(0.92f, 0.86f, 0.68f, 1f);
-        font.draw(batch, title(player, weapon), rowX, panelY + panelH - 22f * scale);
+        float inset = 14f * scale;
+        float left = rowX + inset;
+        float right = rowX + rowW - inset;
 
-        font.setColor(0.88f, 0.84f, 0.76f, 1f);
+        batch.begin();
+        text.setScale(fontScale(scale));
+        text.setColor(0.92f, 0.86f, 0.68f, 1f);
+        text.drawLeading(batch, title(player, weapon), rowX, rowX + rowW,
+                panelY + panelH - 22f * scale);
+
+        text.setColor(0.88f, 0.84f, 0.76f, 1f);
         for (int i = 0; i < rowCount; i++) {
             float y = firstRowY - i * rowH - 8f * scale;
-            font.draw(batch, label(i, player, weapon), rowX + 14f * scale, y);
-            String right = rightLabel(i, player, weapon);
-            if (right != null) {
-                font.draw(batch, right, rowX + rowW - 14f * scale - right.length() * 9f * scale, y);
-            }
+            // The label sits where the language starts and the value where it
+            // ends, so the two columns swap sides with the language.
+            text.drawLeading(batch, label(i, player, weapon), left, right, y);
+            String value = rightLabel(i, player, weapon);
+            if (value != null) text.drawTrailing(batch, value, left, right, y);
         }
 
-        font.setColor(0.75f, 0.70f, 0.58f, 1f);
-        String souls = "Souls: " + player.stats.souls;
-        font.draw(batch, souls, rowX, panelY + 30f * scale);
+        text.setColor(0.75f, 0.70f, 0.58f, 1f);
+        text.drawLeading(batch, Strings.get(Strings.SOULS) + ": " + player.stats.souls,
+                rowX, rowX + rowW, panelY + 30f * scale);
         if (messageTimer > 0f) {
-            font.setColor(0.92f, 0.72f, 0.34f, MathUtils.clamp(messageTimer, 0f, 1f));
-            font.draw(batch, message, rowX + rowW - 14f * scale - message.length() * 9f * scale,
-                    panelY + 30f * scale);
+            text.setColor(0.92f, 0.72f, 0.34f, MathUtils.clamp(messageTimer, 0f, 1f));
+            text.drawTrailing(batch, message, rowX, rowX + rowW, panelY + 30f * scale);
         }
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
+    }
+
+    /** The atlas is rendered at 34px, so the drawing scale is well under one. */
+    private static float fontScale(float layoutScale) {
+        return MathUtils.clamp(layoutScale * 0.5f, 0.34f, 1f);
     }
 
     private String title(Player player, WeaponDef weapon) {
         switch (page) {
-            case LEVEL_UP:  return "LEVEL UP   -   next costs "
-                    + Stats.soulsToLevel(player.stats.level);
-            case REINFORCE: return "REINFORCE   -   " + weapon.nameEn + " +" + weapon.upgrade;
-            case ITEMS:     return "ITEMS   -   pick one for the quick slot";
-            default:        return "BONFIRE";
+            case LEVEL_UP:
+                return Strings.get(Strings.LEVEL_UP) + "   -   "
+                        + Strings.get(Strings.NEXT_COSTS) + " "
+                        + Stats.soulsToLevel(player.stats.level);
+            case REINFORCE:
+                return Strings.get(Strings.REINFORCE) + "   -   "
+                        + weaponName(weapon) + " +" + weapon.upgrade;
+            case ITEMS:
+                return Strings.get(Strings.ITEMS) + "   -   "
+                        + Strings.get(Strings.PICK_QUICK_ITEM);
+            default:
+                return Strings.get(Strings.BONFIRE);
         }
     }
 
     private String label(int index, Player player, WeaponDef weapon) {
         switch (page) {
             case LEVEL_UP:
-                return index < ATTRIBUTES.length ? ATTRIBUTES[index] : "Back";
+                return index < ATTRIBUTES.length
+                        ? Strings.get(ATTRIBUTES[index]) : Strings.get(Strings.BACK);
             case REINFORCE:
                 if (index == 0) {
-                    if (weapon.upgrade >= 10) return "Fully reinforced";
+                    if (weapon.upgrade >= 10) return Strings.get(Strings.FULLY_REINFORCED);
                     int next = weapon.upgrade + 1;
-                    return "To +" + next + "   " + reinforceMaterialCount(next)
+                    return Strings.get(Strings.TO_PLUS) + " +" + next + "   "
+                            + reinforceMaterialCount(next)
                             + "x " + materialLabel(reinforceMaterial(next));
                 }
-                return "Back";
+                return Strings.get(Strings.BACK);
             case ITEMS: {
                 Array<String> held = player.inventory.ids();
-                if (index >= held.size) return held.size == 0 ? "Carrying nothing" : "Back";
+                if (index >= held.size) {
+                    return held.size == 0 ? Strings.get(Strings.CARRYING_NOTHING)
+                            : Strings.get(Strings.BACK);
+                }
                 ItemDef def = items.get(held.get(index));
-                return (def.id.equals(player.quickItem) ? "* " : "  ") + def.nameEn;
+                return (def.id.equals(player.quickItem) ? "* " : "  ") + name(def);
             }
             default:
-                return ROOT_ITEMS[index];
+                return Strings.get(ROOT_ITEMS[index]);
         }
     }
 
@@ -434,11 +475,11 @@ public class BonfireMenu implements Disposable {
                 if (index == 0 && weapon.upgrade < 10) {
                     int next = weapon.upgrade + 1;
                     String material = reinforceMaterial(next);
-                    // Show what is carried against what is needed, so a refusal
-                    // to reinforce is explained before it happens.
-                    return reinforceCost(weapon) + "   ("
+                    // What is carried against what is needed, so a refusal to
+                    // reinforce is explained before it happens rather than after.
+                    return reinforceCost(weapon) + "   "
                             + player.inventory.count(material) + "/"
-                            + reinforceMaterialCount(next) + ")";
+                            + reinforceMaterialCount(next);
                 }
                 return null;
             case ITEMS: {
@@ -447,7 +488,7 @@ public class BonfireMenu implements Disposable {
                 return "x" + player.inventory.count(held.get(index));
             }
             default:
-                if (index == 1) return "Lv " + s.level;
+                if (index == 1) return Strings.get(Strings.LEVEL) + " " + s.level;
                 return null;
         }
     }
@@ -456,6 +497,6 @@ public class BonfireMenu implements Disposable {
     public void dispose() {
         shapes.dispose();
         batch.dispose();
-        font.dispose();
+        // The font is the game's, not this panel's.
     }
 }

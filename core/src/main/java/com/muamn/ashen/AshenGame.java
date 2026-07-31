@@ -30,6 +30,8 @@ public class AshenGame extends Game {
     public com.muamn.ashen.audio.Audio audio;
     /** The people still standing, and what they sell. */
     public com.muamn.ashen.npc.NpcLibrary npcs;
+    /** The font and every string that reaches the screen. */
+    public com.muamn.ashen.text.Text text;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -69,6 +71,8 @@ public class AshenGame extends Game {
     public boolean validateWorld;
     /** Skips synthesising and loading the sound bank. CI and screenshots. */
     public boolean muteAudio;
+    /** Forces a language code, overriding the save. Screenshots and testing. */
+    public String forceLanguage;
 
     public AshenGame() {
         this(false, false);
@@ -97,6 +101,8 @@ public class AshenGame extends Game {
         items.load();
         npcs = new com.muamn.ashen.npc.NpcLibrary();
         npcs.load();
+        text = new com.muamn.ashen.text.Text();
+        text.load();
         audio = new com.muamn.ashen.audio.Audio();
         if (!muteAudio) audio.load();
         if (validateWorld) {
@@ -133,5 +139,6 @@ public class AshenGame extends Game {
         if (screen != null) screen.dispose();
         if (textures != null) textures.dispose();
         if (audio != null) audio.dispose();
+        if (text != null) text.dispose();
     }
 }

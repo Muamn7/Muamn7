@@ -38,6 +38,7 @@ import com.muamn.ashen.input.TouchControls;
 import com.muamn.ashen.render.RetroRenderer;
 import com.muamn.ashen.render.RetroShader;
 import com.muamn.ashen.save.SaveData;
+import com.muamn.ashen.text.Strings;
 import com.muamn.ashen.save.SaveGame;
 import com.muamn.ashen.ui.BonfireMenu;
 import com.muamn.ashen.ui.DialogueBox;
@@ -214,14 +215,14 @@ public class GameScreen extends ScreenAdapter {
         camera.yaw = level.spawnFacing + 180f + game.cameraYawOffset;
         camera.snapTo(player.body.position);
 
-        hud = new Hud();
+        hud = new Hud(game.text);
         hud.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         hud.showDebug = game.debugOverlay;
 
         pickupModel = Pickup.buildModel(game.textures);
-        menu = new BonfireMenu(game.items, game.audio);
-        dialogue = new DialogueBox();
-        shop = new ShopMenu(game.items, game.audio);
+        menu = new BonfireMenu(game.items, game.audio, game.text);
+        dialogue = new DialogueBox(game.text);
+        shop = new ShopMenu(game.items, game.audio, game.text);
         spawnNpcs();
         buildHazards();
         applyFoundSecrets();
@@ -304,6 +305,31 @@ public class GameScreen extends ScreenAdapter {
         return null;
     }
 
+    /**
+     * Switches language. Refused when the font has no Arabic glyphs, because a
+     * screen of empty boxes is not a language, it is a broken game.
+     */
+    private void toggleLanguage() {
+        if (!game.text.supportsArabic()) {
+            showToast("Arabic font unavailable");
+            return;
+        }
+        Strings.Language now = Strings.toggle();
+        game.audio.play(SoundBank.MENU_MOVE, 1f, 1f);
+        showToast(now.ownName);
+        writeSave();
+    }
+
+    /** Item, area and character names live in the data with both languages. */
+    private static String itemName(ItemDef def) {
+        return Strings.rtl() ? def.nameAr : def.nameEn;
+    }
+
+    /** Upper case is a Latin idea; it does nothing to Arabic but confuse a font. */
+    private static String bossBanner(EnemyDef def) {
+        return Strings.rtl() ? def.nameAr : def.nameEn.toUpperCase();
+    }
+
     private int indexOfWeapon(String id) {
         Array<WeaponDef> all = game.weapons.all();
         for (int i = 0; i < all.size; i++) {
@@ -328,6 +354,12 @@ public class GameScreen extends ScreenAdapter {
 
         estusMax = Math.max(1, data.estusMax);
         estus = estusMax;
+
+        Strings.setLanguage(Strings.Language.of(
+                game.forceLanguage != null ? game.forceLanguage : data.language));
+        // A font without Arabic glyphs would draw a screen of empty boxes, which
+        // is worse than the wrong language.
+        if (!game.text.supportsArabic()) Strings.setLanguage(Strings.Language.ENGLISH);
 
         found.clear();
         if (data.found != null && !data.found.isEmpty()) {
@@ -364,6 +396,7 @@ public class GameScreen extends ScreenAdapter {
         save.weaponId = weapon.id;
         save.weaponUpgrade = weapon.upgrade;
 
+        save.language = Strings.language().code;
         save.inventory = player.inventory.encode();
         save.quickItem = player.quickItem;
 
@@ -531,42 +564,46 @@ public class GameScreen extends ScreenAdapter {
         }
         hud.render(player.stats);
         if (player.quickItem.isEmpty()) {
-            hud.quickSlot("Estus", estus, player.buffRemaining());
+            hud.quickSlot(Strings.get(Strings.ESTUS), estus, player.buffRemaining());
         } else {
-            hud.quickSlot(game.items.get(player.quickItem).nameEn,
+            hud.quickSlot(itemName(game.items.get(player.quickItem)),
                     player.inventory.count(player.quickItem), player.buffRemaining());
         }
         if (activeBoss != null && !activeBoss.dead()) {
-            hud.bossBar(activeBoss.def.nameEn, activeBoss.stats.healthFraction(),
+            hud.bossBar(Strings.rtl() ? activeBoss.def.nameAr : activeBoss.def.nameEn,
+                    activeBoss.stats.healthFraction(),
                     activeBoss.getPhase(), activeBoss.phaseCount());
             if (bossBannerTimer > 0f) {
                 bossBannerTimer -= Gdx.graphics.getDeltaTime();
-                hud.centreText(activeBoss.def.nameEn.toUpperCase(),
+                hud.centreText(bossBanner(activeBoss.def),
                         Math.min(1f, bossBannerTimer), 2.4f);
             }
         } else if (lockedEnemy != null && !lockedEnemy.dead()) {
-            hud.enemyBar(lockedEnemy.def.nameEn, lockedEnemy.stats.healthFraction());
+            hud.enemyBar(Strings.rtl() ? lockedEnemy.def.nameAr : lockedEnemy.def.nameEn,
+                    lockedEnemy.stats.healthFraction());
         }
         if (toastTimer > 0f) hud.toast(toast, Math.min(1f, toastTimer));
 
         Npc near = npcInReach();
         if (near != null && activeArena == null) {
-            hud.prompt("Talk to " + near.def.nameEn + "   [E]");
+            hud.prompt(Strings.get(Strings.TALK_TO) + " "
+                    + (Strings.rtl() ? near.def.nameAr : near.def.nameEn) + "   [E]");
         }
 
         if (areaBannerTimer > 0f && activeBoss == null) {
-            hud.areaTitle(level.nameEn, Math.min(1f, areaBannerTimer));
+            hud.areaTitle(Strings.rtl() ? level.nameAr : level.nameEn,
+                    Math.min(1f, areaBannerTimer));
         }
         Portal prompt = portalPrompt();
         if (prompt != null && activeArena == null) {
-            hud.prompt(prompt.requiresInteract
-                    ? prompt.labelEn + "   [E]" : prompt.labelEn);
+            String label = Strings.rtl() ? prompt.labelAr : prompt.labelEn;
+            hud.prompt(prompt.requiresInteract ? label + "   [E]" : label);
         }
 
         if (player.dead()) {
             float t = MathUtils.clamp(deathTimer / DEATH_FADE, 0f, 1f);
             hud.overlay(0f, 0f, 0f, Math.min(0.82f, t * 1.6f));
-            hud.centreText("YOU DIED", Math.min(1f, t * 2.2f), 3.2f);
+            hud.centreText(Strings.get(Strings.YOU_DIED), Math.min(1f, t * 2.2f), 3.2f);
         }
     }
 
@@ -605,6 +642,7 @@ public class GameScreen extends ScreenAdapter {
                 Gdx.input.setCursorCatched(!Gdx.input.isCursorCatched());
             }
             if (Gdx.input.isKeyJustPressed(Input.Keys.F3)) hud.showDebug = !hud.showDebug;
+            if (Gdx.input.isKeyJustPressed(Input.Keys.F2)) toggleLanguage();
             // Weapon and upgrade cycling, for trying the armoury out.
             if (Gdx.input.isKeyJustPressed(Input.Keys.TAB)) cycleWeapon(1);
             if (Gdx.input.isKeyJustPressed(Input.Keys.GRAVE)) cycleWeapon(-1);
@@ -690,12 +728,13 @@ public class GameScreen extends ScreenAdapter {
         controls.look.setZero();
 
         if (areaBannerTimer > 0f && activeBoss == null) {
-            hud.areaTitle(level.nameEn, Math.min(1f, areaBannerTimer));
+            hud.areaTitle(Strings.rtl() ? level.nameAr : level.nameEn,
+                    Math.min(1f, areaBannerTimer));
         }
         Portal prompt = portalPrompt();
         if (prompt != null && activeArena == null) {
-            hud.prompt(prompt.requiresInteract
-                    ? prompt.labelEn + "   [E]" : prompt.labelEn);
+            String label = Strings.rtl() ? prompt.labelAr : prompt.labelEn;
+            hud.prompt(prompt.requiresInteract ? label + "   [E]" : label);
         }
 
         if (player.dead()) {
@@ -797,7 +836,7 @@ public class GameScreen extends ScreenAdapter {
         level.barrierHost().setOverlay(null);
         if (defeated) {
             activeArena.clear();
-            showToast("GREAT SOUL RELEASED");
+            showToast(Strings.get(Strings.GREAT_SOUL));
         } else {
             // The player died: reset the gate so the fight can be taken again.
             activeArena.markDormant();
@@ -858,7 +897,7 @@ public class GameScreen extends ScreenAdapter {
         estus--;
         game.audio.play(SoundBank.DRINK, 0.85f, 1f);
         player.stats.heal(player.stats.maxHealth * ESTUS_HEAL_FRACTION);
-        showToast("Estus " + estus + "/" + estusMax);
+        showToast(Strings.get(Strings.ESTUS) + " " + estus + "/" + estusMax);
     }
 
     // ---- traps and secrets ------------------------------------------------
@@ -905,7 +944,7 @@ public class GameScreen extends ScreenAdapter {
             level.rebuildSecretCollision();
             found.add(wall.id);
             game.audio.play(SoundBank.FOG_GATE, 0.8f, 1.25f);
-            showToast("The wall was not there");
+            showToast(Strings.get(Strings.WALL_REVEALED));
             writeSave();
         }
     }
@@ -982,7 +1021,7 @@ public class GameScreen extends ScreenAdapter {
             // Picking anything up when the quick slot is empty arms it, so the
             // first consumable found is usable without opening a menu.
             if (def.consumable() && player.quickItem.isEmpty()) player.quickItem = def.id;
-            showToast(def.nameEn + (taken > 1 ? " x" + taken : ""));
+            showToast(itemName(def) + (taken > 1 ? " x" + taken : ""));
             game.audio.play(SoundBank.PICKUP, 0.8f, Audio.vary(0.06f));
             if (pickup.treasureId != null) {
                 found.add(pickup.treasureId);
@@ -1002,13 +1041,13 @@ public class GameScreen extends ScreenAdapter {
             String id = held.get(Math.floorMod(start + step, held.size));
             if (!game.items.get(id).consumable()) continue;
             player.quickItem = id;
-            showToast(game.items.get(id).nameEn
+            showToast(itemName(game.items.get(id))
                     + " x" + player.inventory.count(id));
             return;
         }
         // Nothing else to switch to: fall back to the flask.
         player.quickItem = "";
-        showToast("Estus " + estus + "/" + estusMax);
+        showToast(Strings.get(Strings.ESTUS) + " " + estus + "/" + estusMax);
     }
 
     /**
@@ -1034,17 +1073,17 @@ public class GameScreen extends ScreenAdapter {
             case HEAL:
                 if (player.stats.health >= player.stats.maxHealth) return false;
                 player.stats.heal(def.power);
-                showToast(def.nameEn);
+                showToast(itemName(def));
                 return true;
             case STAMINA:
                 if (player.stats.stamina >= player.stats.maxStamina) return false;
                 player.stats.stamina = Math.min(player.stats.maxStamina,
                         player.stats.stamina + def.power);
-                showToast(def.nameEn);
+                showToast(itemName(def));
                 return true;
             case BUFF:
                 player.applyBuff(def.power, def.duration);
-                showToast(def.nameEn + " +" + Math.round(def.power));
+                showToast(itemName(def) + " +" + Math.round(def.power));
                 return true;
             case SOULS:
                 player.stats.souls += (long) def.power;
@@ -1053,7 +1092,7 @@ public class GameScreen extends ScreenAdapter {
             case FLASK:
                 estusMax += (int) def.power;
                 estus += (int) def.power;
-                showToast("Estus " + estus + "/" + estusMax);
+                showToast(Strings.get(Strings.ESTUS) + " " + estus + "/" + estusMax);
                 writeSave();
                 return true;
             case HOMEWARD:
@@ -1061,7 +1100,7 @@ public class GameScreen extends ScreenAdapter {
                     // The arena is sealed. A bone out of a boss fight would be an
                     // escape hatch, and the whole point of the fog gate is that
                     // there is not one.
-                    showToast("Not here");
+                    showToast(Strings.get(Strings.NOT_HERE));
                     return false;
                 }
                 goHome();
@@ -1081,7 +1120,7 @@ public class GameScreen extends ScreenAdapter {
             camera.yaw = 0f;
             camera.snapTo(player.body.position);
         }
-        showToast("Homeward");
+        showToast(Strings.get(Strings.HOMEWARD));
         writeSave();
     }
 
@@ -1128,9 +1167,10 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
         String hint = npc.saidEverything()
-                ? (npc.def.isMerchant() ? "[E] trade" : "[E] leave")
-                : "[E]";
-        dialogue.show(npc.def.nameEn, line.en, hint);
+                ? "[E] " + Strings.get(npc.def.isMerchant() ? Strings.TRADE : Strings.LEAVE)
+                : "[E] " + Strings.get(Strings.CONTINUE);
+        dialogue.show(Strings.rtl() ? npc.def.nameAr : npc.def.nameEn,
+                Strings.rtl() ? line.ar : line.en, hint);
     }
 
     /**
@@ -1216,7 +1256,7 @@ public class GameScreen extends ScreenAdapter {
         respawnEnemies();
         writeSave();
         game.audio.play(SoundBank.BONFIRE_REST, 0.9f, 1f);
-        showToast("Rested");
+        showToast(Strings.get(Strings.RESTED));
     }
 
     /** Rebuilds the area's population from the level data, as a rest should. */
@@ -1233,7 +1273,7 @@ public class GameScreen extends ScreenAdapter {
         if (!hasBloodstain) return;
         if (player.body.position.dst(bloodstain) > 1.8f) return;
         player.stats.souls += bloodstainSouls;
-        showToast("Recovered " + bloodstainSouls);
+        showToast(Strings.get(Strings.RECOVERED) + " " + bloodstainSouls);
         hasBloodstain = false;
         bloodstainSouls = 0;
     }

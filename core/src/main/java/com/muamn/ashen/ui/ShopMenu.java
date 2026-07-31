@@ -3,7 +3,6 @@ package com.muamn.ashen.ui;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
@@ -15,6 +14,8 @@ import com.muamn.ashen.entity.Player;
 import com.muamn.ashen.item.ItemDef;
 import com.muamn.ashen.item.ItemLibrary;
 import com.muamn.ashen.npc.NpcDef;
+import com.muamn.ashen.text.Strings;
+import com.muamn.ashen.text.Text;
 
 /**
  * A merchant's stock.
@@ -28,10 +29,10 @@ public class ShopMenu implements Disposable {
 
     private final ItemLibrary items;
     private final Audio audio;
+    private final Text text;
 
     private final ShapeRenderer shapes = new ShapeRenderer();
     private final SpriteBatch batch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont();
 
     private boolean open;
     private NpcDef merchant;
@@ -45,9 +46,10 @@ public class ShopMenu implements Disposable {
     private boolean prevTouched;
     private float inputCooldown;
 
-    public ShopMenu(ItemLibrary items, Audio audio) {
+    public ShopMenu(ItemLibrary items, Audio audio, Text text) {
         this.items = items;
         this.audio = audio;
+        this.text = text;
     }
 
     public boolean isOpen() {
@@ -117,19 +119,19 @@ public class ShopMenu implements Disposable {
         ItemDef def = items.get(offer.itemId);
         if (player.stats.souls < offer.price) {
             cue(SoundBank.MENU_DENY);
-            toast("Not enough souls");
+            toast(Strings.get(Strings.NOT_ENOUGH_SOULS));
             return;
         }
         // Check the stack before taking the souls, or a full pack costs money.
         if (player.inventory.add(def, 1) <= 0) {
             cue(SoundBank.MENU_DENY);
-            toast("Carrying too many");
+            toast(Strings.get(Strings.CARRYING_TOO_MANY));
             return;
         }
         player.stats.souls -= offer.price;
         if (def.consumable() && player.quickItem.isEmpty()) player.quickItem = def.id;
         cue(SoundBank.PICKUP);
-        toast(def.nameEn + " x" + player.inventory.count(def.id));
+        toast(name(def) + " x" + player.inventory.count(def.id));
     }
 
     private void cue(String id) {
@@ -195,49 +197,62 @@ public class ShopMenu implements Disposable {
         shapes.rect(rowX - 22f * scale, panelY, rowW + 44f * scale, panelH);
         shapes.end();
 
+        float inset = 14f * scale;
+        float left = rowX + inset;
+        float right = rowX + rowW - inset;
+
         batch.begin();
-        font.getData().setScale(scale);
-        font.setColor(0.92f, 0.86f, 0.68f, 1f);
-        font.draw(batch, merchant.nameEn.toUpperCase(), rowX, panelY + panelH - 22f * scale);
+        text.setScale(MathUtils.clamp(scale * 0.5f, 0.34f, 1f));
+        text.setColor(0.92f, 0.86f, 0.68f, 1f);
+        text.drawLeading(batch, merchantName(), rowX, rowX + rowW, panelY + panelH - 22f * scale);
 
         for (int i = 0; i < rowCount; i++) {
             float y = firstRowY - i * rowH - 8f * scale;
             if (i >= merchant.shop.size) {
-                font.setColor(0.88f, 0.84f, 0.76f, 1f);
-                font.draw(batch, "Leave", rowX + 14f * scale, y);
+                text.setColor(0.88f, 0.84f, 0.76f, 1f);
+                text.drawLeading(batch, Strings.get(Strings.LEAVE), left, right, y);
                 continue;
             }
             NpcDef.Offer offer = merchant.shop.get(i);
             ItemDef def = items.get(offer.itemId);
-            boolean affordable = player.stats.souls >= offer.price;
             // Greying out what cannot be bought answers the question before the
             // player has to press the button to ask it.
-            if (affordable) font.setColor(0.88f, 0.84f, 0.76f, 1f);
-            else font.setColor(0.48f, 0.45f, 0.42f, 1f);
-            font.draw(batch, def.nameEn, rowX + 14f * scale, y);
-
-            String right = offer.price + "   (" + player.inventory.count(def.id) + ")";
-            font.draw(batch, right,
-                    rowX + rowW - 14f * scale - right.length() * 9f * scale, y);
+            if (player.stats.souls >= offer.price) text.setColor(0.88f, 0.84f, 0.76f, 1f);
+            else text.setColor(0.48f, 0.45f, 0.42f, 1f);
+            text.drawLeading(batch, name(def), left, right, y);
+            // Price, then how many are already carried. Without brackets: a
+            // parenthesised number inside a right-to-left row is a bidi edge
+            // case for no gain, and "700  x2" reads the same in both languages.
+            int held = player.inventory.count(def.id);
+            text.drawTrailing(batch,
+                    offer.price + (held > 0 ? "   x" + held : ""), left, right, y);
         }
 
-        font.setColor(0.75f, 0.70f, 0.58f, 1f);
-        font.draw(batch, "Souls: " + player.stats.souls, rowX, panelY + 30f * scale);
+        text.setColor(0.75f, 0.70f, 0.58f, 1f);
+        text.drawLeading(batch, Strings.get(Strings.SOULS) + ": " + player.stats.souls,
+                rowX, rowX + rowW, panelY + 30f * scale);
         if (messageTimer > 0f) {
-            font.setColor(0.92f, 0.72f, 0.34f, MathUtils.clamp(messageTimer, 0f, 1f));
-            font.draw(batch, message,
-                    rowX + rowW - 14f * scale - message.length() * 9f * scale,
-                    panelY + 30f * scale);
+            text.setColor(0.92f, 0.72f, 0.34f, MathUtils.clamp(messageTimer, 0f, 1f));
+            text.drawTrailing(batch, message, rowX, rowX + rowW, panelY + 30f * scale);
         }
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
+    }
+
+    private String merchantName() {
+        String name = Strings.rtl() ? merchant.nameAr : merchant.nameEn;
+        // Upper case is a Latin idea; applying it to Arabic does nothing at best.
+        return Strings.rtl() ? name : name.toUpperCase();
+    }
+
+    private static String name(ItemDef def) {
+        return Strings.rtl() ? def.nameAr : def.nameEn;
     }
 
     @Override
     public void dispose() {
         shapes.dispose();
         batch.dispose();
-        font.dispose();
     }
 }

@@ -2,13 +2,14 @@ package com.muamn.ashen.ui;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Disposable;
 
 import com.muamn.ashen.entity.Stats;
+import com.muamn.ashen.text.Strings;
+import com.muamn.ashen.text.Text;
 
 /**
  * The in-game HUD: health, stamina and the soul count.
@@ -27,7 +28,8 @@ public class Hud implements Disposable {
 
     private final ShapeRenderer shapes = new ShapeRenderer();
     private final SpriteBatch batch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont();
+    /** Shared with every other panel; the Hud does not own it. */
+    private final Text text;
 
     private float ghostHealth = 1f;
     private float ghostStamina = 1f;
@@ -36,8 +38,8 @@ public class Hud implements Disposable {
     public boolean showDebug;
     private String debugLine = "";
 
-    public Hud() {
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+    public Hud(Text text) {
+        this.text = text;
     }
 
     public void resize(int width, int height) {
@@ -88,13 +90,15 @@ public class Hud implements Disposable {
         shapes.end();
 
         batch.begin();
-        font.getData().setScale(Math.max(1f, scale * 0.9f));
-        String souls = Long.toString(stats.souls);
-        font.draw(batch, souls, screenW - 40f * scale - souls.length() * 9f * scale, 42f * scale);
+        text.setScale(uiScale(scale));
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.drawRight(batch, Long.toString(stats.souls), screenW - 40f * scale, 42f * scale);
         if (showDebug && debugLine != null) {
-            font.getData().setScale(1f);
-            font.draw(batch, debugLine, x, yStamina - 18f);
+            // The debug readout stays English and stays small; it is for me.
+            text.setScale(uiScale(scale) * 0.7f);
+            text.draw(batch, debugLine, x, yStamina - 18f);
         }
+        text.setScale(1f);
         batch.end();
     }
 
@@ -120,9 +124,23 @@ public class Hud implements Disposable {
     public void renderDebugOnly() {
         if (debugLine == null || debugLine.isEmpty()) return;
         batch.begin();
-        font.getData().setScale(1f);
-        font.draw(batch, debugLine, 14f, Gdx.graphics.getHeight() - 14f);
+        text.setScale(0.5f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.draw(batch, debugLine, 14f, Gdx.graphics.getHeight() - 14f);
+        text.setScale(1f);
         batch.end();
+    }
+
+    /**
+     * Converts a layout scale into a font scale.
+     *
+     * The atlas is rendered at 34px so it never has to be scaled up, which means
+     * the default draw scale is well under one. Every call site used to say
+     * {@code max(1, scale)} against a 15px bitmap font; this is the one place
+     * that conversion now lives.
+     */
+    private static float uiScale(float layoutScale) {
+        return MathUtils.clamp(layoutScale * 0.52f, 0.34f, 1f);
     }
 
     /** A boss-style bar across the bottom for the locked-on target. */
@@ -147,9 +165,10 @@ public class Hud implements Disposable {
         shapes.end();
 
         batch.begin();
-        font.getData().setScale(Math.max(1f, scale * 0.85f));
-        font.draw(batch, name, x, y + h + 20f * scale);
-        font.getData().setScale(1f);
+        text.setScale(uiScale(scale) * 0.9f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.drawLeading(batch, name, x, x + w, y + h + 20f * scale);
+        text.setScale(1f);
         batch.end();
     }
 
@@ -186,30 +205,31 @@ public class Hud implements Disposable {
         shapes.end();
 
         batch.begin();
-        font.getData().setScale(Math.max(1f, scale));
-        font.setColor(0.90f, 0.86f, 0.78f, 1f);
-        font.draw(batch, name, x, y + h + 26f * scale);
+        text.setScale(uiScale(scale));
+        text.setColor(0.90f, 0.86f, 0.78f, 1f);
+        text.drawLeading(batch, name, x, x + w, y + h + 26f * scale);
         if (phase > 0) {
-            String tag = "PHASE " + (phase + 1);
-            font.setColor(0.88f, 0.60f, 0.26f, 1f);
-            font.draw(batch, tag, x + w - tag.length() * 10f * scale, y + h + 26f * scale);
+            text.setColor(0.88f, 0.60f, 0.26f, 1f);
+            text.drawTrailing(batch, Strings.get(Strings.PHASE) + " " + (phase + 1),
+                    x, x + w, y + h + 26f * scale);
         }
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
     }
 
     /** Short-lived message above the bars: pickups, weapon swaps, soul gains. */
-    public void toast(String text, float alpha) {
-        if (text == null || text.isEmpty()) return;
+    public void toast(String message, float alpha) {
+        if (message == null || message.isEmpty()) return;
         int screenW = Gdx.graphics.getWidth();
         float scale = MathUtils.clamp(screenW / 960f, 0.75f, 2.0f);
         batch.begin();
-        font.getData().setScale(Math.max(1f, scale));
-        font.setColor(0.90f, 0.86f, 0.72f, MathUtils.clamp(alpha, 0f, 1f));
-        font.draw(batch, text, 26f * scale, Gdx.graphics.getHeight() * 0.72f);
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        this.text.setScale(uiScale(scale));
+        this.text.setColor(0.90f, 0.86f, 0.72f, MathUtils.clamp(alpha, 0f, 1f));
+        this.text.drawLeading(batch, message, 26f * scale, screenW - 26f * scale,
+                Gdx.graphics.getHeight() * 0.72f);
+        this.text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        this.text.setScale(1f);
         batch.end();
     }
 
@@ -217,29 +237,27 @@ public class Hud implements Disposable {
     public void areaTitle(String name, float alpha) {
         if (name == null || name.isEmpty() || alpha <= 0f) return;
         int screenW = Gdx.graphics.getWidth();
-        float scale = MathUtils.clamp(screenW / 960f, 0.9f, 2.4f) * 1.6f;
+        float scale = MathUtils.clamp(screenW / 960f, 0.9f, 2.4f);
         batch.begin();
-        font.getData().setScale(scale);
-        font.setColor(0.92f, 0.88f, 0.74f, MathUtils.clamp(alpha, 0f, 1f));
-        float w = name.length() * 9.6f * scale;
-        font.draw(batch, name, (screenW - w) * 0.5f, Gdx.graphics.getHeight() * 0.80f);
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setScale(uiScale(scale) * 1.7f);
+        text.setColor(0.92f, 0.88f, 0.74f, MathUtils.clamp(alpha, 0f, 1f));
+        text.drawCentred(batch, name, screenW * 0.5f, Gdx.graphics.getHeight() * 0.80f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
     }
 
     /** A one-line prompt near the bottom, for doors and pickups. */
-    public void prompt(String text) {
-        if (text == null || text.isEmpty()) return;
+    public void prompt(String message) {
+        if (message == null || message.isEmpty()) return;
         int screenW = Gdx.graphics.getWidth();
         float scale = MathUtils.clamp(screenW / 960f, 0.85f, 2.0f);
         batch.begin();
-        font.getData().setScale(scale);
-        font.setColor(0.88f, 0.85f, 0.76f, 0.95f);
-        float w = text.length() * 9f * scale;
-        font.draw(batch, text, (screenW - w) * 0.5f, Gdx.graphics.getHeight() * 0.26f);
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setScale(uiScale(scale));
+        text.setColor(0.88f, 0.85f, 0.76f, 0.95f);
+        text.drawCentred(batch, message, screenW * 0.5f, Gdx.graphics.getHeight() * 0.26f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
     }
 
@@ -259,17 +277,18 @@ public class Hud implements Disposable {
         float y = screenH - BAR_TOP * scale - h * 2f - BAR_GAP * scale * 2f - 20f * scale;
 
         batch.begin();
-        font.getData().setScale(Math.max(1f, scale * 0.85f));
-        font.setColor(0.88f, 0.84f, 0.70f, 1f);
-        font.draw(batch, name + "  x" + count, x, y);
+        text.setScale(uiScale(scale) * 0.9f);
+        text.setColor(0.88f, 0.84f, 0.70f, 1f);
+        text.draw(batch, name + "  x" + count, x, y);
         if (buffSeconds > 0f) {
             // Counts down, because the decision a resin creates is when to spend
             // the rest of it.
-            font.setColor(0.95f, 0.62f, 0.24f, 1f);
-            font.draw(batch, "BUFF " + (int) Math.ceil(buffSeconds) + "s", x, y - 20f * scale);
+            text.setColor(0.95f, 0.62f, 0.24f, 1f);
+            text.draw(batch, Strings.get(Strings.BUFF) + " "
+                    + (int) Math.ceil(buffSeconds) + "s", x, y - 20f * scale);
         }
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
     }
 
@@ -285,15 +304,15 @@ public class Hud implements Disposable {
     }
 
     /** Centred message, e.g. YOU DIED. */
-    public void centreText(String text, float alpha, float scale) {
+    public void centreText(String message, float alpha, float scale) {
         if (alpha <= 0f) return;
         batch.begin();
-        font.getData().setScale(scale);
-        font.setColor(0.72f, 0.10f, 0.09f, MathUtils.clamp(alpha, 0f, 1f));
-        float w = text.length() * 9f * scale;
-        font.draw(batch, text, (Gdx.graphics.getWidth() - w) * 0.5f, Gdx.graphics.getHeight() * 0.56f);
-        font.setColor(0.86f, 0.83f, 0.76f, 1f);
-        font.getData().setScale(1f);
+        text.setScale(scale * 0.52f);
+        text.setColor(0.72f, 0.10f, 0.09f, MathUtils.clamp(alpha, 0f, 1f));
+        text.drawCentred(batch, message, Gdx.graphics.getWidth() * 0.5f,
+                Gdx.graphics.getHeight() * 0.56f);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
         batch.end();
     }
 
@@ -301,6 +320,6 @@ public class Hud implements Disposable {
     public void dispose() {
         shapes.dispose();
         batch.dispose();
-        font.dispose();
+        // The font belongs to the game, not to the Hud, and outlives this screen.
     }
 }

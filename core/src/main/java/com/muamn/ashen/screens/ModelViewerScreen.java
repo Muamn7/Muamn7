@@ -109,7 +109,7 @@ public class ModelViewerScreen extends ScreenAdapter {
         camera.near = 0.05f;
         camera.far = 400f;
 
-        hud = new Hud();
+        hud = new Hud(game.text);
         hud.showDebug = true;
         hud.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }

@@ -13,6 +13,9 @@ public class SaveData {
     /** Bumped when a change cannot be handled by defaults alone. */
     public int version = 1;
 
+    /** Interface language: "ar" or "en". */
+    public String language = "ar";
+
     // ---- attributes ----
     public int level = 1;
     public int vigor = 10;
