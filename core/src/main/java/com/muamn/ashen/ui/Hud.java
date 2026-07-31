@@ -116,6 +116,15 @@ public class Hud implements Disposable {
         shapes.rect(x, y + h * 0.62f, w * MathUtils.clamp(value, 0f, 1f), h * 0.20f);
     }
 
+    /** Draws only the debug readout, for screens that have no player stats. */
+    public void renderDebugOnly() {
+        if (debugLine == null || debugLine.isEmpty()) return;
+        batch.begin();
+        font.getData().setScale(1f);
+        font.draw(batch, debugLine, 14f, Gdx.graphics.getHeight() - 14f);
+        batch.end();
+    }
+
     /** Full-screen tint, used for the death fade. */
     public void overlay(float r, float g, float b, float alpha) {
         if (alpha <= 0f) return;

@@ -32,6 +32,10 @@ public class AshenGame extends Game {
      * CI uses it to prove that movement, collision and the roll all still run.
      */
     public boolean autopilot;
+    /** When set, opens the turntable model viewer for this imported model. */
+    public String viewModel;
+    /** Holds imported rigs at their bind pose, to separate rig bugs from animation bugs. */
+    public boolean freezeAnimations;
 
     public AshenGame() {
         this(false, false);
@@ -52,7 +56,11 @@ public class AshenGame extends Game {
                 + " gl=" + Gdx.gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_VERSION));
 
         textures = new TextureFactory();
-        setScreen(new GameScreen(this));
+        if (viewModel != null && !viewModel.isEmpty()) {
+            setScreen(new com.muamn.ashen.screens.ModelViewerScreen(this, viewModel));
+        } else {
+            setScreen(new GameScreen(this));
+        }
     }
 
     @Override

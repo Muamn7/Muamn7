@@ -15,3 +15,11 @@ android/libs/
 *.keystore
 !debug.keystore
 screenshots/
+
+# Imported models under a licence that forbids redistribution (see CREDITS.md).
+# The game falls back to procedural assets when these are absent; run
+# tools/import_assets.sh locally to regenerate them.
+assets/imported/models/chapel*
+assets/imported/models/wanderer*
+assets/imported/models/weapon_axe*
+assets/imported/models/tree*

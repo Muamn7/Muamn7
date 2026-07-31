@@ -48,6 +48,8 @@ public class DesktopLauncher {
         if (camDist != null) game.cameraDistance = Float.parseFloat(camDist);
         game.cameraYawOffset = Float.parseFloat(System.getProperty("ashen.camYaw", "0"));
         game.autopilot = Boolean.getBoolean("ashen.autopilot");
+        game.viewModel = System.getProperty("ashen.viewModel");
+        game.freezeAnimations = Boolean.getBoolean("ashen.freezeAnim");
         ApplicationListener listener = (screenshot != null || exitAfter > 0f)
                 ? new HarnessListener(game, screenshot, screenshotAt, exitAfter)
                 : game;

@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
+import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.utils.UBJsonReader;
 
 /**
@@ -51,14 +52,28 @@ public final class AssetOverrides {
             if (f == null) continue;
             try {
                 Gdx.app.log("AssetOverrides", "using imported model: " + f.path());
-                if (ext.equals(".obj")) return new ObjLoader().loadModel(f);
-                return new G3dModelLoader(new UBJsonReader()).loadModel(f);
+                switch (ext) {
+                    case ".obj":
+                        return new ObjLoader().loadModel(f);
+                    case ".g3dj":
+                        // g3dj is plain JSON; only the binary g3db uses UBJson.
+                        return new G3dModelLoader(new JsonReader()).loadModel(f);
+                    default:
+                        return new G3dModelLoader(new UBJsonReader()).loadModel(f);
+                }
             } catch (Exception e) {
                 Gdx.app.error("AssetOverrides", "failed to load " + f.path() + " - falling back", e);
                 return null;
             }
         }
         return null;
+    }
+
+    /** True if an imported model of this name exists. */
+    public static boolean hasModel(String name) {
+        return resolve(MODEL_DIR + name + ".g3db") != null
+                || resolve(MODEL_DIR + name + ".g3dj") != null
+                || resolve(MODEL_DIR + name + ".obj") != null;
     }
 
     /**
