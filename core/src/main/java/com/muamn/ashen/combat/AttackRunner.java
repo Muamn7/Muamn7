@@ -164,6 +164,18 @@ public class AttackRunner {
             }
             hit.direction.nor();
             hit.point.set(closest);
+
+            // A parry is decided by the victim, then reported back so the
+            // attacker can be opened up. Resolving it here rather than inside
+            // applyHit keeps the victim from having to know about the attacker's
+            // state machine.
+            if (target.parrying() && attack.parryable) {
+                hit.wasParried = true;
+                target.applyHit(hit);
+                attacker.onAttackParried(target);
+                return hits;   // a parried swing is over; it hits nothing else
+            }
+
             target.applyHit(hit);
             hits++;
         }

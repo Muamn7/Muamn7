@@ -27,7 +27,10 @@ import com.muamn.ashen.world.CollisionMesh;
  */
 public class Player implements Combatant {
 
-    public enum State { GROUNDED, ROLLING, BACKSTEPPING, AIRBORNE, ATTACKING, STAGGERED, DEAD }
+    public enum State {
+        GROUNDED, ROLLING, BACKSTEPPING, AIRBORNE, ATTACKING,
+        PARRYING, RIPOSTING, STAGGERED, DEAD
+    }
 
     public final CharacterBody body = new CharacterBody();
     public final Stats stats = new Stats();
@@ -75,6 +78,12 @@ public class Player implements Combatant {
     private int bufferedAttack;
     /** Time left in which a roll can be cancelled into a rolling attack. */
     private float rollAttackWindow;
+
+    /** Enemy being riposted, and whether the blow has landed yet. */
+    private Combatant riposteVictim;
+    private boolean riposteStruck;
+    /** Time left open to a critical after our own swing was parried. */
+    private float riposteableTimer;
 
     public Player(CharacterRig rig, WeaponDef weapon) {
         this.rig = rig;
@@ -131,6 +140,41 @@ public class Player implements Combatant {
     }
 
     @Override
+    public boolean parrying() {
+        if (state != State.PARRYING) return false;
+        return stateTime >= Config.PARRY_WINDUP
+                && stateTime < Config.PARRY_WINDUP + Config.PARRY_ACTIVE;
+    }
+
+    @Override
+    public boolean riposteable() {
+        return riposteableTimer > 0f;
+    }
+
+    @Override
+    public void onAttackParried(Combatant parrier) {
+        attacks.cancel();
+        riposteableTimer = Config.RIPOSTEABLE_DURATION;
+        staggerAngle = 0f;
+        staggerDuration = Config.RIPOSTEABLE_DURATION;
+        setState(State.STAGGERED);
+    }
+
+    @Override
+    public void applyCritical(HitInfo hit) {
+        if (state == State.DEAD) return;
+        tookHit = true;
+        riposteableTimer = 0f;
+        // Criticals ignore guard and poise entirely - that is the whole point.
+        stats.damage(CombatMath.afterDefence(hit.damage, 0.02f));
+        attacks.cancel();
+        staggerAngle = 0f;
+        staggerDuration = CombatMath.STAGGER_DURATION * 1.6f;
+        setState(State.STAGGERED);
+        if (stats.isDead()) setState(State.DEAD);
+    }
+
+    @Override
     public Vector3 hitCenter(Vector3 out) {
         return out.set(body.position.x, body.position.y + body.height * 0.58f, body.position.z);
     }
@@ -166,6 +210,8 @@ public class Player implements Combatant {
         attacks.cancel();
         poiseDamage = 0f;
         bufferedAttack = 0;
+        riposteableTimer = 0f;
+        riposteVictim = null;
         stats.health = stats.maxHealth;
         stats.stamina = stats.maxStamina;
     }
@@ -188,6 +234,7 @@ public class Player implements Combatant {
             if (poiseTimer <= 0f) poiseDamage = 0f;
         }
         if (rollAttackWindow > 0f) rollAttackWindow -= dt;
+        if (riposteableTimer > 0f) riposteableTimer -= dt;
 
         if (state == State.DEAD) {
             body.velocity.x = 0f;
@@ -215,6 +262,8 @@ public class Player implements Combatant {
             case BACKSTEPPING: updateBackstep(dt); break;
             case AIRBORNE:     updateAirborne(wishLen, dt); break;
             case ATTACKING:    updateAttacking(input, lockTarget, dt); break;
+            case PARRYING:     updateParry(dt); break;
+            case RIPOSTING:    updateRiposte(dt); break;
             case STAGGERED:    updateStaggered(dt); break;
             default: break;
         }
@@ -240,7 +289,8 @@ public class Player implements Combatant {
 
     private boolean committed() {
         return state == State.ROLLING || state == State.BACKSTEPPING
-                || state == State.STAGGERED
+                || state == State.STAGGERED || state == State.PARRYING
+                || state == State.RIPOSTING
                 || (state == State.ATTACKING && attacks.phase() != AttackRunner.Phase.WINDUP);
     }
 
@@ -261,6 +311,28 @@ public class Player implements Combatant {
         }
 
         boolean sprinting = input.sprintHeld && wishLen > 0.1f && stats.stamina > 0f && !guarding;
+
+        // Guard held plus a light attack is a parry, not a swing. Reusing the
+        // two buttons keeps the phone layout at six.
+        if (input.attackLightPressed && guarding) {
+            if (stats.spendStamina(Config.PARRY_STAMINA)) {
+                setState(State.PARRYING);
+                return;
+            }
+        }
+
+        // An opening beats everything else: take it before considering a swing.
+        if (input.attackLightPressed) {
+            Combatant opening = findRiposteTarget();
+            if (opening != null) {
+                riposteVictim = opening;
+                riposteStruck = false;
+                tmp.set(opening.body().position).sub(body.position);
+                targetFacing = facing = headingOf(tmp);
+                setState(State.RIPOSTING);
+                return;
+            }
+        }
 
         if (input.attackLightPressed || input.attackHeavyPressed) {
             AttackDef chosen;
@@ -373,6 +445,62 @@ public class Player implements Combatant {
         }
     }
 
+    /**
+     * The nearest enemy that is open to a critical and close enough in front.
+     */
+    private Combatant findRiposteTarget() {
+        Combatant best = null;
+        float bestDistance = Config.RIPOSTE_RANGE;
+        for (Combatant candidate : targets) {
+            if (candidate == this || candidate.dead() || candidate.team() == team()) continue;
+            if (!candidate.riposteable()) continue;
+            tmp.set(candidate.body().position).sub(body.position);
+            tmp.y = 0f;
+            float distance = tmp.len();
+            if (distance > bestDistance) continue;
+            // Must be roughly in front, or you would riposte behind your back.
+            if (distance > 1e-3f) {
+                float heading = headingOf(tmp);
+                if (Math.abs(CombatMath.angleDifference(facing, heading)) > 70f) continue;
+            }
+            bestDistance = distance;
+            best = candidate;
+        }
+        return best;
+    }
+
+    private void updateParry(float dt) {
+        body.velocity.x *= 1f - Math.min(1f, 9f * dt);
+        body.velocity.z *= 1f - Math.min(1f, 9f * dt);
+        float total = Config.PARRY_WINDUP + Config.PARRY_ACTIVE + Config.PARRY_RECOVERY;
+        if (stateTime >= total) setState(State.GROUNDED);
+    }
+
+    private void updateRiposte(float dt) {
+        body.velocity.x *= 1f - Math.min(1f, 10f * dt);
+        body.velocity.z *= 1f - Math.min(1f, 10f * dt);
+
+        float strikeAt = Config.RIPOSTE_DURATION * Config.RIPOSTE_STRIKE_AT;
+        if (!riposteStruck && stateTime >= strikeAt && riposteVictim != null) {
+            riposteStruck = true;
+            AttackDef attack = weapon.moveset.heavy(0);
+            float damage = weapon.damageAgainst(stats, attack)
+                    * (weapon.critical / 100f) * Config.RIPOSTE_MULTIPLIER;
+            riposteHit.set(this, damage, attack.poise * 3f);
+            riposteHit.critical = true;
+            riposteHit.direction.set(MathUtils.sinDeg(facing), 0f, MathUtils.cosDeg(facing));
+            riposteVictim.hitCenter(riposteHit.point);
+            riposteVictim.applyCritical(riposteHit);
+            dealtHit = true;
+        }
+        if (stateTime >= Config.RIPOSTE_DURATION) {
+            riposteVictim = null;
+            setState(State.GROUNDED);
+        }
+    }
+
+    private final HitInfo riposteHit = new HitInfo();
+
     private void updateStaggered(float dt) {
         body.velocity.x *= 1f - Math.min(1f, 7f * dt);
         body.velocity.z *= 1f - Math.min(1f, 7f * dt);
@@ -417,11 +545,24 @@ public class Player implements Combatant {
     @Override
     public void applyHit(HitInfo hit) {
         if (invulnerable()) return;
+        // A parried swing costs the parrier nothing but a sliver of stamina.
+        if (hit.wasParried) {
+            stats.drainStamina(4f);
+            return;
+        }
         tookHit = true;
+
+        // Being caught from behind hurts the same way it hurts an enemy.
+        if (hit.attacker != null
+                && CombatMath.isBackstab(facing, hit.attacker.facing(), hit.direction)) {
+            hit.critical = true;
+            hit.damage *= (hit.attacker.weapon().critical / 100f) * Config.BACKSTAB_MULTIPLIER;
+        }
 
         float damage = hit.damage;
         boolean blocked = blocking()
-                && CombatMath.isFrontal(facing, hit.direction, CombatMath.GUARD_ARC);
+                && CombatMath.isFrontal(facing, hit.direction, CombatMath.GUARD_ARC)
+                && !hit.critical;
 
         if (blocked) {
             float cost = CombatMath.guardStamina(weapon, damage);
@@ -476,6 +617,13 @@ public class Player implements Combatant {
                 if (attacks.current() != null) {
                     rig.poseAttack(attacks.current(), attacks.normalisedTime());
                 }
+                break;
+            case PARRYING:
+                rig.poseParry(stateTime
+                        / (Config.PARRY_WINDUP + Config.PARRY_ACTIVE + Config.PARRY_RECOVERY));
+                break;
+            case RIPOSTING:
+                rig.poseRiposte(stateTime / Config.RIPOSTE_DURATION);
                 break;
             case STAGGERED:
                 rig.poseStagger(stateTime / staggerDuration, staggerAngle);

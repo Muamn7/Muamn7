@@ -23,3 +23,7 @@ assets/imported/models/chapel*
 assets/imported/models/wanderer*
 assets/imported/models/weapon_axe*
 assets/imported/models/tree*
+
+# Runtime save files (Gdx.files.local resolves to the run working directory)
+ashen-save.json*
+assets/ashen-save.json*

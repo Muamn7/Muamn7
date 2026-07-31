@@ -24,7 +24,10 @@ import com.muamn.ashen.world.CollisionMesh;
  */
 public class Enemy implements Combatant {
 
-    public enum State { IDLE, PATROL, ALERT, APPROACH, CIRCLE, ATTACK, RECOVER, STAGGERED, DEAD }
+    public enum State {
+        IDLE, PATROL, ALERT, APPROACH, CIRCLE, ATTACK, RECOVER,
+        STAGGERED, RIPOSTEABLE, DEAD
+    }
 
     public final CharacterBody body = new CharacterBody();
     public final Stats stats = new Stats();
@@ -109,6 +112,35 @@ public class Enemy implements Combatant {
     @Override public float facing() { return facing; }
     @Override public boolean invulnerable() { return state == State.DEAD; }
     @Override public boolean blocking() { return false; }
+
+    /** Enemies do not parry yet; that arrives with the knight archetypes. */
+    @Override public boolean parrying() { return false; }
+
+    @Override public boolean riposteable() { return state == State.RIPOSTEABLE; }
+
+    @Override
+    public void onAttackParried(Combatant parrier) {
+        attacks.cancel();
+        body.velocity.x = 0f;
+        body.velocity.z = 0f;
+        setState(State.RIPOSTEABLE);
+    }
+
+    @Override
+    public void applyCritical(HitInfo hit) {
+        if (state == State.DEAD) return;
+        // Criticals skip absorption almost entirely and never get poised through.
+        stats.damage(CombatMath.afterDefence(hit.damage, def.absorption * 0.25f));
+        poiseDamage = 0f;
+        attacks.cancel();
+        if (stats.isDead()) {
+            setState(State.DEAD);
+        } else {
+            staggerAngle = 0f;
+            staggerDuration = CombatMath.STAGGER_DURATION * 1.5f;
+            setState(State.STAGGERED);
+        }
+    }
     @Override public WeaponDef weapon() { return weapon; }
     @Override public boolean dead() { return state == State.DEAD; }
 
@@ -157,8 +189,9 @@ public class Enemy implements Combatant {
             case CIRCLE:    updateCircle(distance, dt); break;
             case ATTACK:    updateAttack(dt); break;
             case RECOVER:   updateRecover(distance, dt); break;
-            case STAGGERED: updateStaggered(dt); break;
-            default:        break;
+            case STAGGERED:  updateStaggered(dt); break;
+            case RIPOSTEABLE: updateRiposteable(dt); break;
+            default:         break;
         }
 
         body.step(mesh, dt);
@@ -269,6 +302,16 @@ public class Enemy implements Combatant {
         }
     }
 
+    /**
+     * Held open after a parry. If nobody takes the opening it recovers, which
+     * keeps a missed riposte from being punished twice.
+     */
+    private void updateRiposteable(float dt) {
+        body.velocity.x *= 1f - Math.min(1f, 10f * dt);
+        body.velocity.z *= 1f - Math.min(1f, 10f * dt);
+        if (stateTime >= com.muamn.ashen.Config.RIPOSTEABLE_DURATION) setState(State.RECOVER);
+    }
+
     private void updateStaggered(float dt) {
         body.velocity.x *= 1f - Math.min(1f, 8f * dt);
         body.velocity.z *= 1f - Math.min(1f, 8f * dt);
@@ -293,9 +336,13 @@ public class Enemy implements Combatant {
     public void applyHit(HitInfo hit) {
         if (state == State.DEAD) return;
 
+        if (hit.wasParried) return;   // we caught it on a parry; nothing lands
+
         float damage = CombatMath.afterDefence(hit.damage, def.absorption);
-        if (CombatMath.isBackstab(facing, hit.attacker.facing(), hit.direction)) {
-            damage *= hit.attacker.weapon().critical / 100f * 2.2f;
+        if (hit.attacker != null
+                && CombatMath.isBackstab(facing, hit.attacker.facing(), hit.direction)) {
+            damage *= (hit.attacker.weapon().critical / 100f)
+                    * com.muamn.ashen.Config.BACKSTAB_MULTIPLIER;
             hit.critical = true;
         }
         stats.damage(damage);
@@ -330,7 +377,8 @@ public class Enemy implements Combatant {
         EnemyVisual.Pose pose;
         switch (state) {
             case ATTACK:    pose = EnemyVisual.Pose.ATTACK; break;
-            case STAGGERED: pose = EnemyVisual.Pose.STAGGER; break;
+            case STAGGERED:
+            case RIPOSTEABLE: pose = EnemyVisual.Pose.STAGGER; break;
             case DEAD:      pose = EnemyVisual.Pose.DEAD; break;
             case ALERT:
             case RECOVER:   pose = EnemyVisual.Pose.IDLE; break;

@@ -42,9 +42,24 @@ public class AttackDef {
     /** Metres the attacker slides forward across the swing. */
     public final float step;
 
+    /**
+     * Whether a parry can catch this attack.
+     *
+     * Heavy attacks are not parryable, which is what stops parrying from being a
+     * universal answer - against a committed overhead you have to roll.
+     */
+    public final boolean parryable;
+
     public AttackDef(String id, Motion motion, float windup, float active, float recovery,
                      float damage, float poise, float staminaCost,
                      float reach, float arc, float step) {
+        this(id, motion, windup, active, recovery, damage, poise, staminaCost,
+                reach, arc, step, true);
+    }
+
+    public AttackDef(String id, Motion motion, float windup, float active, float recovery,
+                     float damage, float poise, float staminaCost,
+                     float reach, float arc, float step, boolean parryable) {
         this.id = id;
         this.motion = motion;
         this.windup = windup;
@@ -56,6 +71,7 @@ public class AttackDef {
         this.reach = reach;
         this.arc = arc;
         this.step = step;
+        this.parryable = parryable;
     }
 
     public float duration() {

@@ -24,6 +24,24 @@ public interface Combatant {
     /** True while holding guard. Only blocks within the front arc. */
     boolean blocking();
 
+    /**
+     * True during the brief window where an incoming parryable attack is
+     * deflected instead of landing.
+     */
+    boolean parrying();
+
+    /**
+     * True while open to a critical: staggered out of a parried swing, and
+     * waiting for someone to take the opening.
+     */
+    boolean riposteable();
+
+    /** Called on the attacker when a victim parried its swing. */
+    void onAttackParried(Combatant parrier);
+
+    /** Applies a critical - a riposte or a backstab. Bypasses guard and poise. */
+    void applyCritical(HitInfo hit);
+
     /** Weapon in hand, used for guard absorption and reach. */
     WeaponDef weapon();
 

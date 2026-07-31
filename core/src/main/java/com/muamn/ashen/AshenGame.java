@@ -39,6 +39,11 @@ public class AshenGame extends Game {
     public String viewModel;
     /** Holds imported rigs at their bind pose, to separate rig bugs from animation bugs. */
     public boolean freezeAnimations;
+    /** Opens the bonfire menu immediately, for screenshots and UI work. */
+    public boolean openMenuOnStart;
+    /** Which page that menu opens on. */
+    public com.muamn.ashen.ui.BonfireMenu.Page menuPage =
+            com.muamn.ashen.ui.BonfireMenu.Page.ROOT;
 
     public AshenGame() {
         this(false, false);

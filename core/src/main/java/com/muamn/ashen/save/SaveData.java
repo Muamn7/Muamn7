@@ -1,0 +1,48 @@
+package com.muamn.ashen.save;
+
+/**
+ * Everything a save file holds.
+ *
+ * A plain data class with public fields, on purpose: it is the file format, and
+ * keeping it dumb means the serialiser never has to guess. Adding a field with a
+ * sensible default is backward compatible, because a missing key in an older
+ * save just leaves the default in place.
+ */
+public class SaveData {
+
+    /** Bumped when a change cannot be handled by defaults alone. */
+    public int version = 1;
+
+    // ---- attributes ----
+    public int level = 1;
+    public int vigor = 10;
+    public int endurance = 10;
+    public int strength = 10;
+    public int dexterity = 10;
+    public int intelligence = 9;
+    public int faith = 9;
+
+    // ---- progression ----
+    public long souls;
+    public int estusMax = 5;
+    public int deaths;
+    /** Seconds of play. */
+    public float playTime;
+
+    // ---- equipment ----
+    public String weaponId = "longsword";
+    public int weaponUpgrade;
+
+    // ---- world ----
+    public String bonfireId = "asylum_courtyard";
+    public float bonfireX;
+    public float bonfireY;
+    public float bonfireZ = -6f;
+
+    /** Souls dropped where you last died, if they have not been recovered. */
+    public boolean hasBloodstain;
+    public long bloodstainSouls;
+    public float bloodstainX;
+    public float bloodstainY;
+    public float bloodstainZ;
+}

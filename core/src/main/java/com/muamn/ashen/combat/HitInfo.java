@@ -21,6 +21,8 @@ public class HitInfo {
     public boolean wasBlocked;
     /** Set by the victim when the hit broke its guard or poise. */
     public boolean staggered;
+    /** Set by the victim when it caught the swing on a parry. */
+    public boolean wasParried;
 
     public HitInfo set(Combatant attacker, float damage, float poise) {
         this.attacker = attacker;
@@ -29,6 +31,7 @@ public class HitInfo {
         this.critical = false;
         this.wasBlocked = false;
         this.staggered = false;
+        this.wasParried = false;
         return this;
     }
 }

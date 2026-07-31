@@ -68,6 +68,29 @@ public final class Config {
     /** Pause before stamina starts coming back after it is spent. */
     public static final float STAMINA_REGEN_DELAY = 0.6f;
 
+    // ---- Parry and criticals --------------------------------------------
+
+    /** Wind-up before the parry window opens. Mistime it and you eat the hit. */
+    public static final float PARRY_WINDUP = 0.09f;
+    /** The window itself. Short enough that parrying is a read, not a habit. */
+    public static final float PARRY_ACTIVE = 0.17f;
+    /** Recovery. This is the price of a failed parry. */
+    public static final float PARRY_RECOVERY = 0.42f;
+    public static final float PARRY_STAMINA = 14f;
+
+    /** How long a parried attacker stays open to a riposte. */
+    public static final float RIPOSTEABLE_DURATION = 2.1f;
+    /** Length of the riposte animation. */
+    public static final float RIPOSTE_DURATION = 1.05f;
+    /** Point within the riposte at which the damage lands. */
+    public static final float RIPOSTE_STRIKE_AT = 0.42f;
+    /** How close you must be to take the opening. */
+    public static final float RIPOSTE_RANGE = 2.1f;
+    /** Riposte damage multiplier, on top of the weapon's critical rating. */
+    public static final float RIPOSTE_MULTIPLIER = 2.6f;
+    /** Backstab damage multiplier, on top of the weapon's critical rating. */
+    public static final float BACKSTAB_MULTIPLIER = 2.2f;
+
     // ---- Camera ---------------------------------------------------------
 
     public static final float CAM_DISTANCE = 4.2f;

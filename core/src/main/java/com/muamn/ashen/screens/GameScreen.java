@@ -31,6 +31,9 @@ import com.muamn.ashen.input.DesktopControls;
 import com.muamn.ashen.input.TouchControls;
 import com.muamn.ashen.render.RetroRenderer;
 import com.muamn.ashen.render.RetroShader;
+import com.muamn.ashen.save.SaveData;
+import com.muamn.ashen.save.SaveGame;
+import com.muamn.ashen.ui.BonfireMenu;
 import com.muamn.ashen.ui.Hud;
 import com.muamn.ashen.world.AssetOverrides;
 import com.muamn.ashen.world.Level;
@@ -51,6 +54,7 @@ public class GameScreen extends ScreenAdapter {
     /** How close the player must be to a bonfire to rest at it. */
     private static final float BONFIRE_RANGE = 2.6f;
     private static final float ESTUS_HEAL_FRACTION = 0.42f;
+    /** Starting Estus charges. Upgrading the flask raises this in Part 3. */
     private static final int ESTUS_CHARGES = 5;
 
     private final AshenGame game;
@@ -78,6 +82,8 @@ public class GameScreen extends ScreenAdapter {
 
     // ---- progression ----
     private int estus = ESTUS_CHARGES;
+    private int estusMax = ESTUS_CHARGES;
+    private float lastSavedAt;
     private float deathTimer;
     private final Vector3 bonfire = new Vector3(0f, 0f, -6f);
     private final Vector3 bloodstain = new Vector3();
@@ -85,6 +91,10 @@ public class GameScreen extends ScreenAdapter {
     private boolean hasBloodstain;
     private String toast = "";
     private float toastTimer;
+
+    private final SaveGame saveGame = new SaveGame();
+    private SaveData save;
+    private final BonfireMenu menu = new BonfireMenu();
 
     private Enemy lockedEnemy;
     private final Vector3 lockPoint = new Vector3();
@@ -110,11 +120,17 @@ public class GameScreen extends ScreenAdapter {
         CharacterRig rig = new CharacterRig(
                 HumanoidFactory.build(spec, game.textures, "player"), spec);
 
-        weaponIndex = 0;
+        save = saveGame.load();
+        weaponIndex = indexOfWeapon(save.weaponId);
         weapon = game.weapons.all().get(weaponIndex);
+        weapon.upgrade = MathUtils.clamp(save.weaponUpgrade, 0, 10);
+
         player = new Player(rig, weapon);
-        player.spawn(level.spawn.x, level.spawn.y, level.spawn.z, level.spawnFacing);
+        applySave(save);
         equip(weapon);
+
+        bonfire.set(save.bonfireX, save.bonfireY, save.bonfireZ);
+        player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
 
         spawnEnemies();
 
@@ -127,6 +143,8 @@ public class GameScreen extends ScreenAdapter {
         hud.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         hud.showDebug = game.debugOverlay;
 
+        if (game.openMenuOnStart) menu.open(game.menuPage);
+
         if (isTouchPlatform()) {
             touchControls = new TouchControls();
             touchControls.updateProjection(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -134,6 +152,68 @@ public class GameScreen extends ScreenAdapter {
             desktopControls = new DesktopControls();
             Gdx.input.setCursorCatched(true);
         }
+    }
+
+    private int indexOfWeapon(String id) {
+        Array<WeaponDef> all = game.weapons.all();
+        for (int i = 0; i < all.size; i++) {
+            if (all.get(i).id.equals(id)) return i;
+        }
+        return 0;
+    }
+
+    /** Pours a save into the live player. */
+    private void applySave(SaveData data) {
+        player.stats.level = data.level;
+        player.stats.vigor = data.vigor;
+        player.stats.endurance = data.endurance;
+        player.stats.strength = data.strength;
+        player.stats.dexterity = data.dexterity;
+        player.stats.intelligence = data.intelligence;
+        player.stats.faith = data.faith;
+        player.stats.recalculate();
+        player.stats.health = player.stats.maxHealth;
+        player.stats.stamina = player.stats.maxStamina;
+        player.stats.souls = data.souls;
+
+        estusMax = Math.max(1, data.estusMax);
+        estus = estusMax;
+
+        hasBloodstain = data.hasBloodstain;
+        bloodstainSouls = data.bloodstainSouls;
+        bloodstain.set(data.bloodstainX, data.bloodstainY, data.bloodstainZ);
+    }
+
+    /** Copies the live state back into the save and writes it. */
+    private void writeSave() {
+        if (save == null) return;
+        save.level = player.stats.level;
+        save.vigor = player.stats.vigor;
+        save.endurance = player.stats.endurance;
+        save.strength = player.stats.strength;
+        save.dexterity = player.stats.dexterity;
+        save.intelligence = player.stats.intelligence;
+        save.faith = player.stats.faith;
+        save.souls = player.stats.souls;
+        save.estusMax = estusMax;
+        save.playTime += elapsed - lastSavedAt;
+        lastSavedAt = elapsed;
+
+        save.weaponId = weapon.id;
+        save.weaponUpgrade = weapon.upgrade;
+
+        save.bonfireId = level.id;
+        save.bonfireX = bonfire.x;
+        save.bonfireY = bonfire.y;
+        save.bonfireZ = bonfire.z;
+
+        save.hasBloodstain = hasBloodstain;
+        save.bloodstainSouls = bloodstainSouls;
+        save.bloodstainX = bloodstain.x;
+        save.bloodstainY = bloodstain.y;
+        save.bloodstainZ = bloodstain.z;
+
+        saveGame.save(save);
     }
 
     /** Builds the model for a weapon and hands it to the player. */
@@ -203,6 +283,17 @@ public class GameScreen extends ScreenAdapter {
         elapsed += dt;
         if (toastTimer > 0f) toastTimer -= dt;
 
+        // The menu owns input and freezes the world while it is up.
+        if (menu.isOpen()) {
+            menu.update(dt, player, weapon, this::rest);
+            controls.reset();
+            camera.update(player.body.position, level.collision, dt);
+            hud.update(player.stats, dt);
+            renderScene();
+            renderHud();
+            return;
+        }
+
         gatherInput(dt);
 
         // Fixed-step simulation with a frame-time cap, so a stall cannot make the
@@ -219,19 +310,7 @@ public class GameScreen extends ScreenAdapter {
         camera.update(player.body.position, level.collision, dt);
         hud.update(player.stats, dt);
 
-        renderer.beginScene(level.fogColor.r, level.fogColor.g, level.fogColor.b);
-        level.renderables(renderList);
-        renderList.add(player.rig.instance);
-        if (weaponInstance != null) {
-            player.rig.weaponTransform(weaponTransform);
-            weaponInstance.transform.set(weaponTransform);
-            renderList.add(weaponInstance);
-        }
-        for (Enemy enemy : enemies) renderList.add(enemy.visual.instance());
-        renderer.renderScene(camera.camera, renderList);
-        renderer.endScene();
-        renderer.present();
-
+        renderScene();
         renderHud();
         if (touchControls != null) touchControls.render();
 
@@ -239,6 +318,11 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void renderHud() {
+        if (menu.isOpen()) {
+            hud.render(player.stats);
+            menu.render(player, weapon);
+            return;
+        }
         if (hud.showDebug) {
             hud.setDebugLine(String.format(
                     "fps %d | %s | %s +%d | spd %.1f | souls %d | estus %d | enemies %d",
@@ -257,6 +341,21 @@ public class GameScreen extends ScreenAdapter {
             hud.overlay(0f, 0f, 0f, Math.min(0.82f, t * 1.6f));
             hud.centreText("YOU DIED", Math.min(1f, t * 2.2f), 3.2f);
         }
+    }
+
+    private void renderScene() {
+        renderer.beginScene(level.fogColor.r, level.fogColor.g, level.fogColor.b);
+        level.renderables(renderList);
+        renderList.add(player.rig.instance);
+        if (weaponInstance != null) {
+            player.rig.weaponTransform(weaponTransform);
+            weaponInstance.transform.set(weaponTransform);
+            renderList.add(weaponInstance);
+        }
+        for (Enemy enemy : enemies) renderList.add(enemy.visual.instance());
+        renderer.renderScene(camera.camera, renderList);
+        renderer.endScene();
+        renderer.present();
     }
 
     private int aliveEnemies() {
@@ -444,17 +543,23 @@ public class GameScreen extends ScreenAdapter {
         if (estus <= 0 || player.stats.health >= player.stats.maxHealth) return;
         estus--;
         player.stats.heal(player.stats.maxHealth * ESTUS_HEAL_FRACTION);
-        showToast("Estus " + estus + "/" + ESTUS_CHARGES);
+        showToast("Estus " + estus + "/" + estusMax);
     }
 
-    /** Resting refills health and Estus and brings every enemy back. */
+    /** Interacting near a bonfire opens its menu rather than resting outright. */
     private void tryRest() {
         if (player.body.position.dst(bonfire) > BONFIRE_RANGE) return;
+        menu.open();
+    }
+
+    /** Resting refills health and Estus, brings every enemy back, and saves. */
+    private void rest() {
         player.stats.health = player.stats.maxHealth;
         player.stats.stamina = player.stats.maxStamina;
-        estus = ESTUS_CHARGES;
+        estus = estusMax;
         respawnEnemies();
-        showToast("Bonfire lit");
+        writeSave();
+        showToast("Rested");
     }
 
     private void respawnEnemies() {
@@ -483,10 +588,14 @@ public class GameScreen extends ScreenAdapter {
         player.stats.souls = 0;
 
         player.spawn(bonfire.x, bonfire.y + 0.2f, bonfire.z + 2f, 180f);
-        estus = ESTUS_CHARGES;
+        estus = estusMax;
         deathTimer = 0f;
+        save.deaths++;
         respawnEnemies();
         camera.snapTo(player.body.position);
+        // Save on death, so the souls you just lost stay lost. Anything else and
+        // dying could be undone by closing the app.
+        writeSave();
     }
 
     @Override
@@ -501,10 +610,13 @@ public class GameScreen extends ScreenAdapter {
     @Override
     public void hide() {
         if (desktopControls != null) Gdx.input.setCursorCatched(false);
+        writeSave();
     }
 
     @Override
     public void dispose() {
+        writeSave();
+        menu.dispose();
         if (renderer != null) renderer.dispose();
         if (level != null) level.dispose();
         if (hud != null) hud.dispose();

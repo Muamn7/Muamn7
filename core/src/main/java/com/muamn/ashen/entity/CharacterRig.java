@@ -250,6 +250,51 @@ public class CharacterRig {
         instance.calculateTransforms();
     }
 
+    /**
+     * The parry sweep: a short flick of the off hand across the body.
+     *
+     * The pose has to read at a glance, because a parry is a timing test and the
+     * player needs to see exactly when the window opened and closed.
+     */
+    public void poseParry(float t) {
+        clear();
+        float p = MathUtils.clamp(t, 0f, 1f);
+        // Fast out, slow back - the flick happens early, the recovery drags.
+        float flick = p < 0.35f ? p / 0.35f : Math.max(0f, 1f - (p - 0.35f) / 0.65f);
+        setRot(torso, hunch + 4f, -30f * flick, 0f);
+        setRot(shoulderL, -58f - 44f * flick, 34f * flick, -34f);
+        setRot(elbowL, -64f - 26f * flick, 0f, 0f);
+        setRot(shoulderR, -18f, 0f, 12f);
+        setRot(elbowR, -52f, 0f, 0f);
+        setRot(hipL, -8f * flick, 0f, 0f);
+        setRot(hipR, 6f * flick, 0f, 0f);
+        setRot(kneeL, -16f - 10f * flick, 0f, 0f);
+        setRot(kneeR, -14f, 0f, 0f);
+        hips.translation.y = restHipY - 0.04f * flick;
+        instance.calculateTransforms();
+    }
+
+    /** The riposte: step in, drive the blade home, pull back. */
+    public void poseRiposte(float t) {
+        clear();
+        float p = MathUtils.clamp(t, 0f, 1f);
+        float drive = p < 0.42f ? p / 0.42f : 1f;
+        float pull = p < 0.55f ? 0f : (p - 0.55f) / 0.45f;
+        float thrust = drive - pull;
+
+        setRot(torso, hunch + 16f * drive - 10f * pull, -24f + 46f * thrust, 0f);
+        setRot(shoulderR, -30f - 66f * thrust, 12f * thrust, 10f);
+        setRot(elbowR, -104f + 96f * thrust, 0f, 0f);
+        setRot(shoulderL, -26f * drive, 0f, -18f);
+        setRot(elbowL, -70f - 20f * drive, 0f, 0f);
+        setRot(hipL, 26f * thrust, 0f, 0f);
+        setRot(hipR, -22f * thrust, 0f, 0f);
+        setRot(kneeL, -34f - 16f * thrust, 0f, 0f);
+        setRot(kneeR, -14f, 0f, 0f);
+        hips.translation.y = restHipY - 0.14f * drive + 0.06f * pull;
+        instance.calculateTransforms();
+    }
+
     /** Reeling from a hit taken from {@code relativeAngle} degrees off the front. */
     public void poseStagger(float t, float relativeAngle) {
         clear();

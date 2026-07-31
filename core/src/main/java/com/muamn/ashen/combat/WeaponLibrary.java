@@ -46,29 +46,31 @@ public class WeaponLibrary {
         JsonValue node = root.require("movesets");
         for (JsonValue entry = node.child; entry != null; entry = entry.next) {
             WeaponClass cls = WeaponClass.valueOf(entry.name);
+            // Heavy attacks default to unparryable; everything else can be caught.
             movesets.put(cls, new Moveset(
-                    parseChain(entry.require("light"), entry.name + ".light"),
-                    parseChain(entry.require("heavy"), entry.name + ".heavy"),
-                    parseAttack(entry.require("running"), entry.name + ".running"),
-                    parseAttack(entry.require("rolling"), entry.name + ".rolling")));
+                    parseChain(entry.require("light"), entry.name + ".light", true),
+                    parseChain(entry.require("heavy"), entry.name + ".heavy", false),
+                    parseAttack(entry.require("running"), entry.name + ".running", true),
+                    parseAttack(entry.require("rolling"), entry.name + ".rolling", true)));
         }
     }
 
-    private AttackDef[] parseChain(JsonValue array, String id) {
+    private AttackDef[] parseChain(JsonValue array, String id, boolean parryable) {
         AttackDef[] out = new AttackDef[array.size];
         int i = 0;
         for (JsonValue a = array.child; a != null; a = a.next, i++) {
-            out[i] = parseAttack(a, id + i);
+            out[i] = parseAttack(a, id + i, parryable);
         }
         return out;
     }
 
-    private AttackDef parseAttack(JsonValue v, String id) {
+    private AttackDef parseAttack(JsonValue v, String id, boolean parryable) {
         return new AttackDef(id,
                 AttackDef.Motion.valueOf(v.getString("motion")),
                 v.getFloat("windup"), v.getFloat("active"), v.getFloat("recovery"),
                 v.getFloat("damage"), v.getFloat("poise"), v.getFloat("stamina"),
-                v.getFloat("reach"), v.getFloat("arc"), v.getFloat("step", 0f));
+                v.getFloat("reach"), v.getFloat("arc"), v.getFloat("step", 0f),
+                v.getBoolean("parryable", parryable));
     }
 
     private void parseWeapons(JsonValue root) {
