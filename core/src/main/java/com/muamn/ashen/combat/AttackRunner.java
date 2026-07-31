@@ -154,7 +154,8 @@ public class AttackRunner {
             if (distance > target.hitRadius() + 0.20f) continue;
 
             hitThisSwing.add(target);
-            float damage = weapon.damageAgainst(attacker.stats(), attack);
+            float damage = weapon.damageAgainst(attacker.stats(), attack)
+                    + attacker.damageBonus();
             hit.set(attacker, damage, attack.poise);
             hit.direction.set(toTarget).sub(origin);
             hit.direction.y = 0f;

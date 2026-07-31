@@ -51,6 +51,9 @@ public class EnemyDef {
     /** How this enemy is built and drawn. */
     public BodyDef body = new BodyDef();
 
+    /** What it drops besides souls. Empty for most of the bestiary. */
+    public com.muamn.ashen.item.LootTable loot = new com.muamn.ashen.item.LootTable();
+
     /** True for bosses: they get an arena, a name bar and phases. */
     public boolean boss;
     /** Health fractions at which the boss changes phase, high to low. */

@@ -9,7 +9,10 @@
     "",
     "body.kind is HUMANOID (arms, carries a weapon), CREATURE (a limb plan) or",
     "IMPORTED (an external model with its own animations, falling back to a",
-    "procedural body when absent)."
+    "procedural body when absent).",
+    "",
+    "drops rolls each row independently, so a kill can yield nothing, one thing",
+    "or the whole table. Item ids come from items.json."
   ],
 
   "enemies": [
@@ -20,6 +23,10 @@
       "walkSpeed": 1.8, "runSpeed": 4.0, "aggroRange": 12, "leashRange": 26,
       "alertDelay": 0.45, "circleTime": 1.1, "recoverTime": 0.65, "heavyChance": 0.25,
       "weapon": "broadsword",
+      "drops": [
+        { "item": "charred_bread", "chance": 0.16 },
+        { "item": "ember_shard", "chance": 0.1 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "armor": "leather", "trim": "iron" }
     },
     {
@@ -29,6 +36,10 @@
       "walkSpeed": 2.1, "runSpeed": 4.4, "aggroRange": 20, "leashRange": 30,
       "alertDelay": 0.35, "circleTime": 1.6, "recoverTime": 0.75, "heavyChance": 0.30,
       "weapon": "short_bow",
+      "drops": [
+        { "item": "charred_bread", "chance": 0.14 },
+        { "item": "ember_shard", "chance": 0.09 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.9,
                 "armor": "cloth_dark", "trim": "leather", "tint": "C8C0AA" }
     },
@@ -39,6 +50,9 @@
       "walkSpeed": 2.8, "runSpeed": 6.6, "turnSpeed": 340, "aggroRange": 16,
       "leashRange": 30, "alertDelay": 0.20, "circleTime": 0.6, "recoverTime": 0.45,
       "heavyChance": 0.10, "weapon": "dagger",
+      "drops": [
+        { "item": "charred_bread", "chance": 0.1 }
+      ],
       "body": { "kind": "CREATURE", "preset": "hound", "bodyMaterial": "leather",
                 "limbMaterial": "leather", "detailMaterial": "bone" }
     },
@@ -49,6 +63,10 @@
       "walkSpeed": 1.7, "runSpeed": 3.8, "aggroRange": 13, "leashRange": 26,
       "alertDelay": 0.55, "circleTime": 1.3, "recoverTime": 0.80, "heavyChance": 0.35,
       "weapon": "bastard_sword",
+      "drops": [
+        { "item": "ember_shard", "chance": 0.22, "min": 1, "max": 2 },
+        { "item": "soul_of_a_hollow", "chance": 0.14 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "bulk": 1.12,
                 "armor": "steel", "cloth": "cloth_dark", "trim": "iron" }
     },
@@ -59,6 +77,10 @@
       "walkSpeed": 1.5, "runSpeed": 3.2, "aggroRange": 22, "leashRange": 32,
       "alertDelay": 0.50, "circleTime": 1.9, "recoverTime": 0.95, "heavyChance": 0.15,
       "weapon": "sorcerer_staff",
+      "drops": [
+        { "item": "soul_of_a_hollow", "chance": 0.18 },
+        { "item": "resin_of_frost", "chance": 0.1 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.85, "hunch": 16,
                 "armor": "cloth_dark", "cloth": "cloth_dark", "trim": "gold",
                 "tint": "9AA6C8" }
@@ -70,6 +92,10 @@
       "walkSpeed": 2.4, "runSpeed": 5.4, "turnSpeed": 300, "aggroRange": 14,
       "leashRange": 28, "alertDelay": 0.25, "circleTime": 0.75, "recoverTime": 0.50,
       "heavyChance": 0.20, "weapon": "dagger",
+      "drops": [
+        { "item": "charred_bread", "chance": 0.18 },
+        { "item": "dried_root", "chance": 0.14 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 0.92, "bulk": 0.72,
                 "hunch": 26, "armLength": 1.18, "armor": "flesh_rot",
                 "skin": "flesh_rot", "trim": "bone", "tabard": false }
@@ -81,6 +107,10 @@
       "walkSpeed": 2.6, "runSpeed": 5.2, "turnSpeed": 300, "aggroRange": 14,
       "leashRange": 26, "alertDelay": 0.30, "circleTime": 0.85, "recoverTime": 0.55,
       "heavyChance": 0.20, "weapon": "dagger",
+      "drops": [
+        { "item": "dried_root", "chance": 0.16, "min": 1, "max": 2 },
+        { "item": "greenblood_leaf", "chance": 0.07 }
+      ],
       "body": { "kind": "CREATURE", "preset": "spider", "bodyMaterial": "flesh_rot",
                 "limbMaterial": "iron", "detailMaterial": "bone" }
     },
@@ -91,6 +121,10 @@
       "walkSpeed": 1.9, "runSpeed": 4.2, "aggroRange": 13, "leashRange": 24,
       "alertDelay": 0.40, "circleTime": 1.0, "recoverTime": 0.62, "heavyChance": 0.30,
       "weapon": "falchion",
+      "drops": [
+        { "item": "ember_shard", "chance": 0.2, "min": 1, "max": 2 },
+        { "item": "soothing_ash", "chance": 0.1 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.78,
                 "armor": "bone", "skin": "bone", "cloth": "cloth_dark",
                 "trim": "iron", "helmet": true, "tint": "D8D2BC" }
@@ -102,6 +136,11 @@
       "walkSpeed": 1.9, "runSpeed": 4.4, "turnSpeed": 190, "aggroRange": 18,
       "leashRange": 34, "alertDelay": 0.75, "circleTime": 1.5, "recoverTime": 1.00,
       "heavyChance": 0.40, "weapon": "greataxe",
+      "drops": [
+        { "item": "soul_of_a_beast", "chance": 0.3 },
+        { "item": "ember_lump", "chance": 0.16 },
+        { "item": "resin_of_embers", "chance": 0.12 }
+      ],
       "body": { "kind": "CREATURE", "preset": "drake", "scale": 1.0,
                 "bodyMaterial": "stone_dark", "limbMaterial": "stone_dark",
                 "detailMaterial": "bone" }
@@ -113,6 +152,10 @@
       "walkSpeed": 1.3, "runSpeed": 2.9, "turnSpeed": 200, "aggroRange": 11,
       "leashRange": 22, "alertDelay": 0.60, "circleTime": 1.4, "recoverTime": 0.90,
       "heavyChance": 0.30, "weapon": "great_club",
+      "drops": [
+        { "item": "soothing_ash", "chance": 0.14 },
+        { "item": "dried_root", "chance": 0.12 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 1.25, "hunch": 20,
                 "armor": "flesh_rot", "skin": "flesh_rot", "cloth": "cloth_dark",
                 "trim": "leather", "tint": "9EA882" }
@@ -124,6 +167,10 @@
       "walkSpeed": 1.2, "runSpeed": 2.6, "turnSpeed": 150, "stepScale": 1.25,
       "aggroRange": 12, "leashRange": 20, "alertDelay": 0.85, "circleTime": 1.8,
       "recoverTime": 1.20, "heavyChance": 0.45, "weapon": "great_club",
+      "drops": [
+        { "item": "ember_lump", "chance": 0.2 },
+        { "item": "soul_of_a_hollow", "chance": 0.16 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.34, "bulk": 1.35,
                 "armor": "stone_dark", "cloth": "stone", "skin": "stone",
                 "trim": "stone", "tabard": false }
@@ -135,6 +182,10 @@
       "walkSpeed": 2.9, "runSpeed": 6.0, "turnSpeed": 360, "aggroRange": 15,
       "leashRange": 30, "alertDelay": 0.18, "circleTime": 0.55, "recoverTime": 0.42,
       "heavyChance": 0.15, "weapon": "uchigatana",
+      "drops": [
+        { "item": "homeward_bone", "chance": 0.12 },
+        { "item": "soul_of_a_hollow", "chance": 0.15 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.68,
                 "armor": "cloth_dark", "cloth": "cloth_dark", "skin": "bone",
                 "trim": "steel", "tint": "8FA8B4" }
@@ -146,6 +197,11 @@
       "walkSpeed": 1.5, "runSpeed": 3.4, "turnSpeed": 130, "stepScale": 1.6,
       "aggroRange": 16, "leashRange": 28, "alertDelay": 0.95, "circleTime": 1.7,
       "recoverTime": 1.35, "heavyChance": 0.50, "weapon": "greataxe",
+      "drops": [
+        { "item": "ember_lump", "chance": 0.28, "min": 1, "max": 2 },
+        { "item": "soul_of_a_beast", "chance": 0.22 },
+        { "item": "flask_ember", "chance": 0.06 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.88, "bulk": 1.45,
                 "hunch": 14, "armor": "ash", "skin": "ash", "cloth": "leather",
                 "trim": "iron", "helmet": false, "tint": "B0AA9E" }
@@ -157,6 +213,10 @@
       "walkSpeed": 2.6, "runSpeed": 6.2, "turnSpeed": 340, "aggroRange": 10,
       "leashRange": 24, "alertDelay": 0.15, "circleTime": 0.50, "recoverTime": 0.38,
       "heavyChance": 0.20, "weapon": "dagger",
+      "drops": [
+        { "item": "homeward_bone", "chance": 0.14 },
+        { "item": "greenblood_leaf", "chance": 0.12 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.75, "hunch": 22,
                 "armor": "cloth_dark", "cloth": "cloth_dark", "trim": "leather",
                 "helmet": true, "tint": "6E6E76" }
@@ -168,6 +228,10 @@
       "walkSpeed": 1.5, "runSpeed": 3.2, "turnSpeed": 210, "aggroRange": 12,
       "leashRange": 22, "alertDelay": 0.65, "circleTime": 1.6, "recoverTime": 0.85,
       "heavyChance": 0.25, "weapon": "mace",
+      "drops": [
+        { "item": "ember_shard", "chance": 0.2, "min": 1, "max": 2 },
+        { "item": "soothing_ash", "chance": 0.12 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "bulk": 1.22,
                 "armor": "iron", "cloth": "cloth_red", "trim": "steel" }
     },
@@ -178,6 +242,9 @@
       "walkSpeed": 3.2, "runSpeed": 6.8, "turnSpeed": 380, "aggroRange": 15,
       "leashRange": 28, "alertDelay": 0.18, "circleTime": 0.55, "recoverTime": 0.45,
       "heavyChance": 0.10, "weapon": "dagger",
+      "drops": [
+        { "item": "dried_root", "chance": 0.1 }
+      ],
       "body": { "kind": "CREATURE", "preset": "bat", "bodyMaterial": "leather",
                 "limbMaterial": "cloth_dark", "detailMaterial": "bone" }
     },
@@ -188,6 +255,10 @@
       "walkSpeed": 1.4, "runSpeed": 3.0, "turnSpeed": 170, "aggroRange": 9,
       "leashRange": 18, "alertDelay": 0.55, "circleTime": 1.2, "recoverTime": 0.85,
       "heavyChance": 0.30, "weapon": "mace",
+      "drops": [
+        { "item": "soothing_ash", "chance": 0.12 },
+        { "item": "greenblood_leaf", "chance": 0.08 }
+      ],
       "body": { "kind": "CREATURE", "preset": "maggot", "bodyMaterial": "flesh_rot",
                 "limbMaterial": "flesh_rot", "detailMaterial": "bone" }
     },
@@ -198,6 +269,10 @@
       "walkSpeed": 2.2, "runSpeed": 5.0, "aggroRange": 15, "leashRange": 28,
       "alertDelay": 0.30, "circleTime": 0.9, "recoverTime": 0.58, "heavyChance": 0.40,
       "weapon": "halberd",
+      "drops": [
+        { "item": "resin_of_embers", "chance": 0.2 },
+        { "item": "soul_of_a_hollow", "chance": 0.16 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "bulk": 0.95,
                 "armor": "cloth_red", "cloth": "cloth_red", "trim": "gold",
                 "skin": "flesh_rot", "tint": "D89A5A" }
@@ -209,6 +284,10 @@
       "walkSpeed": 1.6, "runSpeed": 3.8, "turnSpeed": 160, "stepScale": 1.35,
       "aggroRange": 14, "leashRange": 24, "alertDelay": 0.80, "circleTime": 1.5,
       "recoverTime": 1.10, "heavyChance": 0.45, "weapon": "greataxe",
+      "drops": [
+        { "item": "ember_lump", "chance": 0.24 },
+        { "item": "soul_of_a_beast", "chance": 0.18 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.22, "bulk": 1.40,
                 "armor": "leather", "cloth": "cloth_dark", "skin": "skin_pale",
                 "trim": "iron", "helmet": true, "tint": "A08C78" }
@@ -220,6 +299,10 @@
       "walkSpeed": 2.3, "runSpeed": 5.6, "turnSpeed": 240, "aggroRange": 16,
       "leashRange": 30, "alertDelay": 0.35, "circleTime": 0.95, "recoverTime": 0.60,
       "heavyChance": 0.35, "weapon": "spear",
+      "drops": [
+        { "item": "ember_lump", "chance": 0.2 },
+        { "item": "greenblood_leaf", "chance": 0.14, "min": 1, "max": 2 }
+      ],
       "body": { "kind": "CREATURE", "preset": "serpent", "bodyMaterial": "cloth_dark",
                 "limbMaterial": "cloth_dark", "detailMaterial": "bone",
                 "tint": "6A6470" }

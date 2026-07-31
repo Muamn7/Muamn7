@@ -45,6 +45,14 @@ public interface Combatant {
     /** Weapon in hand, used for guard absorption and reach. */
     WeaponDef weapon();
 
+    /**
+     * Flat damage added on top of the weapon's, e.g. from a resin on the blade.
+     * Defaulted so nothing that has no notion of buffs has to say it has none.
+     */
+    default float damageBonus() {
+        return 0f;
+    }
+
     /** Torso height point, used as the aim target and hit centre. */
     Vector3 hitCenter(Vector3 out);
 

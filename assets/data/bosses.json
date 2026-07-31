@@ -8,7 +8,12 @@
     "A boss is not a special kind of object - it is an enemy whose numbers are",
     "frightening and whose arena locks behind it. Every one keeps a recoverTime",
     "long enough to punish, because a boss with no punish window is not hard,",
-    "it is just a wall."
+    "it is just a wall.",
+    "",
+    "Boss drops are all chance 1.0: a boss is fought once, so a roll that can",
+    "fail would mean an upgrade path that is out of reach through no fault of",
+    "the player. The reinforcement materials are gated here, and only the last",
+    "boss carries the heart that takes a weapon to +10."
   ],
 
   "bosses": [
@@ -21,6 +26,11 @@
       "circleTime": 1.2, "recoverTime": 0.85, "heavyChance": 0.35,
       "weapon": "bastard_sword",
       "phases": [0.55], "phaseAggression": [1.0, 1.30],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_lump", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.12, "bulk": 1.20,
                 "armor": "iron", "cloth": "cloth_red", "trim": "gold", "tint": "C8B69A" }
     },
@@ -33,6 +43,11 @@
       "circleTime": 1.4, "recoverTime": 1.00, "heavyChance": 0.42,
       "weapon": "halberd",
       "phases": [0.50], "phaseAggression": [1.0, 1.25],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_lump", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.18, "bulk": 1.28,
                 "armor": "steel", "cloth": "cloth_dark", "trim": "iron" }
     },
@@ -45,6 +60,11 @@
       "circleTime": 0.95, "recoverTime": 0.70, "heavyChance": 0.35,
       "weapon": "spear",
       "phases": [0.60, 0.28], "phaseAggression": [1.0, 1.20, 1.45],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_lump", "chance": 1.0, "min": 2, "max": 3 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "CREATURE", "preset": "spider", "scale": 2.0,
                 "bodyMaterial": "flesh_rot", "limbMaterial": "iron",
                 "detailMaterial": "bone", "tint": "8E8464" }
@@ -58,6 +78,11 @@
       "circleTime": 1.3, "recoverTime": 0.92, "heavyChance": 0.40,
       "weapon": "greataxe",
       "phases": [0.55, 0.25], "phaseAggression": [1.0, 1.22, 1.50],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_core", "chance": 1.0 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.28, "bulk": 1.18,
                 "armor": "bone", "skin": "bone", "cloth": "cloth_dark",
                 "trim": "gold", "tint": "DCD6C0" }
@@ -71,6 +96,10 @@
       "circleTime": 1.5, "recoverTime": 1.15, "heavyChance": 0.45,
       "weapon": "greataxe",
       "phases": [0.60, 0.30], "phaseAggression": [1.0, 1.18, 1.42],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "ember_core", "chance": 1.0, "min": 1, "max": 2 }
+      ],
       "body": { "kind": "CREATURE", "preset": "drake", "scale": 1.6,
                 "bodyMaterial": "stone_dark", "limbMaterial": "stone_dark",
                 "detailMaterial": "bone" }
@@ -84,6 +113,11 @@
       "circleTime": 1.6, "recoverTime": 1.25, "heavyChance": 0.50,
       "weapon": "great_club",
       "phases": [0.50], "phaseAggression": [1.0, 1.35],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_core", "chance": 1.0 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.42, "bulk": 1.50,
                 "armor": "leather", "cloth": "cloth_dark", "skin": "skin_pale",
                 "trim": "iron", "helmet": true, "tint": "A08C78" }
@@ -97,6 +131,10 @@
       "circleTime": 0.70, "recoverTime": 0.55, "heavyChance": 0.30,
       "weapon": "uchigatana",
       "phases": [0.55, 0.25], "phaseAggression": [1.0, 1.28, 1.55],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "ember_core", "chance": 1.0, "min": 1, "max": 2 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "bulk": 0.92,
                 "armor": "steel", "cloth": "cloth_red", "trim": "gold",
                 "tint": "B8C4D0" }
@@ -110,6 +148,11 @@
       "circleTime": 1.15, "recoverTime": 0.80, "heavyChance": 0.38,
       "weapon": "spear",
       "phases": [0.60, 0.28], "phaseAggression": [1.0, 1.22, 1.48],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0 },
+        { "item": "ember_core", "chance": 1.0 },
+        { "item": "soothing_ash", "chance": 1.0, "min": 3, "max": 3 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.18, "bulk": 0.88,
                 "armor": "cloth_dark", "cloth": "cloth_dark", "skin": "flesh_rot",
                 "trim": "bone", "tint": "9EA882" }
@@ -123,6 +166,10 @@
       "circleTime": 1.9, "recoverTime": 1.50, "heavyChance": 0.55,
       "weapon": "great_club",
       "phases": [0.50], "phaseAggression": [1.0, 1.30],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "ember_core", "chance": 1.0, "min": 2, "max": 2 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 2.40, "bulk": 1.55,
                 "armor": "stone_dark", "cloth": "stone", "skin": "stone",
                 "trim": "stone", "tabard": false }
@@ -136,6 +183,11 @@
       "circleTime": 1.5, "recoverTime": 0.95, "heavyChance": 0.30,
       "weapon": "sorcerer_staff",
       "phases": [0.55, 0.25], "phaseAggression": [1.0, 1.25, 1.55],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 2 },
+        { "item": "ember_core", "chance": 1.0, "min": 1, "max": 2 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.14, "bulk": 0.86,
                 "hunch": 12, "armor": "cloth_dark", "cloth": "cloth_dark",
                 "trim": "gold", "skin": "bone", "tint": "7C8CC0" }
@@ -149,6 +201,10 @@
       "circleTime": 1.05, "recoverTime": 0.78, "heavyChance": 0.42,
       "weapon": "zweihander",
       "phases": [0.58, 0.26], "phaseAggression": [1.0, 1.26, 1.52],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 3 },
+        { "item": "ember_core", "chance": 1.0, "min": 2, "max": 2 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.16, "bulk": 1.22,
                 "armor": "gold", "cloth": "cloth_red", "trim": "steel",
                 "tint": "E0C070" }
@@ -162,6 +218,10 @@
       "circleTime": 1.25, "recoverTime": 0.88, "heavyChance": 0.45,
       "weapon": "halberd",
       "phases": [0.55, 0.25], "phaseAggression": [1.0, 1.24, 1.50],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 2, "max": 3 },
+        { "item": "ember_core", "chance": 1.0, "min": 2, "max": 3 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.24, "bulk": 1.26,
                 "armor": "steel", "cloth": "cloth_red", "trim": "gold" }
     },
@@ -174,6 +234,11 @@
       "circleTime": 1.45, "recoverTime": 1.10, "heavyChance": 0.48,
       "weapon": "great_club",
       "phases": [0.60, 0.30], "phaseAggression": [1.0, 1.22, 1.48],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 3, "max": 3 },
+        { "item": "ember_core", "chance": 1.0, "min": 2, "max": 3 },
+        { "item": "flask_ember", "chance": 1.0 }
+      ],
       "body": { "kind": "IMPORTED", "model": "twin_horror", "scale": 1.0,
                 "preset": "hollow", "armor": "flesh_rot", "skin": "flesh_rot",
                 "cloth": "cloth_dark", "trim": "bone", "bulk": 1.6 }
@@ -187,6 +252,10 @@
       "circleTime": 0.90, "recoverTime": 0.68, "heavyChance": 0.40,
       "weapon": "spear",
       "phases": [0.58, 0.26], "phaseAggression": [1.0, 1.30, 1.58],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 3, "max": 3 },
+        { "item": "ember_core", "chance": 1.0, "min": 3, "max": 3 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "hollow", "scale": 1.30, "bulk": 0.90,
                 "armLength": 1.14, "armor": "cloth_dark", "cloth": "cloth_dark",
                 "skin": "bone", "trim": "gold", "tint": "A8B8C8" }
@@ -200,6 +269,10 @@
       "circleTime": 1.20, "recoverTime": 0.90, "heavyChance": 0.50,
       "weapon": "zweihander",
       "phases": [0.62, 0.32], "phaseAggression": [1.0, 1.26, 1.56],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 4, "max": 4 },
+        { "item": "ember_core", "chance": 1.0, "min": 3, "max": 4 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.52, "bulk": 1.34,
                 "armor": "gold", "cloth": "cloth_red", "trim": "steel",
                 "tint": "D8C088" }
@@ -213,6 +286,10 @@
       "circleTime": 0.95, "recoverTime": 0.72, "heavyChance": 0.52,
       "weapon": "greataxe",
       "phases": [0.70, 0.42, 0.18], "phaseAggression": [1.0, 1.22, 1.46, 1.75],
+      "drops": [
+        { "item": "soul_of_a_knight", "chance": 1.0, "min": 6, "max": 6 },
+        { "item": "ember_heart", "chance": 1.0 }
+      ],
       "body": { "kind": "HUMANOID", "preset": "knight", "scale": 1.38, "bulk": 1.24,
                 "armor": "ash", "cloth": "cloth_red", "skin": "ember",
                 "trim": "gold", "tint": "E8A860" }

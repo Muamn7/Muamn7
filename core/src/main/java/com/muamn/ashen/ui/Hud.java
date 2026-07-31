@@ -243,6 +243,36 @@ public class Hud implements Disposable {
         batch.end();
     }
 
+    /**
+     * The quick slot: what the use button will spend, and how many are left.
+     *
+     * Under the bars rather than in a corner, because the one moment it has to
+     * be readable is the moment you are deciding whether to drink, and that is
+     * the moment your eyes are on the health bar.
+     */
+    public void quickSlot(String name, int count, float buffSeconds) {
+        int screenH = Gdx.graphics.getHeight();
+        int screenW = Gdx.graphics.getWidth();
+        float scale = MathUtils.clamp(screenW / 960f, 0.75f, 2.2f);
+        float h = BAR_HEIGHT * scale;
+        float x = BAR_X * scale;
+        float y = screenH - BAR_TOP * scale - h * 2f - BAR_GAP * scale * 2f - 20f * scale;
+
+        batch.begin();
+        font.getData().setScale(Math.max(1f, scale * 0.85f));
+        font.setColor(0.88f, 0.84f, 0.70f, 1f);
+        font.draw(batch, name + "  x" + count, x, y);
+        if (buffSeconds > 0f) {
+            // Counts down, because the decision a resin creates is when to spend
+            // the rest of it.
+            font.setColor(0.95f, 0.62f, 0.24f, 1f);
+            font.draw(batch, "BUFF " + (int) Math.ceil(buffSeconds) + "s", x, y - 20f * scale);
+        }
+        font.setColor(0.86f, 0.83f, 0.76f, 1f);
+        font.getData().setScale(1f);
+        batch.end();
+    }
+
     /** Full-screen tint, used for the death fade. */
     public void overlay(float r, float g, float b, float alpha) {
         if (alpha <= 0f) return;

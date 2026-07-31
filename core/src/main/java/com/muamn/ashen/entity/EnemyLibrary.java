@@ -90,6 +90,15 @@ public class EnemyLibrary {
             def.phaseAggression = aggression.asFloatArray();
         }
 
+        JsonValue drops = v.get("drops");
+        if (drops != null && drops.isArray()) {
+            for (JsonValue d = drops.child; d != null; d = d.next) {
+                int min = d.getInt("min", 1);
+                def.loot.add(d.require("item").asString(),
+                        d.getFloat("chance", 0.1f), min, d.getInt("max", min));
+            }
+        }
+
         JsonValue body = v.get("body");
         if (body != null) def.body = parseBody(body);
         return def;

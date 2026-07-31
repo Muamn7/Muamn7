@@ -37,6 +37,15 @@ public class Player implements Combatant {
     public final CharacterRig rig;
     public final AttackRunner attacks = new AttackRunner();
 
+    /** What the player is carrying. */
+    public final com.muamn.ashen.item.Inventory inventory = new com.muamn.ashen.item.Inventory();
+    /** Item id the use button spends, or empty for the Estus flask. */
+    public String quickItem = "";
+
+    /** Flat damage added to every swing while a resin is on the blade. */
+    private float buffDamage;
+    private float buffTimer;
+
     private WeaponDef weapon;
 
     private State state = State.GROUNDED;
@@ -102,6 +111,27 @@ public class Player implements Combatant {
 
     public void setWeapon(WeaponDef weapon) {
         this.weapon = weapon;
+    }
+
+    @Override
+    public float damageBonus() {
+        return buffDamage;
+    }
+
+    /** Puts a resin on the blade. A second resin replaces the first. */
+    public void applyBuff(float damage, float seconds) {
+        buffDamage = damage;
+        buffTimer = seconds;
+    }
+
+    /** Seconds of weapon buff left, for the HUD. Zero when there is none. */
+    public float buffRemaining() {
+        return Math.max(0f, buffTimer);
+    }
+
+    public void clearBuff() {
+        buffDamage = 0f;
+        buffTimer = 0f;
     }
 
     @Override
@@ -235,6 +265,10 @@ public class Player implements Combatant {
         }
         if (rollAttackWindow > 0f) rollAttackWindow -= dt;
         if (riposteableTimer > 0f) riposteableTimer -= dt;
+        if (buffTimer > 0f) {
+            buffTimer -= dt;
+            if (buffTimer <= 0f) buffDamage = 0f;
+        }
 
         if (state == State.DEAD) {
             body.velocity.x = 0f;
@@ -484,7 +518,7 @@ public class Player implements Combatant {
         if (!riposteStruck && stateTime >= strikeAt && riposteVictim != null) {
             riposteStruck = true;
             AttackDef attack = weapon.moveset.heavy(0);
-            float damage = weapon.damageAgainst(stats, attack)
+            float damage = (weapon.damageAgainst(stats, attack) + buffDamage)
                     * (weapon.critical / 100f) * Config.RIPOSTE_MULTIPLIER;
             riposteHit.set(this, damage, attack.poise * 3f);
             riposteHit.critical = true;

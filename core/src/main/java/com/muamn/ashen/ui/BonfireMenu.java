@@ -7,11 +7,14 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Disposable;
 
 import com.muamn.ashen.combat.WeaponDef;
 import com.muamn.ashen.entity.Player;
 import com.muamn.ashen.entity.Stats;
+import com.muamn.ashen.item.ItemDef;
+import com.muamn.ashen.item.ItemLibrary;
 
 /**
  * The menu you get for resting at a bonfire: rest, level up, reinforce.
@@ -23,7 +26,7 @@ import com.muamn.ashen.entity.Stats;
  */
 public class BonfireMenu implements Disposable {
 
-    public enum Page { ROOT, LEVEL_UP, REINFORCE }
+    public enum Page { ROOT, LEVEL_UP, REINFORCE, ITEMS }
 
     /** What the screen must do when the player picks Rest. */
     public interface RestAction {
@@ -31,11 +34,13 @@ public class BonfireMenu implements Disposable {
     }
 
     private static final String[] ROOT_ITEMS = {
-            "Rest", "Level Up", "Reinforce Weapon", "Leave"
+            "Rest", "Level Up", "Reinforce Weapon", "Items", "Leave"
     };
     private static final String[] ATTRIBUTES = {
             "Vigor", "Endurance", "Strength", "Dexterity", "Intelligence", "Faith"
     };
+
+    private final ItemLibrary items;
 
     private final ShapeRenderer shapes = new ShapeRenderer();
     private final SpriteBatch batch = new SpriteBatch();
@@ -53,6 +58,10 @@ public class BonfireMenu implements Disposable {
 
     private boolean prevTouched;
     private float inputCooldown;
+
+    public BonfireMenu(ItemLibrary items) {
+        this.items = items;
+    }
 
     public boolean isOpen() {
         return open;
@@ -85,7 +94,9 @@ public class BonfireMenu implements Disposable {
         if (inputCooldown > 0f) inputCooldown -= dt;
         if (messageTimer > 0f) messageTimer -= dt;
 
+        heldCount = player.inventory.ids().size;
         int items = itemCount();
+        if (cursor >= items) cursor = items - 1;
         if (pressed(Input.Keys.UP) || pressed(Input.Keys.W)) cursor = Math.floorMod(cursor - 1, items);
         if (pressed(Input.Keys.DOWN) || pressed(Input.Keys.S)) cursor = Math.floorMod(cursor + 1, items);
 
@@ -129,15 +140,19 @@ public class BonfireMenu implements Disposable {
                     case 0: onRest.rest(); close(); break;
                     case 1: page = Page.LEVEL_UP; cursor = 0; break;
                     case 2: page = Page.REINFORCE; cursor = 0; break;
+                    case 3: page = Page.ITEMS; cursor = 0; break;
                     default: close(); break;
                 }
+                break;
+            case ITEMS:
+                selectItem(player);
                 break;
             case LEVEL_UP:
                 if (cursor >= ATTRIBUTES.length) { page = Page.ROOT; cursor = 0; break; }
                 levelUp(player.stats, cursor);
                 break;
             case REINFORCE:
-                if (cursor == 0) reinforce(player.stats, weapon);
+                if (cursor == 0) reinforce(player, weapon);
                 else { page = Page.ROOT; cursor = 0; }
                 break;
             default:
@@ -175,9 +190,16 @@ public class BonfireMenu implements Disposable {
         toast("Level " + stats.level);
     }
 
-    private void reinforce(Stats stats, WeaponDef weapon) {
+    private void reinforce(Player player, WeaponDef weapon) {
+        Stats stats = player.stats;
         if (weapon.upgrade >= 10) {
             toast("Already at +10");
+            return;
+        }
+        String material = reinforceMaterial(weapon.upgrade + 1);
+        int need = reinforceMaterialCount(weapon.upgrade + 1);
+        if (!player.inventory.has(material, need)) {
+            toast("Need " + need + "x " + materialLabel(material));
             return;
         }
         long cost = reinforceCost(weapon);
@@ -185,6 +207,7 @@ public class BonfireMenu implements Disposable {
             toast("Not enough souls");
             return;
         }
+        player.inventory.remove(material, need);
         stats.souls -= cost;
         weapon.upgrade++;
         toast(weapon.nameEn + " +" + weapon.upgrade);
@@ -196,6 +219,55 @@ public class BonfireMenu implements Disposable {
         return (long) (180 * Math.pow(next, 1.55) + weapon.physical * next * 0.9);
     }
 
+    /**
+     * Which material a given upgrade step needs.
+     *
+     * Souls alone would make reinforcement a grinding problem: kill anything for
+     * long enough and every weapon reaches +10. Gating the tiers behind materials
+     * that only the right enemies drop, and putting the last one on the final
+     * boss, means the upgrade path is something you find rather than something
+     * you wait for.
+     */
+    public static String reinforceMaterial(int nextLevel) {
+        if (nextLevel <= 3) return "ember_shard";
+        if (nextLevel <= 6) return "ember_lump";
+        if (nextLevel <= 9) return "ember_core";
+        return "ember_heart";
+    }
+
+    /** How many of that material. Rises within each tier, resets at the next. */
+    public static int reinforceMaterialCount(int nextLevel) {
+        if (nextLevel >= 10) return 1;
+        return ((nextLevel - 1) % 3) + 1;
+    }
+
+    /** Short label for the toast, so the message fits on a phone. */
+    private static String materialLabel(String materialId) {
+        switch (materialId) {
+            case "ember_shard": return "Shard";
+            case "ember_lump":  return "Lump";
+            case "ember_core":  return "Core";
+            default:            return "Heart";
+        }
+    }
+
+    /**
+     * Picking a consumable puts it in the quick slot. Picking a material just
+     * reads it out - there is nothing to do with a shard here but spend it on
+     * the page above.
+     */
+    private void selectItem(Player player) {
+        Array<String> held = player.inventory.ids();
+        if (cursor >= held.size) { page = Page.ROOT; cursor = 0; return; }
+        ItemDef def = items.get(held.get(cursor));
+        if (def.consumable()) {
+            player.quickItem = def.id;
+            toast(def.nameEn + " ready");
+        } else {
+            toast(def.descEn);
+        }
+    }
+
     private void toast(String text) {
         message = text;
         messageTimer = 2f;
@@ -205,9 +277,17 @@ public class BonfireMenu implements Disposable {
         switch (page) {
             case LEVEL_UP:  return ATTRIBUTES.length + 1;   // attributes plus Back
             case REINFORCE: return 2;                       // Reinforce plus Back
+            case ITEMS:     return heldCount + 1;           // what is carried plus Back
             default:        return ROOT_ITEMS.length;
         }
     }
+
+    /**
+     * How many item rows the ITEMS page has. Captured when the page is entered
+     * and when it is drawn, so the cursor cannot point past the list if an item
+     * is consumed while the page is open.
+     */
+    private int heldCount;
 
     private boolean pressed(int key) {
         return Gdx.input.isKeyJustPressed(key);
@@ -295,6 +375,7 @@ public class BonfireMenu implements Disposable {
             case LEVEL_UP:  return "LEVEL UP   -   next costs "
                     + Stats.soulsToLevel(player.stats.level);
             case REINFORCE: return "REINFORCE   -   " + weapon.nameEn + " +" + weapon.upgrade;
+            case ITEMS:     return "ITEMS   -   pick one for the quick slot";
             default:        return "BONFIRE";
         }
     }
@@ -305,10 +386,18 @@ public class BonfireMenu implements Disposable {
                 return index < ATTRIBUTES.length ? ATTRIBUTES[index] : "Back";
             case REINFORCE:
                 if (index == 0) {
-                    return weapon.upgrade >= 10 ? "Fully reinforced"
-                            : "Reinforce to +" + (weapon.upgrade + 1);
+                    if (weapon.upgrade >= 10) return "Fully reinforced";
+                    int next = weapon.upgrade + 1;
+                    return "To +" + next + "   " + reinforceMaterialCount(next)
+                            + "x " + materialLabel(reinforceMaterial(next));
                 }
                 return "Back";
+            case ITEMS: {
+                Array<String> held = player.inventory.ids();
+                if (index >= held.size) return held.size == 0 ? "Carrying nothing" : "Back";
+                ItemDef def = items.get(held.get(index));
+                return (def.id.equals(player.quickItem) ? "* " : "  ") + def.nameEn;
+            }
             default:
                 return ROOT_ITEMS[index];
         }
@@ -324,9 +413,20 @@ public class BonfireMenu implements Disposable {
                 return Integer.toString(values[index]);
             case REINFORCE:
                 if (index == 0 && weapon.upgrade < 10) {
-                    return Long.toString(reinforceCost(weapon));
+                    int next = weapon.upgrade + 1;
+                    String material = reinforceMaterial(next);
+                    // Show what is carried against what is needed, so a refusal
+                    // to reinforce is explained before it happens.
+                    return reinforceCost(weapon) + "   ("
+                            + player.inventory.count(material) + "/"
+                            + reinforceMaterialCount(next) + ")";
                 }
                 return null;
+            case ITEMS: {
+                Array<String> held = player.inventory.ids();
+                if (index >= held.size) return null;
+                return "x" + player.inventory.count(held.get(index));
+            }
             default:
                 if (index == 1) return "Lv " + s.level;
                 return null;

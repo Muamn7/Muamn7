@@ -14,7 +14,8 @@ public class DesktopControls {
     public float mouseSensitivity = 0.16f;
     public boolean invertY = false;
 
-    private boolean prevRoll, prevLight, prevHeavy, prevLock, prevUse, prevInteract, prevPause;
+    private boolean prevRoll, prevLight, prevHeavy, prevLock, prevUse, prevInteract, prevPause,
+            prevCycle;
 
     public void update(ControlState out) {
         // --- movement ---
@@ -49,6 +50,7 @@ public class DesktopControls {
         boolean lock = Gdx.input.isKeyPressed(Input.Keys.Q)
                 || Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
         boolean use = Gdx.input.isKeyPressed(Input.Keys.R);
+        boolean cycle = Gdx.input.isKeyPressed(Input.Keys.X);
         boolean interact = Gdx.input.isKeyPressed(Input.Keys.E);
         boolean pause = Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
 
@@ -63,6 +65,7 @@ public class DesktopControls {
         out.attackHeavyPressed |= heavy && !prevHeavy;
         out.lockOnPressed |= lock && !prevLock;
         out.usePressed |= use && !prevUse;
+        out.cycleItemPressed |= cycle && !prevCycle;
         out.interactPressed |= interact && !prevInteract;
         out.pausePressed |= pause && !prevPause;
 
@@ -71,6 +74,7 @@ public class DesktopControls {
         prevHeavy = heavy;
         prevLock = lock;
         prevUse = use;
+        prevCycle = cycle;
         prevInteract = interact;
         prevPause = pause;
     }

@@ -24,6 +24,8 @@ public class AshenGame extends Game {
     public WeaponLibrary weapons;
     /** The bestiary and the boss roster. */
     public EnemyLibrary bestiary;
+    /** Consumables and reinforcement materials. */
+    public com.muamn.ashen.item.ItemLibrary items;
 
     /** Draws the on-screen stick and buttons even on desktop. */
     public boolean forceTouchControls;
@@ -81,6 +83,8 @@ public class AshenGame extends Game {
         weapons.load();
         bestiary = new EnemyLibrary();
         bestiary.load();
+        items = new com.muamn.ashen.item.ItemLibrary();
+        items.load();
         if (validateWorld) {
             runWorldValidation();
             return;

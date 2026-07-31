@@ -1,0 +1,140 @@
+{
+  "_comment": "Items. power/duration are the balance dials; see core/item/ItemDef.java.",
+  "items": [
+    {
+      "id": "charred_bread",
+      "nameAr": "خبز محروق",
+      "nameEn": "Charred Bread",
+      "descAr": "طعام قديم. يسدّ رمقًا ويشفي قليلًا.",
+      "descEn": "Old ration. Restores a little health.",
+      "kind": "CONSUMABLE", "effect": "HEAL", "power": 90,
+      "glow": "c9a05eff"
+    },
+    {
+      "id": "soothing_ash",
+      "nameAr": "رماد مُهدّئ",
+      "nameEn": "Soothing Ash",
+      "descAr": "رماد دافئ يُغلق الجروح.",
+      "descEn": "Warm ash that closes wounds.",
+      "kind": "CONSUMABLE", "effect": "HEAL", "power": 240,
+      "glow": "e07a3cff"
+    },
+    {
+      "id": "dried_root",
+      "nameAr": "جذر يابس",
+      "nameEn": "Dried Root",
+      "descAr": "مرّ المذاق، يعيد بعض النَّفَس.",
+      "descEn": "Bitter. Returns some breath.",
+      "kind": "CONSUMABLE", "effect": "STAMINA", "power": 55,
+      "glow": "8ec06aff"
+    },
+    {
+      "id": "greenblood_leaf",
+      "nameAr": "ورقة الدم الأخضر",
+      "nameEn": "Greenblood Leaf",
+      "descAr": "تعيد النَّفَس كاملًا دفعة واحدة.",
+      "descEn": "Returns your wind all at once.",
+      "kind": "CONSUMABLE", "effect": "STAMINA", "power": 140,
+      "glow": "5fd07aff"
+    },
+    {
+      "id": "resin_of_embers",
+      "nameAr": "صمغ الجمر",
+      "nameEn": "Ember Resin",
+      "descAr": "يطلي النصل بجمرٍ حيّ لدقيقة.",
+      "descEn": "Coats the blade in live embers for a minute.",
+      "kind": "CONSUMABLE", "effect": "BUFF", "power": 38, "duration": 60,
+      "glow": "ff7a2eff"
+    },
+    {
+      "id": "resin_of_frost",
+      "nameAr": "صمغ الصقيع",
+      "nameEn": "Frost Resin",
+      "descAr": "أضعف من الجمر لكنه يدوم أطول.",
+      "descEn": "Weaker than ember, but it lasts.",
+      "kind": "CONSUMABLE", "effect": "BUFF", "power": 24, "duration": 110,
+      "glow": "7fd2ffff"
+    },
+    {
+      "id": "homeward_bone",
+      "nameAr": "عظم العودة",
+      "nameEn": "Homeward Bone",
+      "descAr": "يعيدك إلى آخر نار استرحت عندها.",
+      "descEn": "Returns you to the last bonfire you rested at.",
+      "kind": "CONSUMABLE", "effect": "HOMEWARD", "power": 1, "maxStack": 10,
+      "glow": "e8e0c8ff"
+    },
+    {
+      "id": "flask_ember",
+      "nameAr": "جمرة القارورة",
+      "nameEn": "Flask Ember",
+      "descAr": "تزيد شحنة واحدة في قارورة Estus. أثرها دائم.",
+      "descEn": "Adds one Estus charge. Permanent.",
+      "kind": "CONSUMABLE", "effect": "FLASK", "power": 1, "maxStack": 8,
+      "glow": "ffd24aff"
+    },
+    {
+      "id": "soul_of_a_hollow",
+      "nameAr": "روح جوّاف",
+      "nameEn": "Soul of a Hollow",
+      "descAr": "روح ذابلة. تُستهلك لتصبح أرواحًا.",
+      "descEn": "A withered soul. Consume for souls.",
+      "kind": "CONSUMABLE", "effect": "SOULS", "power": 400,
+      "glow": "9fb8d8ff"
+    },
+    {
+      "id": "soul_of_a_beast",
+      "nameAr": "روح وحش",
+      "nameEn": "Soul of a Beast",
+      "descAr": "روح ثقيلة، ما زالت تنبض.",
+      "descEn": "A heavy soul, still beating.",
+      "kind": "CONSUMABLE", "effect": "SOULS", "power": 2200,
+      "glow": "b48cd8ff"
+    },
+    {
+      "id": "soul_of_a_knight",
+      "nameAr": "روح فارس",
+      "nameEn": "Soul of a Knight",
+      "descAr": "روح من كان يذكر اسمه.",
+      "descEn": "The soul of one who still remembered a name.",
+      "kind": "CONSUMABLE", "effect": "SOULS", "power": 6000,
+      "glow": "d8d2f0ff"
+    },
+    {
+      "id": "ember_shard",
+      "nameAr": "شظية جمر",
+      "nameEn": "Ember Shard",
+      "descAr": "لتقوية السلاح حتى +3.",
+      "descEn": "Reinforces a weapon up to +3.",
+      "kind": "MATERIAL", "effect": "NONE",
+      "glow": "d8a05cff"
+    },
+    {
+      "id": "ember_lump",
+      "nameAr": "كتلة جمر",
+      "nameEn": "Ember Lump",
+      "descAr": "لتقوية السلاح من +4 حتى +6.",
+      "descEn": "Reinforces a weapon from +4 to +6.",
+      "kind": "MATERIAL", "effect": "NONE",
+      "glow": "e08a3cff"
+    },
+    {
+      "id": "ember_core",
+      "nameAr": "قلب جمر",
+      "nameEn": "Ember Core",
+      "descAr": "لتقوية السلاح من +7 حتى +9.",
+      "descEn": "Reinforces a weapon from +7 to +9.",
+      "kind": "MATERIAL", "effect": "NONE", "maxStack": 40,
+      "glow": "ff6a2eff"
+    },
+    {
+      "id": "ember_heart",
+      "nameAr": "قلب الرماد الأول",
+      "nameEn": "Heart of First Ash",
+      "descAr": "نادر جدًا. يرفع السلاح إلى +10.",
+      "descEn": "Vanishingly rare. Takes a weapon to +10.",
+      "kind": "MATERIAL", "effect": "NONE", "maxStack": 10,
+      "glow": "fff0a0ff"
+    }
+  ]
+}

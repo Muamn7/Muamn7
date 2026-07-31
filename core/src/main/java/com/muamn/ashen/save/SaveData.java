@@ -33,6 +33,16 @@ public class SaveData {
     public String weaponId = "longsword";
     public int weaponUpgrade;
 
+    // ---- items ----
+    /**
+     * The inventory, as {@code id:count,id:count}. A string rather than a map
+     * because this file is read by a schema-less parser and a flat field is the
+     * one shape that survives the item table changing under it.
+     */
+    public String inventory = "";
+    /** Item the use button spends. Empty means the Estus flask. */
+    public String quickItem = "";
+
     // ---- world ----
     /** Area the player is standing in. */
     public String areaId = "asylum_courtyard";

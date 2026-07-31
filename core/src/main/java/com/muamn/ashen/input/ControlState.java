@@ -24,6 +24,8 @@ public class ControlState {
     public boolean attackHeavyPressed;
     public boolean lockOnPressed;
     public boolean usePressed;
+    /** Steps the quick slot to the next consumable being carried. */
+    public boolean cycleItemPressed;
     public boolean interactPressed;
     public boolean pausePressed;
 
@@ -40,6 +42,7 @@ public class ControlState {
         attackHeavyPressed = false;
         lockOnPressed = false;
         usePressed = false;
+        cycleItemPressed = false;
         interactPressed = false;
         pausePressed = false;
         look.setZero();

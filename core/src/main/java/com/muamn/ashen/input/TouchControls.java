@@ -33,7 +33,8 @@ public class TouchControls implements Disposable {
         GUARD("L1", 112f, 246f, 44f),
         // Labels stay ASCII: the built-in bitmap font has no glyphs beyond it.
         LOCK("LK", 330f, 78f, 40f),
-        USE("IT", 348f, 186f, 40f);
+        USE("IT", 348f, 186f, 40f),
+        CYCLE("SW", 430f, 130f, 34f);
 
         final String label;
         final float offsetX, offsetY, radius;
@@ -156,6 +157,7 @@ public class TouchControls implements Disposable {
         out.attackHeavyPressed |= edge(Button.HEAVY);
         out.lockOnPressed |= edge(Button.LOCK);
         out.usePressed |= edge(Button.USE);
+        out.cycleItemPressed |= edge(Button.CYCLE);
         out.interactPressed |= edge(Button.USE) && out.move.isZero();
     }
 
