@@ -7,6 +7,7 @@ name: Build APK
 on:
   push:
     branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -62,14 +63,63 @@ jobs:
       - name: Point the build at the SDK
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Assemble debug APK
-        run: ./gradlew :android:assembleDebug --no-daemon
+      - name: Assemble debug and release APKs
+        run: ./gradlew :android:assembleDebug :android:assembleRelease --no-daemon
 
-      - name: Upload APK
+      # An APK that builds is not an APK that runs. These are the things whose
+      # absence would install cleanly and then crash or render nothing on the
+      # first frame, which is exactly the failure a build log cannot show.
+      - name: Check the APKs contain what the game needs
+        run: |
+          set -euo pipefail
+          fail=0
+          for apk in android/build/outputs/apk/debug/*.apk \
+                     android/build/outputs/apk/release/*.apk; do
+            echo "== $apk ($(du -h "$apk" | cut -f1))"
+            list=$(unzip -Z1 "$apk")
+
+            check() {
+              if echo "$list" | grep -q "$1"; then
+                echo "   ok   $2"
+              else
+                echo "   MISSING  $2  ($1)"
+                fail=1
+              fi
+            }
+
+            # The renderer is nothing without its shaders, and the game reads
+            # every weapon, enemy and item out of these JSON files at startup.
+            check '^assets/shaders/retro.vert$'        'PS2 vertex shader'
+            check '^assets/shaders/retro.frag$'        'PS2 fragment shader'
+            check '^assets/data/weapons.json$'         'weapon table'
+            check '^assets/data/enemies.json$'         'bestiary'
+            check '^assets/data/bosses.json$'          'boss roster'
+            check '^assets/data/items.json$'           'item table'
+            check '^assets/data/npcs.json$'            'characters'
+            # Without the font the whole interface is blank in Arabic.
+            check 'assets/fonts/NotoNaskhArabic-Regular.ttf' 'Arabic font'
+            # libGDX and FreeType natives, per ABI. A missing gdx-freetype .so
+            # is the one that fails quietly: the game starts and every label
+            # falls back to English.
+            for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+              check "^lib/$abi/libgdx.so$"          "libgdx.so ($abi)"
+              check "^lib/$abi/libgdx-freetype.so$" "libgdx-freetype.so ($abi)"
+            done
+          done
+          exit $fail
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: ashen-debug-apk
           path: android/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ashen-release-apk
+          path: android/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
   smoke:
@@ -119,3 +169,63 @@ jobs:
           name: smoke-screenshot
           path: screenshots/ci.png
           if-no-files-found: warn
+
+  # Publishes the APK where someone can download it without a GitHub account
+  # and without digging through the Actions tab. Runs only for a v* tag, so an
+  # ordinary push still just produces artifacts.
+  release:
+    name: Publish release
+    needs: [test, apk, smoke]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the built APKs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ashen-*-apk
+          path: apks
+          merge-multiple: true
+
+      - name: Name them after the tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          for apk in apks/*.apk; do
+            case "$apk" in
+              *release*) cp "$apk" "out/ashen-$version.apk" ;;
+              *)         cp "$apk" "out/ashen-$version-debug.apk" ;;
+            esac
+          done
+          ls -la out
+          sha256sum out/*.apk | tee out/SHA256SUMS.txt
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.apk
+            out/SHA256SUMS.txt
+          generate_release_notes: true
+          body: |
+            ## التثبيت
+
+            نزّل `ashen-<version>.apk` وثبّته على هاتفك (أندرويد 7.0 فأحدث).
+            سيطلب الهاتف السماح بالتثبيت من مصدر غير معروف — هذا طبيعي لأي
+            ملف APK لا يأتي من متجر Play.
+
+            اللعبة موقّعة بمفتاح تصحيح، فلا يمكن رفعها إلى Play بهذا الشكل،
+            لكنها تُثبَّت وتُلعب كاملة.
+
+            ## Install
+
+            Download `ashen-<version>.apk` and install it (Android 7.0+). The
+            phone will ask you to allow installation from an unknown source,
+            which is normal for any APK that did not come from Play.
+
+            Debug-signed, so it cannot be uploaded to Play as-is, but it
+            installs and plays in full.
