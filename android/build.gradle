@@ -2,11 +2,14 @@ apply plugin: 'com.android.application'
 
 android {
     namespace 'com.muamn.ashen'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.muamn.ashen'
         minSdk 24
+        // Compiled against 36 because androidx.core 1.17.0 requires it; the app
+        // still targets 35, which is what decides runtime behaviour. The two are
+        // deliberately separate.
         targetSdk 35
         versionCode 1
         versionName project.property('gameVersion')
