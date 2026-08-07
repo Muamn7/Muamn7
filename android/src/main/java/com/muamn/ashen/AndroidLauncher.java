@@ -86,7 +86,15 @@ public class AndroidLauncher extends AndroidApplication {
         });
 
         AndroidApplicationConfiguration config = new AndroidApplicationConfiguration();
-        config.useImmersiveMode = true;
+        // Immersive mode off. The boot log caught the surface changing aspect
+        // ratio mid-session - the offscreen buffer was rebuilt for a portrait
+        // shape and then back - which means the window was being re-laid-out
+        // under the game. On Android a surface change can take the EGL context
+        // with it, and a context this app has not noticed losing would leave
+        // every shader, mesh and texture handle pointing at nothing while clears
+        // carried on working. Which is the symptom. Hiding the navigation bar is
+        // not worth being unable to rule that out.
+        config.useImmersiveMode = false;
         config.useAccelerometer = false;
         config.useCompass = false;
         config.useGyroscope = false;
@@ -131,13 +139,25 @@ public class AndroidLauncher extends AndroidApplication {
         }
 
         if (!SHOW_BOOT_LOG) {
-            initialize(new AshenGame(), config);
+            AshenGame plain = new AshenGame();
+            plain.noOffscreenBuffer = true;
+            initialize(plain, config);
             return;
         }
 
         // initializeForView hands back the game's view instead of installing it,
         // which is the only way to get anything above it in the hierarchy.
-        View gameView = initializeForView(new AshenGame(), config);
+        AshenGame game = new AshenGame();
+        // No offscreen buffer on Android for now. It costs the point-upscale that
+        // gives the picture its PS2 grain, and it buys the shortest render path
+        // this engine has: the scene goes straight to the display, with no
+        // framebuffer bind, no unbind, and no blit between the world and the
+        // screen. Three fewer places for a driver to disagree with me. It also
+        // makes the failure legible - the level clears to its fog colour, so a
+        // grey screen now means "clears work, draws do not" without needing a
+        // probe to say so.
+        game.noOffscreenBuffer = true;
+        View gameView = initializeForView(game, config);
         setApplicationLogger(new OverlayLogger(getApplicationLogger()));
 
         FrameLayout root = new FrameLayout(this);
@@ -242,19 +262,4 @@ public class AndroidLauncher extends AndroidApplication {
         }
     }
 
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideSystemBars();
-    }
-
-    private void hideSystemBars() {
-        View decor = getWindow().getDecorView();
-        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-    }
 }

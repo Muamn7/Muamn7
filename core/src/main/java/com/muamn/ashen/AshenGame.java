@@ -130,6 +130,8 @@ public class AshenGame extends Game {
             }
             return;
         }
+        // Start every frame from a state no previous frame can have spoiled.
+        com.muamn.ashen.render.RetroRenderer.resetGlState();
         try {
             super.render();
         } catch (Throwable t) {

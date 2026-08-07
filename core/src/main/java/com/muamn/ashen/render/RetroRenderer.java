@@ -169,6 +169,13 @@ public class RetroRenderer implements Disposable {
     public void beginScene(float r, float g, float b) {
         if (fbo != null) fbo.begin();
         Gdx.gl.glViewport(0, 0, targetWidth, targetHeight);
+        // glClear writes through the depth mask, and present() leaves that mask
+        // closed so the upscale blit cannot touch depth. Without this the depth
+        // clear below is silently dropped from the second frame onward, the
+        // buffer keeps last frame's values forever, and the scene depth-tests
+        // itself away. Costs one call; the alternative is a world that fades to
+        // nothing a frame after it appears.
+        Gdx.gl.glDepthMask(true);
         ScreenUtils.clear(r, g, b, 1f, true);
     }
 
@@ -256,10 +263,22 @@ public class RetroRenderer implements Disposable {
         if (fbo != null) fbo.dispose();
     }
 
-    /** Depth buffer is on; make sure nothing left it disabled. */
+    /**
+     * Puts every piece of state that can reject a draw back to a known value.
+     *
+     * A frame used to inherit whatever the previous one left behind, which is
+     * fine right up until one of them is wrong - and then the failure is a black
+     * screen that says nothing about which one. Six calls at the top of a frame
+     * is a small price for never having to ask that question again.
+     */
     public static void resetGlState() {
-        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glDisable(GL20.GL_SCISSOR_TEST);
+        Gdx.gl.glDisable(GL20.GL_STENCIL_TEST);
+        Gdx.gl.glDisable(GL20.GL_CULL_FACE);
+        Gdx.gl.glDisable(GL20.GL_BLEND);
         Gdx.gl.glDepthFunc(GL20.GL_LEQUAL);
         Gdx.gl.glDepthMask(true);
+        Gdx.gl.glColorMask(true, true, true, true);
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 }
