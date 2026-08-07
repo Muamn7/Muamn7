@@ -55,6 +55,8 @@ public class RetroRenderer implements Disposable {
      * fill cost is higher, but the game is playable instead of black.
      */
     private boolean directToScreen;
+    /** Guards the one-shot log of where the offscreen buffer lands on the display. */
+    private boolean presented;
 
     /** Letterbox offsets, so UI hit-testing can map screen space to the buffer. */
     private int viewX, viewY, viewW, viewH;
@@ -216,6 +218,13 @@ public class RetroRenderer implements Disposable {
         viewH = Math.round(targetHeight * scale);
         viewX = (sw - viewW) / 2;
         viewY = (sh - viewH) / 2;
+
+        if (!presented) {
+            presented = true;
+            Gdx.app.log("Ashen", "first blit: " + targetWidth + "x" + targetHeight
+                    + " -> " + viewW + "x" + viewH + " at " + viewX + "," + viewY
+                    + " on a " + sw + "x" + sh + " display");
+        }
 
         blit.getProjectionMatrix().setToOrtho2D(0, 0, sw, sh);
         blit.disableBlending();

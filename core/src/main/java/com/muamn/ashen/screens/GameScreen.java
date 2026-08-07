@@ -188,6 +188,7 @@ public class GameScreen extends ScreenAdapter {
         }
         level = Areas.build(currentArea, game.textures);
         applyLevelMood();
+        Gdx.app.log("Ashen", "level " + currentArea + " built");
 
         HumanoidSpec spec = HumanoidSpec.knight();
         CharacterRig rig = new CharacterRig(
@@ -197,6 +198,7 @@ public class GameScreen extends ScreenAdapter {
         weapon = game.weapons.all().get(weaponIndex);
         weapon.upgrade = MathUtils.clamp(save.weaponUpgrade, 0, 10);
 
+        Gdx.app.log("Ashen", "player rig and " + weapon.id + " built");
         player = new Player(rig, weapon);
         player.audio = game.audio;
         applySave(save);
@@ -219,6 +221,7 @@ public class GameScreen extends ScreenAdapter {
         }
 
         spawnEnemies();
+        Gdx.app.log("Ashen", "spawned " + enemies.size + " enemies");
 
         camera = new OrbitCamera(renderer.aspectRatio());
         camera.distance = game.cameraDistance;

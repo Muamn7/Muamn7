@@ -51,8 +51,20 @@ public class AndroidLauncher extends AndroidApplication {
     /** Set false once the render path is settled on real hardware. */
     private static final boolean SHOW_BOOT_LOG = true;
     /** How long the overlay stays up. Long enough to photograph. */
-    private static final long BOOT_LOG_MILLIS = 30_000L;
-    private static final int BOOT_LOG_LINES = 34;
+    private static final long BOOT_LOG_MILLIS = 40_000L;
+    private static final int BOOT_LOG_LINES = 16;
+    /** One log line, wrapped, must not be allowed to fill a phone screen. */
+    private static final int BOOT_LOG_LINE_CHARS = 150;
+
+    /**
+     * libGDX's own boot chatter, which is not what the overlay is for.
+     *
+     * Its extension dump alone is a single log line that wraps to twenty on a
+     * phone - enough to push every line that matters off the bottom of the
+     * screen, which is exactly what happened the first time this shipped. The
+     * renderer, vendor and version are logged by the game itself anyway.
+     */
+    private static final String[] MUTED_TAGS = {"AndroidGraphics", "AndroidInput"};
 
     private final ArrayDeque<String> log = new ArrayDeque<>();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -127,9 +139,12 @@ public class AndroidLauncher extends AndroidApplication {
         // Not clickable, so every touch falls through to the game behind it.
         logView.setClickable(false);
         logView.setFocusable(false);
+        // Anchored to the bottom: if the log ever outgrows the screen it is the
+        // oldest lines that get clipped, and the newest - the ones that say where
+        // the boot stopped - stay on the photograph.
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.TOP | Gravity.START;
+        params.gravity = Gravity.BOTTOM | Gravity.START;
         root.addView(logView, params);
 
         setContentView(root);
@@ -140,11 +155,18 @@ public class AndroidLauncher extends AndroidApplication {
         }, BOOT_LOG_MILLIS);
     }
 
+    private static boolean muted(String tag) {
+        for (String each : MUTED_TAGS) if (each.equals(tag)) return true;
+        return false;
+    }
+
     /** Adds a line to the overlay from any thread. */
     private void append(String line) {
         if (!SHOW_BOOT_LOG || line == null) return;
+        final String trimmed = line.length() > BOOT_LOG_LINE_CHARS
+                ? line.substring(0, BOOT_LOG_LINE_CHARS) + "..." : line;
         ui.post(() -> {
-            log.addLast(line);
+            log.addLast(trimmed);
             while (log.size() > BOOT_LOG_LINES) log.removeFirst();
             if (logView == null) return;
             StringBuilder text = new StringBuilder();
@@ -177,12 +199,12 @@ public class AndroidLauncher extends AndroidApplication {
 
         @Override public void log(String tag, String message) {
             delegate.log(tag, message);
-            append(tag + ": " + message);
+            if (!muted(tag)) append(tag + ": " + message);
         }
 
         @Override public void log(String tag, String message, Throwable exception) {
             delegate.log(tag, message, exception);
-            append(tag + ": " + message + "\n" + stackOf(exception));
+            if (!muted(tag)) append(tag + ": " + message + "\n" + stackOf(exception));
         }
 
         @Override public void error(String tag, String message) {
