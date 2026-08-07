@@ -123,6 +123,53 @@ public final class GlProbe implements Disposable {
         return Config.GL_PROBE;
     }
 
+    /**
+     * Reads back the state that decides whether a draw call becomes pixels.
+     *
+     * Everything drawn through a shader on one device is invisible while clears
+     * land, with no GL error anywhere. A clear ignores the viewport, the scissor
+     * box, the depth test, culling and blending; a draw obeys all five. So one of
+     * them is set to something that discards every triangle - and I have been
+     * assuming their values from the code that sets them instead of asking the
+     * driver what it actually has. This asks.
+     */
+    public static String glState() {
+        java.nio.IntBuffer buf = com.badlogic.gdx.utils.BufferUtils.newIntBuffer(16);
+        Gdx.gl.glGetIntegerv(GL20.GL_VIEWPORT, buf);
+        String viewport = buf.get(0) + "," + buf.get(1) + " " + buf.get(2) + "x" + buf.get(3);
+
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_SCISSOR_BOX, buf);
+        String scissor = buf.get(0) + "," + buf.get(1) + " " + buf.get(2) + "x" + buf.get(3);
+
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_BLEND_SRC_ALPHA, buf);
+        int blendSrc = buf.get(0);
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_BLEND_DST_ALPHA, buf);
+        int blendDst = buf.get(0);
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_CULL_FACE_MODE, buf);
+        int cullMode = buf.get(0);
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_DEPTH_FUNC, buf);
+        int depthFunc = buf.get(0);
+        buf.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_MAX_VERTEX_ATTRIBS, buf);
+        int maxAttribs = buf.get(0);
+
+        return "viewport " + viewport
+                + " | scissor " + scissor + (Gdx.gl.glIsEnabled(GL20.GL_SCISSOR_TEST) ? " ON" : " off")
+                + " | depth" + (Gdx.gl.glIsEnabled(GL20.GL_DEPTH_TEST) ? " ON" : " off")
+                + " func=0x" + Integer.toHexString(depthFunc)
+                + " | cull" + (Gdx.gl.glIsEnabled(GL20.GL_CULL_FACE) ? " ON" : " off")
+                + " mode=0x" + Integer.toHexString(cullMode)
+                + " | blend" + (Gdx.gl.glIsEnabled(GL20.GL_BLEND) ? " ON" : " off")
+                + " " + Integer.toHexString(blendSrc) + "/" + Integer.toHexString(blendDst)
+                + " | attribs=" + maxAttribs
+                + " | gl30=" + (Gdx.gl30 != null);
+    }
+
     @Override
     public void dispose() {
         if (shapes != null) shapes.dispose();

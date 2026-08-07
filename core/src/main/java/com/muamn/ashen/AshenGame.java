@@ -146,6 +146,10 @@ public class AshenGame extends Game {
         // "The render loop is running" is not something a black screen can tell
         // you, and it is the first thing worth knowing about one.
         frames++;
+        // Frame 2, so a whole normal frame has already set everything it sets.
+        if (frames == 2 && Config.GL_PROBE) {
+            Gdx.app.log("Ashen", com.muamn.ashen.render.GlProbe.glState());
+        }
         if (frames == 1 || frames == 60 || frames == 240) {
             // glGetError is the only thing that will say a driver rejected a draw
             // it had no intention of complaining about any other way.

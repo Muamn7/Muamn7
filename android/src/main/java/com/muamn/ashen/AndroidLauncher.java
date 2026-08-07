@@ -108,6 +108,22 @@ public class AndroidLauncher extends AndroidApplication {
         config.stencil = 0;
         config.numSamples = 0;
 
+        // Ask for an ES 3.0 context.
+        //
+        // On the one device this has been run on, every draw that goes through a
+        // shader is invisible - the game, the HUD, the touch controls, and a plain
+        // libGDX rectangle alike - while a scissored clear lands on the panel, at
+        // 144fps, with no GL error and every shader uniform resolving to a real
+        // location. That is not a bug in any one of those things; it is the ES 2.0
+        // path on this driver.
+        //
+        // ES 3 is a different context, a different shader compiler entry point,
+        // and a different vertex path: libGDX switches SpriteBatch off client-side
+        // vertex arrays and onto buffer objects with vertex array objects the
+        // moment Gdx.gl30 exists. The device reports ES 3.2, so this costs it
+        // nothing.
+        config.useGL30 = true;
+
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             getWindow().getAttributes().layoutInDisplayCutoutMode =
