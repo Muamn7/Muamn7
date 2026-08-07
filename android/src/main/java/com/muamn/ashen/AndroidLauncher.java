@@ -50,8 +50,15 @@ public class AndroidLauncher extends AndroidApplication {
 
     /** Set false once the render path is settled on real hardware. */
     private static final boolean SHOW_BOOT_LOG = true;
-    /** How long the overlay stays up. Long enough to photograph. */
-    private static final long BOOT_LOG_MILLIS = 40_000L;
+    /**
+     * How long the overlay stays up.
+     *
+     * It was forty seconds while the screen was black and the log was the only
+     * thing on it. Now that the world draws, it is text sitting on top of a game,
+     * so it gets five - enough to catch a boot failure, short enough not to be
+     * something you have to wait out. A crash still forces it back into view.
+     */
+    private static final long BOOT_LOG_MILLIS = 5_000L;
     private static final int BOOT_LOG_LINES = 16;
     /** One log line, wrapped, must not be allowed to fill a phone screen. */
     private static final int BOOT_LOG_LINE_CHARS = 150;
@@ -116,21 +123,20 @@ public class AndroidLauncher extends AndroidApplication {
         config.stencil = 0;
         config.numSamples = 0;
 
-        // Ask for an ES 3.0 context.
+        // No ES 3.0 context.
         //
-        // On the one device this has been run on, every draw that goes through a
-        // shader is invisible - the game, the HUD, the touch controls, and a plain
-        // libGDX rectangle alike - while a scissored clear lands on the panel, at
-        // 144fps, with no GL error and every shader uniform resolving to a real
-        // location. That is not a bug in any one of those things; it is the ES 2.0
-        // path on this driver.
+        // With one, libGDX puts SpriteBatch and every Mesh behind a vertex array
+        // object. The 3D scene survives that - it uploads its geometry once and
+        // never touches it again - but SpriteBatch and ShapeRenderer rewrite their
+        // vertices between draws every frame, which is the pattern that leaves a
+        // VAO holding stale attribute state. On this device that is exactly the
+        // split observed: the world drew, and the HUD, the buttons and a plain
+        // libGDX rectangle did not.
         //
-        // ES 3 is a different context, a different shader compiler entry point,
-        // and a different vertex path: libGDX switches SpriteBatch off client-side
-        // vertex arrays and onto buffer objects with vertex array objects the
-        // moment Gdx.gl30 exists. The device reports ES 3.2, so this costs it
-        // nothing.
-        config.useGL30 = true;
+        // Without it both fall back to what libGDX has shipped for a decade -
+        // client-side arrays for the batch, a plain buffer object for meshes, no
+        // VAO anywhere. It is the most travelled path this library has.
+        config.useGL30 = false;
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

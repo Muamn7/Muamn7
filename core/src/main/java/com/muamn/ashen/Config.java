@@ -14,21 +14,17 @@ public final class Config {
      * Draws two things that cannot fail, to find out whether GL output is
      * reaching the panel at all.
      *
-     * A phone reported the game running at 130fps, blitting a full-screen
-     * rectangle, with no GL error - onto a black display. Every diagnostic so far
-     * has measured what the game *did*, and every one of them says it worked, so
-     * the remaining question is not about the renderer: it is whether anything
-     * drawn this frame is ever presented.
+     * A phone ran the game at 130fps with no GL error onto a black display, so
+     * the question stopped being "what is the renderer doing" and became "does
+     * anything drawn ever reach the screen". These answer it without touching a
+     * shader: the first seconds are a plain magenta clear, and after that every
+     * frame ends with a green square from a scissored clear.
      *
-     * So: the first few seconds are nothing but a magenta screen clear, the
-     * shortest GL program that exists, and after that every frame ends with a
-     * green square drawn by a scissored clear - no shader, no batch, no texture,
-     * no vertex. If neither appears, the display is not receiving frames, and no
-     * further study of the renderer can say otherwise.
-     *
-     * Set false once that question is settled.
-     */
-    public static final boolean GL_PROBE = true;
+     * Off now. They did their job - green appeared, so the panel was receiving
+     * frames all along, and the fault was in drawing rather than in presenting.
+     * Left in place because the next device to go dark deserves a faster answer
+     * than the six builds this one took.
+     */    public static final boolean GL_PROBE = false;
     /** How long the plain magenta clear holds the screen. */
     public static final float GL_PROBE_SECONDS = 3f;
 
