@@ -10,6 +10,15 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a downloadable release with the APK'
+        type: boolean
+        default: false
+      version:
+        description: 'Version for that release, without the leading v'
+        type: string
+        default: '0.1.0'
 
 permissions:
   contents: read
@@ -171,12 +180,16 @@ jobs:
           if-no-files-found: warn
 
   # Publishes the APK where someone can download it without a GitHub account
-  # and without digging through the Actions tab. Runs only for a v* tag, so an
-  # ordinary push still just produces artifacts.
+  # and without digging through the Actions tab - the artifacts there arrive as
+  # a zip, which a phone cannot install.
+  #
+  # Runs for a v* tag, or from the Actions tab with "Publish" ticked. The second
+  # route exists because pushing a tag is not always available to whoever is
+  # doing the build.
   release:
     name: Publish release
     needs: [test, apk, smoke]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -190,10 +203,17 @@ jobs:
           path: apks
           merge-multiple: true
 
-      - name: Name them after the tag
+      - name: Name them after the version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${INPUT_VERSION:-0.1.0}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
           mkdir -p out
           for apk in apks/*.apk; do
             case "$apk" in
@@ -207,6 +227,8 @@ jobs:
       - name: Create the release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
+          name: ASHEN v${{ env.VERSION }}
           files: |
             out/*.apk
             out/SHA256SUMS.txt
