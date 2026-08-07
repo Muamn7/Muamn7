@@ -136,6 +136,22 @@ public class RetroShader implements Shader {
         skinned = new Variant(vert, frag,
                 "#define SKINNED\n#define NUM_BONES " + MAX_BONES + "\n", true);
 
+        // ShaderProgram.pedantic is off, which turns "that uniform does not
+        // exist" from a crash into silence - and a silently skipped projection
+        // matrix leaves an identity in its place, which puts every vertex far
+        // outside the screen. That renders exactly like a renderer that draws
+        // nothing, with no GL error to show for it. So say out loud what the
+        // driver actually gave us.
+        Gdx.app.log("Ashen", "shader uniforms: projTrans=" + plain.projTrans
+                + " worldTrans=" + plain.worldTrans + " texture=" + plain.texture
+                + " ambient=" + plain.ambient + " lightDir=" + plain.lightDir
+                + " | skinned projTrans=" + skinned.projTrans
+                + " bones=" + skinned.bones);
+        if (plain.projTrans < 0 || plain.worldTrans < 0) {
+            throw new GdxRuntimeException("this driver reports no u_projTrans/u_worldTrans"
+                    + " on the retro shader, so nothing could ever be drawn in the right place");
+        }
+
         // Untextured materials still go through the sampler, so give them a
         // 1x1 white texture rather than branching in the fragment shader.
         Pixmap px = new Pixmap(1, 1, Pixmap.Format.RGBA8888);

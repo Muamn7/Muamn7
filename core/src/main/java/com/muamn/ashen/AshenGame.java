@@ -91,6 +91,8 @@ public class AshenGame extends Game {
     private int frames;
     /** Seconds left of the plain-clear probe. See {@link Config#GL_PROBE}. */
     private float probeRemaining = Config.GL_PROBE ? Config.GL_PROBE_SECONDS : 0f;
+    /** The three squares, drawn after everything else so nothing can cover them. */
+    private com.muamn.ashen.render.GlProbe probe;
 
     @Override
     public void create() {
@@ -134,6 +136,13 @@ public class AshenGame extends Game {
             fail("render", t);
             return;
         }
+        if (Config.GL_PROBE) {
+            if (probe == null) probe = new com.muamn.ashen.render.GlProbe();
+            probe.draw();
+            // Last of all, and after the probe squares, so it covers the whole frame.
+            com.muamn.ashen.render.GlProbe.sealAlpha();
+        }
+
         // "The render loop is running" is not something a black screen can tell
         // you, and it is the first thing worth knowing about one.
         frames++;
@@ -214,6 +223,7 @@ public class AshenGame extends Game {
 
     @Override
     public void dispose() {
+        if (probe != null) probe.dispose();
         if (failure != null) failure.dispose();
         if (screen != null) screen.dispose();
         if (textures != null) textures.dispose();
