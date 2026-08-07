@@ -87,6 +87,8 @@ public class AshenGame extends Game {
 
     /** Set when something threw; from then on the game only draws the report. */
     private com.muamn.ashen.screens.ErrorScreen failure;
+    /** Frames drawn. Only the first few are logged, and only to prove they happen. */
+    private int frames;
 
     @Override
     public void create() {
@@ -115,6 +117,15 @@ public class AshenGame extends Game {
             super.render();
         } catch (Throwable t) {
             fail("render", t);
+            return;
+        }
+        // "The render loop is running" is not something a black screen can tell
+        // you, and it is the first thing worth knowing about one.
+        frames++;
+        if (frames == 1 || frames == 120) {
+            Gdx.app.log("Ashen", "frame " + frames + " drawn at "
+                    + Gdx.graphics.getWidth() + "x" + Gdx.graphics.getHeight()
+                    + ", " + Gdx.graphics.getFramesPerSecond() + "fps");
         }
     }
 

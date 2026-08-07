@@ -251,6 +251,12 @@ public class GameScreen extends ScreenAdapter {
             desktopControls = new DesktopControls();
             Gdx.input.setCursorCatched(true);
         }
+
+        // The last line of the boot log. If this one is missing, the screen was
+        // black because the world was still being built, not because it failed.
+        Gdx.app.log("Ashen", "world ready: " + currentArea + ", "
+                + enemies.size + " enemies, " + npcs.size + " people, "
+                + (touchControls != null ? "touch" : "keyboard"));
     }
 
     /**

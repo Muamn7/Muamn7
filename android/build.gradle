@@ -42,7 +42,11 @@ android {
             minifyEnabled false
         }
         release {
-            minifyEnabled true
+            // Off deliberately. R8's optimising pass is a whole class of failure
+            // that only ever shows up on a device - and a device is the one place
+            // this project cannot debug. It buys about 3MB; the black screen it
+            // could be hiding costs more. Revisit once the game runs on hardware.
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // Signing is wired up in Part 4; debug-signed until then.
             signingConfig signingConfigs.debug
