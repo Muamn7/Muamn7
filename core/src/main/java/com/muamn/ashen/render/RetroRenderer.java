@@ -209,6 +209,7 @@ public class RetroRenderer implements Disposable {
             viewY = 0;
             viewW = sw;
             viewH = sh;
+            if (Config.GL_PROBE) probe(sw, sh);
             return;
         }
         ScreenUtils.clear(0f, 0f, 0f, 1f);
@@ -232,6 +233,27 @@ public class RetroRenderer implements Disposable {
         blit.draw(fboRegion, viewX, viewY, viewW, viewH);
         blit.end();
         blit.enableBlending();
+
+        if (Config.GL_PROBE) probe(sw, sh);
+    }
+
+    /**
+     * A green square in the top corner, drawn by clearing a scissored rectangle.
+     *
+     * No shader, no batch, no texture, no vertex - the shortest path from this
+     * code to a pixel that OpenGL offers. If the game is invisible but this
+     * square is not, the fault is in what the game draws. If neither shows, the
+     * display is not receiving frames and nothing about the renderer explains it.
+     */
+    private static void probe(int screenWidth, int screenHeight) {
+        int size = Math.max(24, Math.min(screenWidth, screenHeight) / 8);
+        int margin = size / 4;
+        Gdx.gl.glEnable(GL20.GL_SCISSOR_TEST);
+        Gdx.gl.glScissor(screenWidth - size - margin, screenHeight - size - margin,
+                size, size);
+        Gdx.gl.glClearColor(0.10f, 0.95f, 0.25f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+        Gdx.gl.glDisable(GL20.GL_SCISSOR_TEST);
     }
 
     /** Grabs the current display contents. Caller owns the returned pixmap. */

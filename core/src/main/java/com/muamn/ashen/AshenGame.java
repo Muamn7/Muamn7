@@ -89,6 +89,8 @@ public class AshenGame extends Game {
     private com.muamn.ashen.screens.ErrorScreen failure;
     /** Frames drawn. Only the first few are logged, and only to prove they happen. */
     private int frames;
+    /** Seconds left of the plain-clear probe. See {@link Config#GL_PROBE}. */
+    private float probeRemaining = Config.GL_PROBE ? Config.GL_PROBE_SECONDS : 0f;
 
     @Override
     public void create() {
@@ -111,6 +113,19 @@ public class AshenGame extends Game {
     public void render() {
         if (failure != null) {
             failure.render(Gdx.graphics.getDeltaTime());
+            return;
+        }
+        if (probeRemaining > 0f) {
+            probeRemaining -= Gdx.graphics.getDeltaTime();
+            // Clear and swap. There is no smaller GL program, and nothing in this
+            // project is between it and the display.
+            com.badlogic.gdx.utils.ScreenUtils.clear(0.85f, 0.10f, 0.65f, 1f);
+            if (probeRemaining <= 0f) {
+                Gdx.app.log("Ashen", "probe over: the screen was magenta for "
+                        + Config.GL_PROBE_SECONDS + "s at "
+                        + Gdx.graphics.getBackBufferWidth() + "x"
+                        + Gdx.graphics.getBackBufferHeight() + " back buffer");
+            }
             return;
         }
         try {

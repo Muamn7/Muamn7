@@ -10,6 +10,28 @@ public final class Config {
 
     // ---- Presentation -------------------------------------------------
 
+    /**
+     * Draws two things that cannot fail, to find out whether GL output is
+     * reaching the panel at all.
+     *
+     * A phone reported the game running at 130fps, blitting a full-screen
+     * rectangle, with no GL error - onto a black display. Every diagnostic so far
+     * has measured what the game *did*, and every one of them says it worked, so
+     * the remaining question is not about the renderer: it is whether anything
+     * drawn this frame is ever presented.
+     *
+     * So: the first few seconds are nothing but a magenta screen clear, the
+     * shortest GL program that exists, and after that every frame ends with a
+     * green square drawn by a scissored clear - no shader, no batch, no texture,
+     * no vertex. If neither appears, the display is not receiving frames, and no
+     * further study of the renderer can say otherwise.
+     *
+     * Set false once that question is settled.
+     */
+    public static final boolean GL_PROBE = true;
+    /** How long the plain magenta clear holds the screen. */
+    public static final float GL_PROBE_SECONDS = 3f;
+
     /** Internal render width. Everything is drawn here, then point-upscaled. */
     public static final int RENDER_WIDTH = 480;
     /** Internal render height (16:9). */
