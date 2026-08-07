@@ -58,7 +58,7 @@ public class ModelViewerScreen extends ScreenAdapter {
 
     @Override
     public void show() {
-        renderer = new RetroRenderer();
+        renderer = new RetroRenderer(game.noOffscreenBuffer);
         renderer.onDisplayResize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         // A neutral studio light, not the level's mood, so problems are visible.
         renderer.env().ambient.set(0.45f, 0.45f, 0.48f, 1f);

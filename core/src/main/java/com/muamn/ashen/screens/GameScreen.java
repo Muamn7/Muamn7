@@ -4,6 +4,7 @@ import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.math.MathUtils;
@@ -161,14 +162,23 @@ public class GameScreen extends ScreenAdapter {
     private float elapsed;
     private boolean autopilotRolled;
 
+    /**
+     * How long the boot readout stays up. Long enough to photograph, short
+     * enough not to sit on top of the first fight.
+     */
+    private static final float BOOT_INFO_SECONDS = 10f;
+    private String glName = "";
+
     public GameScreen(AshenGame game) {
         this.game = game;
     }
 
     @Override
     public void show() {
-        renderer = new RetroRenderer();
+        renderer = new RetroRenderer(game.noOffscreenBuffer);
         renderer.onDisplayResize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        String gpu = Gdx.gl.glGetString(GL20.GL_RENDERER);
+        glName = gpu == null ? "?" : gpu;
 
         save = saveGame.load();
         currentArea = Areas.exists(save.areaId) ? save.areaId : Areas.ASYLUM;
@@ -539,6 +549,11 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void renderHud() {
+        if (elapsed < BOOT_INFO_SECONDS) {
+            hud.bootInfo(Gdx.graphics.getWidth() + "x" + Gdx.graphics.getHeight()
+                    + "  " + renderer.diagnostics()
+                    + "  " + Gdx.graphics.getFramesPerSecond() + "fps  " + glName);
+        }
         if (menu.isOpen()) {
             hud.render(player.stats);
             menu.render(player, weapon);

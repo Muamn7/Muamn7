@@ -32,14 +32,45 @@ public class RetroRenderer implements Disposable {
     private final ModelBatch modelBatch;
     private final SpriteBatch blit;
 
+    /**
+     * Colour formats to try for the offscreen buffer, best first.
+     *
+     * RGBA8888 is the one format GLES2 and desktop GL both guarantee is
+     * colour-renderable. RGB888 is not on that list, and a driver is within its
+     * rights to refuse it - which on a phone shows up as a game that runs, plays
+     * its sounds and draws nothing.
+     */
+    private static final Pixmap.Format[] FBO_FORMATS = {
+            Pixmap.Format.RGBA8888, Pixmap.Format.RGB565, Pixmap.Format.RGB888,
+    };
+
     private FrameBuffer fbo;
     private TextureRegion fboRegion;
+    private Pixmap.Format fboFormat;
     private int targetWidth, targetHeight;
+
+    /**
+     * Set once the device has refused every offscreen format. The scene then goes
+     * straight to the display: no downscale, so the dither grid is finer and the
+     * fill cost is higher, but the game is playable instead of black.
+     */
+    private boolean directToScreen;
 
     /** Letterbox offsets, so UI hit-testing can map screen space to the buffer. */
     private int viewX, viewY, viewW, viewH;
 
     public RetroRenderer() {
+        this(false);
+    }
+
+    /**
+     * @param forceDirect skip the offscreen buffer entirely. This is the path a
+     *                    device falls back to when no framebuffer format works,
+     *                    and the only reason it can be asked for by hand is that
+     *                    an untested fallback is not a fallback.
+     */
+    public RetroRenderer(boolean forceDirect) {
+        directToScreen = forceDirect;
         shader = new RetroShader(environment);
         // ModelBatch never calls init() itself - that is the provider's job.
         shader.init();
@@ -64,15 +95,55 @@ public class RetroRenderer implements Disposable {
 
     /** Rebuilds the offscreen buffer. Safe to call with the current size (no-op). */
     public void resizeTarget(int width, int height) {
-        if (fbo != null && width == targetWidth && height == targetHeight) return;
+        if (directToScreen) {
+            targetWidth = Math.max(64, Gdx.graphics.getWidth());
+            targetHeight = Math.max(64, Gdx.graphics.getHeight());
+            return;
+        }
+        int w = Math.max(64, width);
+        int h = Math.max(64, height);
+        if (fbo != null && w == targetWidth && h == targetHeight) return;
         if (fbo != null) fbo.dispose();
-        targetWidth = Math.max(64, width);
-        targetHeight = Math.max(64, height);
-        fbo = new FrameBuffer(Pixmap.Format.RGB888, targetWidth, targetHeight, true);
+        fbo = null;
+        targetWidth = w;
+        targetHeight = h;
+
+        for (Pixmap.Format format : FBO_FORMATS) {
+            try {
+                fbo = new FrameBuffer(format, targetWidth, targetHeight, true);
+                fboFormat = format;
+                break;
+            } catch (Throwable t) {
+                // Throwable: an incomplete attachment arrives as IllegalStateException,
+                // but a driver that dislikes the format can also take the native call
+                // down. Either way the next format gets a turn.
+                Gdx.app.error("Ashen", "offscreen buffer refused " + format + " ("
+                        + t.getMessage() + ")");
+            }
+        }
+
+        if (fbo == null) {
+            directToScreen = true;
+            fboRegion = null;
+            fboFormat = null;
+            Gdx.app.error("Ashen", "no offscreen buffer on this device"
+                    + " - drawing the scene straight to the display");
+            resizeTarget(width, height);
+            return;
+        }
+
         Texture tex = fbo.getColorBufferTexture();
         tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         fboRegion = new TextureRegion(tex);
         fboRegion.flip(false, true); // FBOs are bottom-up.
+        Gdx.app.log("Ashen", "offscreen buffer " + targetWidth + "x" + targetHeight
+                + " " + fboFormat);
+    }
+
+    /** One line describing the render path, for the on-screen boot readout. */
+    public String diagnostics() {
+        return (directToScreen ? "direct" : String.valueOf(fboFormat))
+                + " " + targetWidth + "x" + targetHeight;
     }
 
     /**
@@ -94,7 +165,7 @@ public class RetroRenderer implements Disposable {
     }
 
     public void beginScene(float r, float g, float b) {
-        fbo.begin();
+        if (fbo != null) fbo.begin();
         Gdx.gl.glViewport(0, 0, targetWidth, targetHeight);
         ScreenUtils.clear(r, g, b, 1f, true);
     }
@@ -112,7 +183,7 @@ public class RetroRenderer implements Disposable {
     }
 
     public void endScene() {
-        fbo.end();
+        if (fbo != null) fbo.end();
     }
 
     /** Point-upscales the buffer to the display, preserving aspect with pillarboxes. */
@@ -120,6 +191,24 @@ public class RetroRenderer implements Disposable {
         int sw = Gdx.graphics.getWidth();
         int sh = Gdx.graphics.getHeight();
         Gdx.gl.glViewport(0, 0, sw, sh);
+
+        // Everything the HUD and this blit draw goes to the display, and any of
+        // these left enabled by the 3D pass would silently reject it. A rejected
+        // full-screen quad looks exactly like a broken game.
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glDisable(GL20.GL_SCISSOR_TEST);
+        Gdx.gl.glDisable(GL20.GL_CULL_FACE);
+        Gdx.gl.glDepthMask(false);
+        Gdx.gl.glColorMask(true, true, true, true);
+
+        if (fbo == null) {
+            // Already drawn where it belongs; only the letterbox bookkeeping is left.
+            viewX = 0;
+            viewY = 0;
+            viewW = sw;
+            viewH = sh;
+            return;
+        }
         ScreenUtils.clear(0f, 0f, 0f, 1f);
 
         float scale = Math.min(sw / (float) targetWidth, sh / (float) targetHeight);

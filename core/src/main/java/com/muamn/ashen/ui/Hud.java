@@ -120,6 +120,27 @@ public class Hud implements Disposable {
         shapes.rect(x, y + h * 0.62f, w * MathUtils.clamp(value, 0f, 1f), h * 0.20f);
     }
 
+    /**
+     * A small readout in the bottom corner for the first seconds of a session.
+     *
+     * It exists for one question that cannot be answered any other way: when a
+     * player says "black screen", is the display pipeline running at all? If this
+     * line is on the photograph, everything from the GL context to the font
+     * works and the fault is further in. If it is not, nothing is reaching the
+     * display and the fault is the surface itself.
+     */
+    public void bootInfo(String info) {
+        if (info == null || info.isEmpty()) return;
+        float scale = MathUtils.clamp(Gdx.graphics.getWidth() / 960f, 0.75f, 2.2f);
+        batch.begin();
+        text.setScale(uiScale(scale) * 0.62f);
+        text.setColor(0.55f, 0.62f, 0.55f, 0.75f);
+        text.draw(batch, info, 14f * scale, 22f * scale);
+        text.setColor(0.86f, 0.83f, 0.76f, 1f);
+        text.setScale(1f);
+        batch.end();
+    }
+
     /** Draws only the debug readout, for screens that have no player stats. */
     public void renderDebugOnly() {
         if (debugLine == null || debugLine.isEmpty()) return;

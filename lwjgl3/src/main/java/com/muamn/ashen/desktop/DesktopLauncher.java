@@ -24,6 +24,7 @@ import com.muamn.ashen.AshenGame;
  *   -Dashen.validateWorld=true  check every area, then exit (non-zero if broken)
  *   -Dashen.area=ID             start in a named area rather than the saved one
  *   -Dashen.mute=true           skip the sound bank entirely
+ *   -Dashen.noFbo=true          draw straight to the display, no downscale
  *   -Dashen.lang=ar|en          force a language, overriding the save
  *   -Dashen.talkTo=ID           open a conversation with an npc on start
  *   -Dashen.shop=true           and jump straight to their stock
@@ -61,6 +62,7 @@ public class DesktopLauncher {
         game.openMenuOnStart = Boolean.getBoolean("ashen.menu");
         game.validateWorld = Boolean.getBoolean("ashen.validateWorld");
         game.muteAudio = Boolean.getBoolean("ashen.mute");
+        game.noOffscreenBuffer = Boolean.getBoolean("ashen.noFbo");
         game.forceLanguage = System.getProperty("ashen.lang");
         game.talkTo = System.getProperty("ashen.talkTo");
         game.openShopOnStart = Boolean.getBoolean("ashen.shop");

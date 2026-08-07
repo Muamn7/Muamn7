@@ -73,6 +73,8 @@ public class AshenGame extends Game {
     public boolean muteAudio;
     /** Forces a language code, overriding the save. Screenshots and testing. */
     public String forceLanguage;
+    /** Draws the scene straight to the display, with no offscreen downscale. */
+    public boolean noOffscreenBuffer;
 
     public AshenGame() {
         this(false, false);
@@ -83,14 +85,60 @@ public class AshenGame extends Game {
         this.debugOverlay = debugOverlay;
     }
 
+    /** Set when something threw; from then on the game only draws the report. */
+    private com.muamn.ashen.screens.ErrorScreen failure;
+
     @Override
     public void create() {
+        try {
+            boot();
+        } catch (Throwable t) {
+            fail("create", t);
+        }
+    }
+
+    /**
+     * Draws a frame, or the failure report if there has been one.
+     *
+     * A phone has nowhere to print a stack trace, and an exception escaping here
+     * takes the whole process down mid-frame with nothing on screen to say why.
+     * Catching it costs a branch and turns every crash into something the player
+     * can photograph.
+     */
+    @Override
+    public void render() {
+        if (failure != null) {
+            failure.render(Gdx.graphics.getDeltaTime());
+            return;
+        }
+        try {
+            super.render();
+        } catch (Throwable t) {
+            fail("render", t);
+        }
+    }
+
+    private void fail(String where, Throwable t) {
+        Gdx.app.error("Ashen", "fatal in " + where, new Exception(t));
+        try {
+            if (screen != null) screen.hide();
+        } catch (Throwable ignored) {
+            // The screen is already broken; that is why we are here.
+        }
+        screen = null;
+        failure = new com.muamn.ashen.screens.ErrorScreen(where, t);
+    }
+
+    private void boot() {
         // A missing uniform is a normal outcome once a driver optimises one away,
         // so tolerate it rather than crashing on device-specific GLSL compilers.
         ShaderProgram.pedantic = false;
 
+        com.badlogic.gdx.graphics.GL20 gl = Gdx.gl;
         Gdx.app.log("Ashen", "starting on " + Gdx.app.getType()
-                + " gl=" + Gdx.gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_VERSION));
+                + " gl=" + gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_VERSION)
+                + " renderer=" + gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_RENDERER)
+                + " vendor=" + gl.glGetString(com.badlogic.gdx.graphics.GL20.GL_VENDOR));
 
         textures = new TextureFactory();
         weapons = new WeaponLibrary();
@@ -136,6 +184,7 @@ public class AshenGame extends Game {
 
     @Override
     public void dispose() {
+        if (failure != null) failure.dispose();
         if (screen != null) screen.dispose();
         if (textures != null) textures.dispose();
         if (audio != null) audio.dispose();
