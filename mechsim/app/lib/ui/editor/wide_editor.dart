@@ -825,6 +825,13 @@ class _BottomBar extends StatelessWidget {
               ),
             ),
           ),
+          const Spacer(),
+          // The kind of support or distributed load the tool will place,
+          // right by the bar, so it is there with the side panel hidden.
+          _ToolOptions(
+            controller: controller,
+            labels: MediaQuery.sizeOf(context).width >= 880,
+          ),
           const SizedBox(width: 8),
           const ToolIcon(Tool.dimension, size: 18),
           const SizedBox(width: 6),
@@ -868,6 +875,59 @@ class _BottomBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ToolOptions extends StatelessWidget {
+  const _ToolOptions({required this.controller, required this.labels});
+
+  final EditorController controller;
+
+  /// Names beside the icons when the screen is wide enough; otherwise the
+  /// names are tooltips.
+  final bool labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context).s;
+    final tool = controller.tool;
+    final List<(Tool, String)> options;
+    if (tool.isSupport) {
+      options = [
+        (Tool.pin, s.toolPin),
+        (Tool.roller, s.toolRoller),
+        (Tool.fixed, s.toolFixed),
+      ];
+    } else if (tool.isDistributed) {
+      options = [(Tool.udl, s.toolUdl), (Tool.uvl, s.toolUvl)];
+    } else {
+      return const SizedBox.shrink();
+    }
+    return SegmentedButton<Tool>(
+      key: const ValueKey('bar-options'),
+      showSelectedIcon: false,
+      style: ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 8),
+        ),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+      ),
+      segments: [
+        for (final (t, label) in options)
+          ButtonSegment(
+            value: t,
+            icon: ToolIcon(t, size: 18, key: ValueKey('bar-$label')),
+            label: labels ? Text(label) : null,
+            tooltip: labels ? null : label,
+          ),
+      ],
+      selected: {tool},
+      onSelectionChanged: (v) => controller.setTool(v.single),
     );
   }
 }

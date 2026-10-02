@@ -20,29 +20,73 @@ enum SupportType {
 }
 
 class Support {
-  const Support({required this.id, required this.type, required this.x});
+  const Support({
+    required this.id,
+    required this.type,
+    required this.x,
+    this.known = const {},
+  });
 
   final String id;
   final SupportType type;
   final double x;
 
-  Support copyWith({SupportType? type, double? x}) =>
-      Support(id: id, type: type ?? this.type, x: x ?? this.x);
+  /// Reaction components the student has given a value, so they are not
+  /// unknowns: 'horizontal', 'vertical' or 'moment' → value in SI with the
+  /// physical sign (→, ↑, ↺ positive). Components this type of support
+  /// does not have are ignored.
+  final Map<String, double> known;
 
-  Map<String, Object?> toJson() => {'id': id, 'type': type.name, 'x': x};
+  Support copyWith(
+          {SupportType? type, double? x, Map<String, double>? known}) =>
+      Support(
+        id: id,
+        type: type ?? this.type,
+        x: x ?? this.x,
+        known: known ?? this.known,
+      );
+
+  /// The same support with [component] given [value], or made unknown again
+  /// when [value] is null.
+  Support withKnown(String component, double? value) => copyWith(known: {
+        for (final e in known.entries)
+          if (e.key != component) e.key: e.value,
+        if (value != null) component: value,
+      });
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'type': type.name,
+        'x': x,
+        if (known.isNotEmpty) 'known': known,
+      };
 
   factory Support.fromJson(Map<String, Object?> json) => Support(
         id: json['id'] as String,
         type: SupportType.values.byName(json['type'] as String),
         x: (json['x'] as num).toDouble(),
+        known: {
+          for (final e in ((json['known'] as Map?) ?? const {}).entries)
+            e.key as String: (e.value as num).toDouble(),
+        },
       );
 
   @override
   bool operator ==(Object other) =>
-      other is Support && other.id == id && other.type == type && other.x == x;
+      other is Support &&
+      other.id == id &&
+      other.type == type &&
+      other.x == x &&
+      other.known.length == known.length &&
+      known.entries.every((e) => other.known[e.key] == e.value);
 
   @override
-  int get hashCode => Object.hash(id, type, x);
+  int get hashCode => Object.hash(
+      id,
+      type,
+      x,
+      Object.hashAllUnordered(
+          known.entries.map((e) => Object.hash(e.key, e.value))));
 }
 
 /// Every kind of load the beam can carry. The family is sealed so that adding
@@ -64,6 +108,10 @@ sealed class Load {
 
   /// The same load with its start at [x]; a distributed load keeps its span.
   Load movedTo(double x);
+
+  /// Whether the student made this load's size an unknown to solve for
+  /// (its direction stays as drawn).
+  bool get isUnknown => false;
 
   Map<String, Object?> toJson();
 
@@ -87,6 +135,7 @@ final class PointLoad extends Load {
     required this.x,
     required this.magnitude,
     this.angleDeg = -90,
+    this.unknown = false,
   });
 
   @override
@@ -95,9 +144,16 @@ final class PointLoad extends Load {
   final double x;
 
   /// Size of the force in newtons. Always non-negative; the direction lives
-  /// in [angleDeg].
+  /// in [angleDeg]. Ignored while [unknown].
   final double magnitude;
   final double angleDeg;
+
+  /// The size is to be found from equilibrium. Only a vertical or a
+  /// horizontal load can be unknown.
+  final bool unknown;
+
+  @override
+  bool get isUnknown => unknown && !isInclined;
 
   double get fx => magnitude * cosDeg(angleDeg);
   double get fy => magnitude * sinDeg(angleDeg);
@@ -109,12 +165,18 @@ final class PointLoad extends Load {
   @override
   PointLoad movedTo(double x) => copyWith(x: x);
 
-  PointLoad copyWith({double? x, double? magnitude, double? angleDeg}) =>
+  PointLoad copyWith({
+    double? x,
+    double? magnitude,
+    double? angleDeg,
+    bool? unknown,
+  }) =>
       PointLoad(
         id: id,
         x: x ?? this.x,
         magnitude: magnitude ?? this.magnitude,
         angleDeg: angleDeg ?? this.angleDeg,
+        unknown: unknown ?? this.unknown,
       );
 
   @override
@@ -124,6 +186,7 @@ final class PointLoad extends Load {
         'x': x,
         'magnitude': magnitude,
         'angle': angleDeg,
+        if (unknown) 'unknown': true,
       };
 
   factory PointLoad.fromJson(Map<String, Object?> json) => PointLoad(
@@ -131,6 +194,7 @@ final class PointLoad extends Load {
         x: (json['x'] as num).toDouble(),
         magnitude: (json['magnitude'] as num).toDouble(),
         angleDeg: (json['angle'] as num?)?.toDouble() ?? -90,
+        unknown: json['unknown'] as bool? ?? false,
       );
 
   @override
@@ -139,10 +203,11 @@ final class PointLoad extends Load {
       other.id == id &&
       other.x == x &&
       other.magnitude == magnitude &&
-      other.angleDeg == angleDeg;
+      other.angleDeg == angleDeg &&
+      other.unknown == unknown;
 
   @override
-  int get hashCode => Object.hash(id, x, magnitude, angleDeg);
+  int get hashCode => Object.hash(id, x, magnitude, angleDeg, unknown);
 }
 
 /// A load spread over part of the beam, perpendicular to it. Its intensity
@@ -254,14 +319,23 @@ final class PointMoment extends Load {
     required this.x,
     required this.magnitude,
     this.counterClockwise = true,
+    this.unknown = false,
   });
 
   @override
   final String id;
   @override
   final double x;
+
+  /// Ignored while [unknown].
   final double magnitude;
   final bool counterClockwise;
+
+  /// The size is to be found from equilibrium; the sense stays as drawn.
+  final bool unknown;
+
+  @override
+  bool get isUnknown => unknown;
 
   /// The couple with its sign, counter-clockwise positive.
   double get moment => counterClockwise ? magnitude : -magnitude;
@@ -269,12 +343,18 @@ final class PointMoment extends Load {
   @override
   PointMoment movedTo(double x) => copyWith(x: x);
 
-  PointMoment copyWith({double? x, double? magnitude, bool? counterClockwise}) =>
+  PointMoment copyWith({
+    double? x,
+    double? magnitude,
+    bool? counterClockwise,
+    bool? unknown,
+  }) =>
       PointMoment(
         id: id,
         x: x ?? this.x,
         magnitude: magnitude ?? this.magnitude,
         counterClockwise: counterClockwise ?? this.counterClockwise,
+        unknown: unknown ?? this.unknown,
       );
 
   @override
@@ -284,6 +364,7 @@ final class PointMoment extends Load {
         'x': x,
         'magnitude': magnitude,
         'ccw': counterClockwise,
+        if (unknown) 'unknown': true,
       };
 
   factory PointMoment.fromJson(Map<String, Object?> json) => PointMoment(
@@ -291,6 +372,7 @@ final class PointMoment extends Load {
         x: (json['x'] as num).toDouble(),
         magnitude: (json['magnitude'] as num).toDouble(),
         counterClockwise: json['ccw'] as bool? ?? true,
+        unknown: json['unknown'] as bool? ?? false,
       );
 
   @override
@@ -299,10 +381,11 @@ final class PointMoment extends Load {
       other.id == id &&
       other.x == x &&
       other.magnitude == magnitude &&
-      other.counterClockwise == counterClockwise;
+      other.counterClockwise == counterClockwise &&
+      other.unknown == unknown;
 
   @override
-  int get hashCode => Object.hash(id, x, magnitude, counterClockwise);
+  int get hashCode => Object.hash(id, x, magnitude, counterClockwise, unknown);
 }
 
 /// Cosine of an angle in degrees that is exact on the multiples of 90°, so a
@@ -443,7 +526,10 @@ class BeamProblem {
   /// A fresh id such as "s3" or "p2" that no element uses yet.
   String nextId(String prefix) {
     var highest = 0;
-    for (final id in [...supports.map((s) => s.id), ...loads.map((l) => l.id)]) {
+    for (final id in [
+      ...supports.map((s) => s.id),
+      ...loads.map((l) => l.id)
+    ]) {
       if (!id.startsWith(prefix)) continue;
       final n = int.tryParse(id.substring(prefix.length));
       if (n != null && n > highest) highest = n;
@@ -464,7 +550,8 @@ class BeamProblem {
   factory BeamProblem.fromJson(Map<String, Object?> json) {
     final schema = json['schema'] as int? ?? 1;
     if (schema > schemaVersion) {
-      throw FormatException('Problem saved by a newer version (schema $schema)');
+      throw FormatException(
+          'Problem saved by a newer version (schema $schema)');
     }
     return BeamProblem(
       title: json['title'] as String? ?? '',

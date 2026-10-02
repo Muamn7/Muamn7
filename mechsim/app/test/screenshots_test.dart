@@ -336,4 +336,55 @@ void main() {
     await settle(tester);
     await shoot(tester, dir, '42_land_dark_next_support');
   });
+
+  const unknownP = BeamProblem(
+    length: 6,
+    supports: [
+      Support(id: 's1', type: SupportType.pin, x: 0),
+      Support(
+        id: 's2',
+        type: SupportType.roller,
+        x: 6,
+        known: {'vertical': 15000},
+      ),
+    ],
+    loads: [PointLoad(id: 'p1', x: 3, magnitude: 0, unknown: true)],
+  );
+
+  shot('unknowns: sideways', (tester) async {
+    phoneSize(tester, logical: const Size(800, 360));
+    await tester.pumpWidget(
+      await app(
+        testState(settings: const AppSettings(theme: ThemePref.dark)),
+        home: const EditorScreen(problem: unknownP),
+      ),
+    );
+    await settle(tester);
+    final state = tester.state<State<EditorScreen>>(find.byType(EditorScreen));
+    (state as dynamic).controller.setTool(Tool.roller);
+    await tester.tap(find.byKey(const ValueKey('toggle-panel')));
+    await settle(tester);
+    await shoot(tester, dir!, '43_bar_support_kinds');
+    await tester.tap(find.byKey(const ValueKey('toggle-panel')));
+    (state as dynamic).controller.select('s2');
+    await settle(tester);
+    await shoot(tester, dir, '44_known_reaction');
+    (state as dynamic).controller.select('p1');
+    await settle(tester);
+    await shoot(tester, dir, '45_unknown_load');
+  });
+
+  shot('unknowns: analysis', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: const AnalysisScreen(problem: unknownP)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '46_unknown_analysis');
+    final term = find.text('P1 × 3', findRichText: true);
+    await scrollTo(tester, term);
+    await tester.tap(term.first);
+    await settle(tester);
+    await shoot(tester, dir, '47_unknown_equation');
+  });
 }

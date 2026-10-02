@@ -197,6 +197,7 @@ class PropertiesPanel extends StatelessWidget {
             icon: ToolIcon(tool, size: 18),
           );
       return _Props(
+        help: s.reactionsKnownHelp,
         title: '${s.supportProps} ${labels.pointOf(id)}',
         short:
             '${labels.pointOf(id)} · ${switch (support.type) {
@@ -213,6 +214,8 @@ class PropertiesPanel extends StatelessWidget {
           [
             SegmentedButton<SupportType>(
               showSelectedIcon: false,
+              // Fills the narrow side card instead of overflowing it.
+              expandedInsets: card ? EdgeInsets.zero : null,
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
               segments: [
                 segment(SupportType.pin, Tool.pin, s.toolPin),
@@ -237,6 +240,10 @@ class PropertiesPanel extends StatelessWidget {
                   (v) =>
                       controller.updateSupport(support.copyWith(x: fromL(v))),
             ),
+          ],
+          [
+            for (final kind in reactionKindsOf(support.type))
+              _knownReaction(context, support, kind, labels, card: card),
           ],
         ],
       );
@@ -287,21 +294,32 @@ class PropertiesPanel extends StatelessWidget {
           help: s.angleHelp,
           groups: [
             [
-              NumberField(
-                width: width,
-                dense: card,
-                key: ValueKey('mag-$id'),
-                label: s.magnitude,
-                value: u.toDisplay(load.magnitude, Dimension.force),
-                unit: u.force.symbol,
-                validator: positive,
+              _unknownChip(
+                context,
+                id,
+                load.unknown && !load.isInclined,
+                enabled: !load.isInclined,
                 onChanged:
-                    (v) => controller.updateLoad(
-                      load.copyWith(
-                        magnitude: u.fromDisplay(v, Dimension.force),
-                      ),
-                    ),
+                    (v) => controller.updateLoad(load.copyWith(unknown: v)),
               ),
+              if (load.isUnknown)
+                _unknownValue(context, '${labels.loadName(id)} = ?')
+              else
+                NumberField(
+                  width: width,
+                  dense: card,
+                  key: ValueKey('mag-$id'),
+                  label: s.magnitude,
+                  value: u.toDisplay(load.magnitude, Dimension.force),
+                  unit: u.force.symbol,
+                  validator: positive,
+                  onChanged:
+                      (v) => controller.updateLoad(
+                        load.copyWith(
+                          magnitude: u.fromDisplay(v, Dimension.force),
+                        ),
+                      ),
+                ),
               NumberField(
                 width: width,
                 dense: card,
@@ -469,21 +487,31 @@ class PropertiesPanel extends StatelessWidget {
           icon: Tool.moment,
           groups: [
             [
-              NumberField(
-                width: width,
-                dense: card,
-                key: ValueKey('mag-$id'),
-                label: s.magnitude,
-                value: u.toDisplay(load.magnitude, Dimension.moment),
-                unit: u.moment.symbol,
-                validator: positive,
+              _unknownChip(
+                context,
+                id,
+                load.unknown,
                 onChanged:
-                    (v) => controller.updateAnyLoad(
-                      load.copyWith(
-                        magnitude: u.fromDisplay(v, Dimension.moment),
-                      ),
-                    ),
+                    (v) => controller.updateAnyLoad(load.copyWith(unknown: v)),
               ),
+              if (load.unknown)
+                _unknownValue(context, '${labels.loadName(id)} = ?')
+              else
+                NumberField(
+                  width: width,
+                  dense: card,
+                  key: ValueKey('mag-$id'),
+                  label: s.magnitude,
+                  value: u.toDisplay(load.magnitude, Dimension.moment),
+                  unit: u.moment.symbol,
+                  validator: positive,
+                  onChanged:
+                      (v) => controller.updateAnyLoad(
+                        load.copyWith(
+                          magnitude: u.fromDisplay(v, Dimension.moment),
+                        ),
+                      ),
+                ),
               NumberField(
                 width: width,
                 dense: card,
@@ -512,6 +540,98 @@ class PropertiesPanel extends StatelessWidget {
       case null:
         return null;
     }
+  }
+}
+
+extension on PropertiesPanel {
+  /// "Unknown ?": the load's size is then found from equilibrium.
+  Widget _unknownChip(
+    BuildContext context,
+    String id,
+    bool selected, {
+    bool enabled = true,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final s = AppScope.of(context).s;
+    final chip = FilterChip(
+      key: ValueKey('unknown-$id'),
+      label: Text(s.unknownToggle),
+      selected: selected,
+      visualDensity: VisualDensity.compact,
+      onSelected: enabled ? onChanged : null,
+    );
+    return enabled
+        ? chip
+        : Tooltip(message: s.unknownOnlyStraight, child: chip);
+  }
+
+  Widget _unknownValue(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+    child: Directionality(
+      textDirection: TextDirection.ltr,
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: Theme.of(context).colorScheme.error,
+        ),
+      ),
+    ),
+  );
+
+  /// One reaction of a support: unknown (the usual), or known with a value
+  /// the student types, positive → ↑ ↺.
+  Widget _knownReaction(
+    BuildContext context,
+    Support support,
+    ReactionKind kind,
+    ProblemLabels labels, {
+    required bool card,
+  }) {
+    final app = AppScope.of(context);
+    final s = app.s;
+    final u = app.units;
+    final dim =
+        kind == ReactionKind.moment ? Dimension.moment : Dimension.force;
+    final (prefix, plus) = switch (kind) {
+      ReactionKind.horizontal => ('H', '→'),
+      ReactionKind.vertical => ('R', '↑'),
+      ReactionKind.moment => ('M', '↺'),
+    };
+    final symbol = '$prefix${labels.pointOf(support.id)}';
+    final value = support.known[kind.name];
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilterChip(
+          key: ValueKey('known-${support.id}-${kind.name}'),
+          label: Text('$symbol ${s.knownLabel}'),
+          selected: value != null,
+          visualDensity: VisualDensity.compact,
+          onSelected:
+              (on) => controller.updateSupport(
+                support.withKnown(kind.name, on ? 0 : null),
+              ),
+        ),
+        if (value != null) ...[
+          NumberField(
+            key: ValueKey('known-value-${support.id}-${kind.name}'),
+            label: '$symbol (+$plus)',
+            value: u.toDisplay(value, dim),
+            unit: u.unitFor(dim).symbol,
+            width: card ? PropertiesPanel.cardFieldWidth : 120,
+            dense: card,
+            allowNegative: true,
+            onChanged:
+                (v) => controller.updateSupport(
+                  support.withKnown(kind.name, u.fromDisplay(v, dim)),
+                ),
+          ),
+        ],
+      ],
+    );
   }
 }
 

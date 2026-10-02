@@ -83,16 +83,28 @@ class PlannedEquation {
 /// order ΣFx, ΣFy, ΣM about the fixed end.
 List<PlannedEquation> planEquations(StaticsSolution s) {
   final builder = s.equations;
+  // Supports with the most unknowns first: a moment about one of them
+  // makes the most unknowns drop out.
+  int unknownsAt(Support sup) =>
+      s.reactions.where((r) => !r.isLoad && r.supportId == sup.id).length;
   final supports = [...s.problem.supports]..sort((a, b) {
-      final byCount = reactionKindsOf(b.type).length
-          .compareTo(reactionKindsOf(a.type).length);
+      final byCount = unknownsAt(b).compareTo(unknownsAt(a));
       return byCount != 0 ? byCount : a.x.compareTo(b.x);
     });
-  final hasFixed = s.reactions.any((r) => r.kind == ReactionKind.moment);
+  final hasFixed =
+      s.reactions.any((r) => !r.isLoad && r.kind == ReactionKind.moment);
 
   final moments = [
     for (final sup in supports)
       (builder.sumMoment(sup.x), s.labels.pointOf(sup.id)),
+  ];
+  // A load the student made unknown: a moment about its point leaves it
+  // out, which may be the only way to get one unknown at a time.
+  final loadCentres = [
+    for (final r in s.unknownLoads)
+      if (r.kind == ReactionKind.vertical &&
+          supports.every((sup) => (sup.x - r.x).abs() > 1e-9))
+        (builder.sumMoment(r.x), s.labels.pointOf(r.supportId)),
   ];
   // Pin + roller: ΣFx, ΣM about the pin (two unknowns drop out), ΣFy.
   // Cantilever: ΣFx, ΣFy, ΣM about the fixed end. The other moment
@@ -103,6 +115,7 @@ List<PlannedEquation> planEquations(StaticsSolution s) {
     if (moments.isNotEmpty) moments.first,
     if (!hasFixed) (builder.sumFy(), null),
     ...moments.skip(1),
+    ...loadCentres,
   ];
 
   final known = <String>{};
@@ -189,20 +202,24 @@ class _Writer {
   String arrowY(double v) => v >= 0 ? '↑' : '↓';
   String arrowM(double v) => v >= 0 ? '↺' : '↻';
 
+  /// The way a reaction or unknown load of value [v] acts.
   String reactionArrow(Reaction r, double v) => switch (r.kind) {
-        ReactionKind.horizontal => arrowX(v),
-        ReactionKind.vertical => arrowY(v),
-        ReactionKind.moment => arrowM(v),
+        ReactionKind.horizontal => arrowX(r.physical(v)),
+        ReactionKind.vertical => arrowY(r.physical(v)),
+        ReactionKind.moment => arrowM(r.physical(v)),
       };
 
   Dimension dimOf(Reaction r) =>
       r.kind == ReactionKind.moment ? Dimension.moment : Dimension.force;
 
+  /// The way a load points (from its angle, so an unknown load of no
+  /// stored size still has one).
   String loadArrow(PointLoad load) {
-    if (load.isVertical) return arrowY(load.fy);
-    if (load.isHorizontal) return arrowX(load.fx);
-    if (load.fx > 0) return load.fy > 0 ? '↗' : '↘';
-    return load.fy > 0 ? '↖' : '↙';
+    final dx = cosDeg(load.angleDeg), dy = sinDeg(load.angleDeg);
+    if (load.isVertical) return arrowY(dy);
+    if (load.isHorizontal) return arrowX(dx);
+    if (dx > 0) return dy > 0 ? '↗' : '↘';
+    return dy > 0 ? '↖' : '↙';
   }
 
   /// The acute angle between a load and the beam axis.
@@ -272,7 +289,7 @@ class _Writer {
           const MathToken('=', role: TokenRole.equals),
           MathToken(lU(problem.length), role: TokenRole.value),
         ]),
-        for (final sup in supports)
+        for (final sup in supports) ...[
           MathLine([
             MathToken('${labels.pointOf(sup.id)}:', role: TokenRole.symbol),
             MathToken(t.supportName(sup.type),
@@ -281,7 +298,24 @@ class _Writer {
                 highlights: [SupportHighlight(sup.id)]),
             MathToken('(${xAt(sup.x)})', role: TokenRole.value),
           ], highlights: [SupportHighlight(sup.id)]),
-        for (final load in loads)
+          for (final (r, v) in s.given)
+            if (r.supportId == sup.id) _givenLine(r, v),
+        ],
+        for (final load in loads.where((l) => l.isUnknown))
+          MathLine([
+            MathToken('${loadName(load)} = ? ${loadArrow(load)}',
+                role: TokenRole.term,
+                explanation: t.unknownLoadDescription(
+                  name: loadName(load),
+                  point: labels.pointOf(load.id),
+                  x: lU(load.x),
+                  direction: _directionWords(load),
+                ),
+                highlights: [LoadHighlight(load.id)]),
+            MathToken('@ ${labels.pointOf(load.id)} (${xAt(load.x)})',
+                role: TokenRole.value),
+          ], highlights: [LoadHighlight(load.id)]),
+        for (final load in loads.where((l) => !l.isUnknown))
           MathLine([
             MathToken('${loadName(load)} = ${fU(load.magnitude)} ${loadArrow(load)}',
                 role: TokenRole.term,
@@ -313,7 +347,10 @@ class _Writer {
           ], highlights: [LoadHighlight(d.id)]),
         for (final c in couples)
           MathLine([
-            MathToken('${loadName(c)} = ${mDerived(c.magnitude)} ${arrowM(c.moment)}',
+            MathToken(
+                c.isUnknown
+                    ? '${loadName(c)} = ? ${arrowM(c.counterClockwise ? 1 : -1)}'
+                    : '${loadName(c)} = ${mDerived(c.magnitude)} ${arrowM(c.moment)}',
                 role: TokenRole.term,
                 explanation: t.coupleDescription(
                   name: loadName(c),
@@ -338,9 +375,28 @@ class _Writer {
     );
   }
 
+  /// "RB = 10 kN ↑ (given)", for a reaction the student gave a value.
+  MathLine _givenLine(Reaction r, double v) {
+    final value = r.kind == ReactionKind.moment ? mDerived(v.abs()) : fU(v.abs());
+    final text = v == 0
+        ? '${r.symbol} = 0'
+        : '${r.symbol} = $value ${reactionArrow(r, v)}';
+    return MathLine([
+      MathToken(text,
+          role: TokenRole.term,
+          explanation: t.termGivenReaction(r.symbol, value),
+          highlights: [ReactionHighlight(r.id)]),
+      MathToken('(${t.givenWord})', role: TokenRole.text),
+    ], highlights: [ReactionHighlight(r.id)]);
+  }
+
   String _directionWords(PointLoad load) {
-    if (load.isVertical) return load.fy < 0 ? t.downward : t.upward;
-    if (load.isHorizontal) return load.fx > 0 ? t.rightward : t.leftward;
+    if (load.isVertical) {
+      return sinDeg(load.angleDeg) < 0 ? t.downward : t.upward;
+    }
+    if (load.isHorizontal) {
+      return cosDeg(load.angleDeg) > 0 ? t.rightward : t.leftward;
+    }
     return t.inclined(Num.compact(acuteAngle(load)), loadArrow(load));
   }
 
@@ -361,7 +417,13 @@ class _Writer {
     final lines = <MathLine>[];
     for (final sup in supports) {
       final letter = labels.pointOf(sup.id);
-      final rs = reactions.where((r) => r.supportId == sup.id).toList();
+      final rs = reactions
+          .where((r) => !r.isLoad && r.supportId == sup.id)
+          .toList();
+      for (final (r, v) in s.given) {
+        if (r.supportId == sup.id) lines.add(_givenLine(r, v));
+      }
+      if (rs.isEmpty) continue;
       lines.add(MathLine([
         MathToken('$letter (${t.supportName(sup.type)})',
             role: TokenRole.symbol,
@@ -376,6 +438,21 @@ class _Writer {
               highlights: [ReactionHighlight(rs[i].id)]),
         ],
       ], highlights: [SupportHighlight(sup.id)]));
+    }
+    final unknownLoads = s.unknownLoads.toList();
+    if (unknownLoads.isNotEmpty) {
+      lines.add(MathLine([
+        MathToken('${t.unknownLoadsLabel}:', role: TokenRole.symbol),
+        const MathToken('⇒', role: TokenRole.operator),
+        for (var i = 0; i < unknownLoads.length; i++) ...[
+          if (i > 0)
+            const MathToken(',', role: TokenRole.operator, spaceBefore: false),
+          MathToken(
+              '${unknownLoads[i].symbol} ${reactionArrow(unknownLoads[i], 1)}',
+              role: TokenRole.term,
+              highlights: [ReactionHighlight(unknownLoads[i].id)]),
+        ],
+      ]));
     }
     final n = reactions.length;
     lines.add(MathLine([
@@ -535,7 +612,9 @@ class _Writer {
     final c = _convSign(kind);
     final about = eq.about;
     final aboutName = about == null ? '' : point(about);
-    final reaction = s.reactions.where((r) => r.id == term.sourceId).firstOrNull;
+    final reaction = [...s.reactions, ...s.supportReactions]
+        .where((r) => r.id == term.sourceId)
+        .firstOrNull;
     final load = problem.loadById(term.sourceId);
     final hl = <Highlight>[
       if (reaction != null) ReactionHighlight(reaction.id),
@@ -554,6 +633,18 @@ class _Writer {
       final r = reaction!;
       final text = term.arm != null ? '${r.symbol} × ${l(term.arm!.abs())}' : r.symbol;
       final explanation = switch (kind) {
+        EquationKind.sumMoment when r.isLoad && r.kind == ReactionKind.moment =>
+          t.termUnknownCouple(
+              r.symbol, labels.pointOf(r.supportId), positiveInConvention),
+        EquationKind.sumMoment when r.isLoad => t.termUnknownLoadMoment(
+            symbol: r.symbol,
+            point: labels.pointOf(r.supportId),
+            about: aboutName,
+            arm: lU(term.arm!.abs()),
+            counterClockwise: term.coefficient! > 0,
+            positive: positiveInConvention),
+        _ when r.isLoad => t.termUnknownLoadForce(r.symbol,
+            labels.pointOf(r.supportId), reactionArrow(r, 1), positiveInConvention),
         EquationKind.sumMoment when r.kind == ReactionKind.moment =>
           t.termCouple(r.symbol, labels.pointOf(r.supportId), positiveInConvention),
         EquationKind.sumMoment => t.termReactionMoment(
@@ -581,7 +672,17 @@ class _Writer {
       text = f(term.knownValue!.abs());
     }
     String explanation;
-    if (load is DistributedLoad) {
+    if (reaction != null) {
+      // A reaction or unknown load solved in an earlier step, or a
+      // reaction the student gave.
+      final v = s.valueOf(reaction.id);
+      final value = reaction.kind == ReactionKind.moment
+          ? mDerived(v)
+          : fU(v);
+      explanation = s.isGiven(reaction.id)
+          ? t.termGivenReaction(reaction.symbol, value)
+          : t.termKnownReaction(reaction.symbol, value);
+    } else if (load is DistributedLoad) {
       final value = fU(load.resultant);
       explanation = isMoment
           ? t.termDistributedMoment(
@@ -625,13 +726,7 @@ class _Writer {
               loadName: loadName(load),
               positive: positiveInConvention);
     } else {
-      final r = reaction!;
-      final v = s.valueOf(r.id);
-      explanation = t.termKnownReaction(
-          r.symbol,
-          r.kind == ReactionKind.moment
-              ? mDerived(v)
-              : fU(v));
+      throw StateError('No source for term ${term.sourceId}');
     }
     return (sign: sign, text: text, explanation: explanation, highlights: hl);
   }
@@ -798,7 +893,7 @@ class _Writer {
     final target = p.solves.symbol;
     switch (eq.kind) {
       case EquationKind.sumFx:
-        final hasHorizontalLoad = loads.any((l) => l.fx != 0);
+        final hasHorizontalLoad = loads.any((l) => !l.isUnknown && l.fx != 0);
         return hasHorizontalLoad
             ? t.whySumFxWithLoads(target)
             : t.whySumFxNoLoads(target);
@@ -806,6 +901,8 @@ class _Writer {
         final knownSymbols = [
           for (final r in reactions)
             if (r.kind == ReactionKind.vertical && known.containsKey(r.id)) r.symbol,
+          for (final (r, _) in s.given)
+            if (r.kind == ReactionKind.vertical) r.symbol,
         ];
         return t.whySumFy(target, knownSymbols);
       case EquationKind.sumMoment:
@@ -917,16 +1014,21 @@ class _Writer {
       for (final r in reactions)
         if (s.valueOf(r.id) < 0) r,
     ];
-    final up = reactions
+    // Every support's vertical reaction, given or found, against every
+    // load, unknown ones at their solved size.
+    final up = s.supportReactions
         .where((r) => r.kind == ReactionKind.vertical)
         .fold(0.0, (sum, r) => sum + s.valueOf(r.id));
     final down = -s.loadActions.fold(
-        0.0,
-        (sum, a) => sum + switch (a) {
-              PointForce(:final fy) => fy,
-              DistributedForce(:final fy) => fy,
-              PointCouple() => 0.0,
-            });
+            0.0,
+            (sum, a) => sum + switch (a) {
+                  PointForce(:final fy) => fy,
+                  DistributedForce(:final fy) => fy,
+                  PointCouple() => 0.0,
+                }) -
+        s.unknownLoads
+            .where((r) => r.kind == ReactionKind.vertical)
+            .fold(0.0, (sum, r) => sum + r.physical(s.valueOf(r.id)));
     return SolutionStep(
       kind: StepKind.reactions,
       title: t.reactionsTitle,
@@ -966,10 +1068,12 @@ class _Writer {
     final load = problem.loadById(a.sourceId);
     if (load is PointLoad) return componentName(load, vertical: vertical);
     if (load != null) return loadName(load);
-    return s.reactions.firstWhere((r) => r.id == a.sourceId).symbol;
+    return s.reaction(a.sourceId).symbol;
   }
 
-  bool _isReaction(Action a) => s.reactions.any((r) => r.id == a.sourceId);
+  /// A support's reaction (an unknown load counts as a load).
+  bool _isReaction(Action a) =>
+      s.supportReactions.any((r) => r.id == a.sourceId);
 
   /// The actions left of a cut, left to right, reactions before loads at
   /// the same point: the order a student writes them in.

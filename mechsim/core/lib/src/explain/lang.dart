@@ -111,6 +111,28 @@ abstract class Texts {
     required bool positive,
   });
   String termKnownReaction(String symbol, String value);
+
+  // Unknown loads and given reactions.
+  String termGivenReaction(String symbol, String value);
+  String termUnknownLoadForce(
+      String symbol, String point, String arrow, bool positive);
+  String termUnknownLoadMoment({
+    required String symbol,
+    required String point,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  });
+  String termUnknownCouple(String symbol, String point, bool positive);
+  String unknownLoadDescription({
+    required String name,
+    required String point,
+    required String x,
+    required String direction,
+  });
+  String get unknownLoadsLabel;
+  String get givenWord;
   String negativeMeaning(String symbol, String arrow);
   String noHorizontalLoads(String symbol);
   String whySumFxWithLoads(String target);
@@ -348,6 +370,10 @@ class ArabicTexts extends Texts {
         StabilityReason.tooManyReactions =>
           'عدد المجاهيل (${m('$unknowns')}) أكبر من عدد معادلات الاتزان (3)، فالكمرة غير محددة استاتيكيًا من الدرجة ${m('$degree')}. '
               'حلها يحتاج معادلات التشوّه (Compatibility)، وهذا خارج نطاق الإصدار الحالي.',
+        StabilityReason.tooFewUnknowns =>
+          'عدد المجاهيل (${m('$unknowns')}) أقل من عدد معادلات الاتزان (3): أعطيت قيمًا معلومة أكثر من اللازم، فلا يمكن التأكد من أنها كلها متزنة.',
+        StabilityReason.unknownsNotIndependent =>
+          'لدينا 3 مجاهيل، لكن معادلات الاتزان لا تكفي لإيجادها معًا: مثلًا لا يوجد مجهول أفقي فلا تعطي ΣFx شيئًا، أو مجهولان من العزوم المركّزة.',
         StabilityReason.ok => '',
       };
 
@@ -358,7 +384,11 @@ class ArabicTexts extends Texts {
         StabilityReason.tooFewReactions || StabilityReason.noSupports =>
           'الترتيب المعتاد: Pin في طرف وRoller في الطرف الآخر، أو Fixed في طرف واحد (كمرة كابولية).',
         StabilityReason.tooManyReactions =>
-          'لتحصل على كمرة محددة استاتيكيًا: Pin مع Roller، أو Fixed وحده.',
+          'لتحصل على كمرة محددة استاتيكيًا: Pin مع Roller، أو Fixed وحده؛ أو أعطِ قيمة معلومة لبعض ردود الأفعال من خصائص المسند.',
+        StabilityReason.tooFewUnknowns =>
+          'الحل: اجعل حملًا مجهولًا (من خصائص الحمل) أو احذف القيمة المعطاة لأحد ردود الأفعال (من خصائص المسند) حتى يصبح عدد المجاهيل 3.',
+        StabilityReason.unknownsNotIndependent =>
+          'الحل: اجعل مجهولًا واحدًا أفقيًا (مثل HA)، والآخرين قوتين رأسيتين في نقطتين مختلفتين أو قوة رأسية وعزمًا.',
         _ => '',
       };
 
@@ -501,6 +531,47 @@ class ArabicTexts extends Texts {
   @override
   String termKnownReaction(String symbol, String value) =>
       '${m('$symbol = $value')} وجدناها في خطوة سابقة، فنعوّض بقيمتها.';
+
+  @override
+  String termGivenReaction(String symbol, String value) =>
+      '${m('$symbol = $value')} معطاة في المسألة (معلومة)، فنعوّض بقيمتها ولا نعدّها من المجاهيل.';
+
+  @override
+  String termUnknownLoadForce(
+          String symbol, String point, String arrow, bool positive) =>
+      '${m(symbol)} حمل مجهول القيمة عند ${m(point)}، اتجاهه كما رُسم $arrow، لذلك إشارته ${_sign(positive)} في هذه المعادلة.';
+
+  @override
+  String termUnknownLoadMoment({
+    required String symbol,
+    required String point,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '${m(symbol)} حمل مجهول القيمة عند ${m(point)}، و${m(arm)} ذراعه حول ${m(about)}. '
+      'باتجاهه المرسوم يدير الكمرة حول ${m(about)} '
+      '${counterClockwise ? 'عكس عقارب الساعة ↺' : 'مع عقارب الساعة ↻'}، لذلك إشارته ${_sign(positive)}.';
+
+  @override
+  String termUnknownCouple(String symbol, String point, bool positive) =>
+      '${m(symbol)} عزم مركّز مجهول القيمة عند ${m(point)}. ليس له ذراع، فيُكتب كما هو باتجاهه المرسوم، وإشارته ${_sign(positive)}.';
+
+  @override
+  String unknownLoadDescription({
+    required String name,
+    required String point,
+    required String x,
+    required String direction,
+  }) =>
+      '${m(name)} حمل قيمته مجهولة عند النقطة ${m(point)} (${m(x)})، اتجاهه $direction. سنجد قيمته من معادلات الاتزان مثل ردود الأفعال.';
+
+  @override
+  String get unknownLoadsLabel => 'أحمال مجهولة';
+
+  @override
+  String get givenWord => 'معطى';
   @override
   String negativeMeaning(String symbol, String arrow) =>
       'الإشارة السالبة تعني أن ${m(symbol)} تعمل فعليًا في الاتجاه $arrow، أي عكس الاتجاه الذي افترضناه. الحل صحيح، والاتجاه فقط هو المعكوس.';
@@ -929,6 +1000,10 @@ class EnglishTexts extends Texts {
         StabilityReason.tooManyReactions =>
           'There are $unknowns unknowns but only 3 equilibrium equations: the beam is statically indeterminate to degree $degree. '
               'Solving it needs compatibility of deformations, which this version does not cover yet.',
+        StabilityReason.tooFewUnknowns =>
+          'There are only $unknowns unknowns for 3 equilibrium equations: more values are given than needed, so they cannot all be checked to balance.',
+        StabilityReason.unknownsNotIndependent =>
+          'There are 3 unknowns, but the equations cannot find them together: for example none acts along the beam, so ΣFx finds nothing, or two of them are couples.',
         StabilityReason.ok => '',
       };
 
@@ -939,7 +1014,11 @@ class EnglishTexts extends Texts {
         StabilityReason.tooFewReactions || StabilityReason.noSupports =>
           'The usual set-ups: a pin at one end and a roller at the other, or a single fixed support (a cantilever).',
         StabilityReason.tooManyReactions =>
-          'For a determinate beam use a pin with a roller, or one fixed support alone.',
+          'For a determinate beam use a pin with a roller, or one fixed support alone; or give some reactions a known value in the support\'s properties.',
+        StabilityReason.tooFewUnknowns =>
+          'Fix: make a load unknown (in its properties) or clear a given reaction (in the support\'s properties) so there are 3 unknowns.',
+        StabilityReason.unknownsNotIndependent =>
+          'Fix: make one unknown horizontal (such as HA), and the other two vertical forces at different points, or a vertical force and a couple.',
         _ => '',
       };
 
@@ -1081,6 +1160,46 @@ class EnglishTexts extends Texts {
   @override
   String termKnownReaction(String symbol, String value) =>
       '$symbol = $value was found in an earlier step, so its value is substituted.';
+
+  @override
+  String termGivenReaction(String symbol, String value) =>
+      '$symbol = $value is given in the problem, so its value is substituted and it is not one of the unknowns.';
+
+  @override
+  String termUnknownLoadForce(
+          String symbol, String point, String arrow, bool positive) =>
+      '$symbol is the unknown load at $point, acting as drawn ($arrow), so it is ${_sign(positive)} in this equation.';
+
+  @override
+  String termUnknownLoadMoment({
+    required String symbol,
+    required String point,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '$symbol is the unknown load at $point, and $arm is its arm about $about. '
+      'Acting as drawn it turns the beam ${counterClockwise ? 'counter-clockwise ↺' : 'clockwise ↻'} about $about: ${_sign(positive)}.';
+
+  @override
+  String termUnknownCouple(String symbol, String point, bool positive) =>
+      '$symbol is the unknown couple at $point. It has no arm, so it is written as it is, in the sense drawn: ${_sign(positive)}.';
+
+  @override
+  String unknownLoadDescription({
+    required String name,
+    required String point,
+    required String x,
+    required String direction,
+  }) =>
+      '$name is a load of unknown size at point $point ($x), acting $direction. Its value is found from equilibrium, like the reactions.';
+
+  @override
+  String get unknownLoadsLabel => 'Unknown loads';
+
+  @override
+  String get givenWord => 'given';
   @override
   String negativeMeaning(String symbol, String arrow) =>
       'The minus sign means $symbol actually acts $arrow, opposite to the direction we assumed. The answer is right; only the direction is reversed.';

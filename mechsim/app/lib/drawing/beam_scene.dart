@@ -145,9 +145,11 @@ class BeamScene {
       if (d is DistributedLoad) _paintResultant(canvas, d);
     }
     if (mode == SceneMode.freeBody && statics != null) {
-      for (final r in statics!.reactions) {
+      for (final r in statics!.supportReactions) {
         _paintReaction(canvas, r);
       }
+    } else {
+      _paintGivenReactions(canvas);
     }
     if (showLabels && metrics.labelSize > 0) _paintLetters(canvas);
     for (final h in highlights.whereType<ArmHighlight>()) {
@@ -313,9 +315,27 @@ class BeamScene {
     return (head - dir * len, head);
   }
 
+  /// A load is lit by its own highlight, or, when its size is an unknown,
+  /// by the highlight of that unknown.
+  bool _loadLit(String id) =>
+      _hl<LoadHighlight>((h) => h.loadId == id) ||
+      _hl<ReactionHighlight>((h) => h.reactionId == id);
+
+  /// "= 20 kN", or for an unknown load "= ?" until it is solved (and the
+  /// step that solves it has been reached).
+  String _loadValue(Load l, double stored, String Function(double) unit) {
+    if (!l.isUnknown) return unit(stored);
+    final st = statics;
+    final solved =
+        st != null &&
+        st.values.containsKey(l.id) &&
+        (reveal == null || reveal!.solved.contains(l.id));
+    return solved ? unit(st.valueOf(l.id)) : '?';
+  }
+
   void _paintLoad(Canvas canvas, PointLoad l) {
     final (tail, head) = loadArrow(l);
-    final highlighted = _hl<LoadHighlight>((h) => h.loadId == l.id);
+    final highlighted = _loadLit(l.id);
     final c = highlighted ? colors.highlight : colors.load;
     if (highlighted) {
       canvas.drawLine(tail, head, Symbols.stroke(_glow, 10));
@@ -338,7 +358,7 @@ class BeamScene {
       );
     }
     if (metrics.labelSize <= 0) return;
-    final text = '${labels.loadName(l.id)} = ${fu(l.magnitude)}';
+    final text = '${labels.loadName(l.id)} = ${_loadValue(l, l.magnitude, fu)}';
     final away = tail - head;
     final anchor =
         away.dy < -4
@@ -507,7 +527,7 @@ class BeamScene {
   }
 
   void _paintCouple(Canvas canvas, PointMoment c) {
-    final highlighted = _hl<LoadHighlight>((h) => h.loadId == c.id);
+    final highlighted = _loadLit(c.id);
     final color = highlighted ? colors.highlight : colors.load;
     final centre = viewport.toScreen(c.x);
     final r = 20.0 * math.max(0.6, metrics.symbolScale);
@@ -520,7 +540,7 @@ class BeamScene {
     if (metrics.labelSize <= 0) return;
     Symbols.label(
       canvas,
-      '${labels.loadName(c.id)} = ${mu(c.magnitude)}',
+      '${labels.loadName(c.id)} = ${_loadValue(c, c.magnitude, mu)}',
       centre + Offset(r + 4, -r - 2),
       color,
       fontSize: metrics.labelSize,
@@ -537,7 +557,52 @@ class BeamScene {
 
   // ---- reactions ---------------------------------------------------------
 
-  bool _known(Reaction r) => reveal == null || reveal!.solved.contains(r.id);
+  bool _known(Reaction r) =>
+      reveal == null ||
+      reveal!.solved.contains(r.id) ||
+      (statics?.isGiven(r.id) ?? false);
+
+  /// On the problem itself, the reactions the student gave a value, under
+  /// their support: "RB = 15 kN ↑".
+  void _paintGivenReactions(Canvas canvas) {
+    if (metrics.labelSize <= 0) return;
+    for (final sup in problem.supports) {
+      var row = 0;
+      for (final kind in reactionKindsOf(sup.type)) {
+        final v = givenValue(sup, kind);
+        if (v == null) continue;
+        final symbol =
+            '${switch (kind) {
+              ReactionKind.horizontal => 'H',
+              ReactionKind.vertical => 'R',
+              ReactionKind.moment => 'M',
+            }}${labels.pointOf(sup.id)}';
+        final value = switch (kind) {
+          ReactionKind.horizontal => '${fu(v.abs())} ${v >= 0 ? '→' : '←'}',
+          ReactionKind.vertical => '${fu(v.abs())} ${v >= 0 ? '↑' : '↓'}',
+          ReactionKind.moment => '${mu(v.abs())} ${v >= 0 ? '↺' : '↻'}',
+        };
+        // Beside the support, towards the middle of the beam (an end
+        // support has no room outside it), clear of the letters and
+        // dimension lines below.
+        final right = sup.x <= problem.length / 2;
+        Symbols.label(
+          canvas,
+          '$symbol = $value',
+          Offset(
+            viewport.sx(sup.x) + (right ? 26 : -26),
+            y0 + metrics.beamHalf + 14 + row * (metrics.labelSize + 6),
+          ),
+          colors.reaction,
+          fontSize: metrics.labelSize,
+          weight: FontWeight.w700,
+          anchor: right ? Alignment.centerLeft : Alignment.centerRight,
+          background: colors.paper.withValues(alpha: 0.85),
+        );
+        row++;
+      }
+    }
+  }
 
   void _paintReaction(Canvas canvas, Reaction r) {
     final s = statics!;

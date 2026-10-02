@@ -99,6 +99,12 @@ abstract class S {
   String get typeVarying;
   String get sidePanel;
   String get projectMenu;
+
+  // known and unknown values
+  String get unknownToggle;
+  String get knownLabel;
+  String get unknownOnlyStraight;
+  String get reactionsKnownHelp;
   String get length => 'Length';
   String get position => 'Position';
   String get magnitude => 'Magnitude';
@@ -341,6 +347,15 @@ class _Ar extends S {
   String get sidePanel => 'اللوحة الجانبية';
   @override
   String get projectMenu => 'المسألة';
+  @override
+  String get unknownToggle => 'مجهول ?';
+  @override
+  String get knownLabel => 'معلوم';
+  @override
+  String get unknownOnlyStraight => 'المجهول للأحمال الرأسية أو الأفقية فقط';
+  @override
+  String get reactionsKnownHelp =>
+      'ردود الأفعال مجهولة عادةً. فعّل «معلوم» لتعطي أحدها قيمة (+ للأعلى ↑، لليمين →، عكس عقارب الساعة ↺)، واجعل حملًا مجهولًا ليبقى 3 مجاهيل.';
   @override
   String get angle => 'θ';
   @override
@@ -660,6 +675,16 @@ class _En extends S {
   String get sidePanel => 'Side panel';
   @override
   String get projectMenu => 'Problem';
+  @override
+  String get unknownToggle => 'Unknown ?';
+  @override
+  String get knownLabel => 'known';
+  @override
+  String get unknownOnlyStraight =>
+      'Only a vertical or horizontal load can be unknown';
+  @override
+  String get reactionsKnownHelp =>
+      'Reactions are normally unknown. Switch one to known to give it a value (+ is ↑, →, ↺), and make a load unknown so there are still 3 unknowns.';
   @override
   String get angle => 'θ';
   @override
