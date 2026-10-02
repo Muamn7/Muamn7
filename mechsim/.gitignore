@@ -9,3 +9,7 @@ build/
 .metadata.local
 coverage/
 # Screenshots rendered by the test suite go to the scratch build folder.
+
+# The repository root ignores every bin/ (Gradle output for the game);
+# here bin/ holds the engine's command-line tool, which is source.
+!/core/bin/
