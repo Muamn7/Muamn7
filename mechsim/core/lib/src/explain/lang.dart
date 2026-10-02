@@ -564,8 +564,8 @@ class ArabicTexts extends Texts {
       'القوة للأعلى على يسار المقطع تعطي عزمًا موجبًا (Sagging).';
   @override
   String get momentDetail =>
-      'اصطلاح الإشارة: العزم الموجب يحني الكمرة على شكل ابتسامة ⌣ (Sagging): الألياف العليا مضغوطة والسفلى مشدودة. '
-      'العزم السالب (Hogging) يحنيها على شكل ⌢. لاحظ أن M(x) خطي بين الأحمال المركّزة لأن V ثابتة هناك.';
+      'اصطلاح الإشارة: العزم الموجب يحني الكمرة على شكل ابتسامة ∪ (Sagging): الألياف العليا مضغوطة والسفلى مشدودة. '
+      'العزم السالب (Hogging) يحنيها على شكل ∩. لاحظ أن M(x) خطي بين الأحمال المركّزة لأن V ثابتة هناك.';
   @override
   String momentTermForce(String name, String value, String arm, bool sagging) =>
       '${m(name)} × (${m(arm)}): عزم القوة حول المقطع = القوة (${m(value)}) × بعدها عن المقطع (${m(arm)}). '
@@ -609,10 +609,10 @@ class ArabicTexts extends Texts {
       'إذن أكبر عزم يكون حيث تغيّر V إشارتها (أو تساوي صفرًا)، أو عند المساند والأطراف.';
   @override
   String get saggingMeaning =>
-      'أكبر عزم موجب (Sagging): الكمرة منحنية ⌣، الألياف السفلى في شد (Tension) والعليا في ضغط (Compression).';
+      'أكبر عزم موجب (Sagging): الكمرة منحنية ∪، الألياف السفلى في شد (Tension) والعليا في ضغط (Compression).';
   @override
   String get hoggingMeaning =>
-      'أكبر عزم سالب (Hogging): الكمرة منحنية ⌢، الألياف العليا في شد والسفلى في ضغط.';
+      'أكبر عزم سالب (Hogging): الكمرة منحنية ∩، الألياف العليا في شد والسفلى في ضغط.';
   @override
   String get maxMomentTitle => 'أقصى عزم Mmax';
   @override
@@ -1027,8 +1027,8 @@ class EnglishTexts extends Texts {
       'An upward force on the left gives a positive (sagging) moment.';
   @override
   String get momentDetail =>
-      'Sign convention: a positive moment bends the beam into a smile ⌣ (sagging): top fibres in compression, bottom fibres in tension. '
-      'A negative (hogging) moment bends it ⌢. M(x) is linear between point loads because V is constant there.';
+      'Sign convention: a positive moment bends the beam into a smile ∪ (sagging): top fibres in compression, bottom fibres in tension. '
+      'A negative (hogging) moment bends it ∩. M(x) is linear between point loads because V is constant there.';
   @override
   String momentTermForce(String name, String value, String arm, bool sagging) =>
       '$name × ($arm): the moment of a force about the cut = the force ($value) × its distance to the cut ($arm). '
@@ -1072,10 +1072,10 @@ class EnglishTexts extends Texts {
       'So the largest moment is where V changes sign (or is zero), or at a support or an end.';
   @override
   String get saggingMeaning =>
-      'Largest positive (sagging) moment: the beam bends ⌣, bottom fibres in tension, top fibres in compression.';
+      'Largest positive (sagging) moment: the beam bends ∪, bottom fibres in tension, top fibres in compression.';
   @override
   String get hoggingMeaning =>
-      'Largest negative (hogging) moment: the beam bends ⌢, top fibres in tension, bottom fibres in compression.';
+      'Largest negative (hogging) moment: the beam bends ∩, top fibres in tension, bottom fibres in compression.';
   @override
   String get maxMomentTitle => 'Maximum moment Mmax';
   @override

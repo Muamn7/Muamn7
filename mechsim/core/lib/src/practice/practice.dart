@@ -173,7 +173,7 @@ class PracticeSession {
           correct: true, mistake: Mistake.none, message: _t.correct);
     }
 
-    final review = _reviewStep(q);
+    final review = reviewStep(q);
     AnswerFeedback wrong(Mistake m, String message) => AnswerFeedback(
         correct: false, mistake: m, message: message, reviewStep: review);
 
@@ -236,7 +236,8 @@ class PracticeSession {
     }
   }
 
-  int? _reviewStep(PracticeQuestion q) {
+  /// The solution step that works out the answer to [q].
+  int? reviewStep(PracticeQuestion q) {
     final index = switch (q.kind) {
       QuestionKind.reaction => solution.stepSolving(q.reactionId!),
       QuestionKind.shearAt => solution.indexOf(StepKind.shear),

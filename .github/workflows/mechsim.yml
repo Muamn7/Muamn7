@@ -1,0 +1,106 @@
+name: MechSim 2D
+
+# The engineering mechanics simulator under mechsim/: engine tests, app
+# tests, and an installable Android APK on every push that touches it.
+# The development sandbox cannot reach dl.google.com, so the Android SDK
+# work happens here.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'mechsim/**'
+      - '.github/workflows/mechsim.yml'
+  pull_request:
+    paths:
+      - 'mechsim/**'
+      - '.github/workflows/mechsim.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine (pure Dart)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mechsim/core
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Get packages
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Unit tests
+        run: dart test
+
+      - name: Solve the example from the command line
+        run: dart run bin/mechsim.dart --length 6 --pin 0 --roller 6 --load 20@3 --lang en
+
+  app:
+    name: App (analyze and widget tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mechsim/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Widget tests
+        run: flutter test
+
+  apk:
+    name: Android APK
+    needs: [engine, app]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mechsim/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Release mode for speed and size; signed with the debug key until a
+      # store key is set up, so it installs directly on a phone.
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mechsim-2d-apk
+          path: mechsim/app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
