@@ -181,10 +181,14 @@ dart run bin/mechsim.dart --length 4 --fixed 0 --load 10@4 --lang en --units N-m
 
 ## التشغيل والبناء
 
-**APK للهاتف**: كل push يمسّ `mechsim/` يشغّل workflow
+**APK للهاتف — رابط مباشر**: افتح هذا الرابط من متصفح الهاتف ثم ثبّت الملف:
+<https://github.com/Muamn7/Muamn7/releases/download/mechsim-latest/MechSim2D.apk>
+(يُستبدل تلقائيًا بأحدث نسخة بعد كل بناء ناجح.)
+
+**كيف يُبنى**: كل push يمسّ `mechsim/` يشغّل workflow
 [`MechSim 2D`](../.github/workflows/mechsim.yml) على GitHub Actions: اختبارات
 المحرك، اختبارات الواجهة، ثم بناء `app-release.apk` (موقّع بمفتاح debug حتى
-يُعدّ مفتاح متجر) ويُرفع في قسم **Artifacts** باسم `mechsim-2d-apk`. (بيئة
+يُعدّ مفتاح متجر) ويُرفع في قسم **Artifacts** باسم `mechsim-2d-apk`، ويُنشر في Release باسم `mechsim-latest` (pre-release، فلا يغطي إصدارات اللعبة). (بيئة
 التطوير هنا لا تصل إلى `dl.google.com`، لذلك يُبنى الـ APK هناك.)
 
 **محليًا** (Flutter 3.47 أو أحدث):

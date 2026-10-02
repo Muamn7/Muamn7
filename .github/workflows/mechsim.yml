@@ -73,6 +73,8 @@ jobs:
     name: Android APK
     needs: [engine, app]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: mechsim/app
@@ -104,3 +106,20 @@ jobs:
           name: mechsim-2d-apk
           path: mechsim/app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # A fixed download link for phones, which cannot easily open the zip
+      # that Actions artifacts come in. Replaced on every push, marked as a
+      # pre-release so it never displaces the game's releases.
+      - name: Publish as the latest MechSim 2D download
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk MechSim2D.apk
+          gh release delete mechsim-latest --cleanup-tag --yes || true
+          gh release create mechsim-latest MechSim2D.apk \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title "MechSim 2D — latest build" \
+            --notes "Built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}. Download MechSim2D.apk below and open it on an Android phone to install (allow installs from this source if asked)."
