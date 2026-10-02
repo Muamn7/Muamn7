@@ -258,42 +258,117 @@ void main() {
       expect(find.byType(NavigationBar), findsNothing);
     });
 
-    testWidgets('editor gives the sheet the whole screen', (tester) async {
+    testWidgets('editor: tool list, sheet, side panel and bottom bar', (
+      tester,
+    ) async {
+      phoneSize(tester, logical: sideways);
+      const start = BeamProblem(
+        length: 6,
+        supports: [Support(id: 's1', type: SupportType.pin, x: 0)],
+      );
+      await tester.pumpWidget(
+        await app(
+          testState(settings: const AppSettings(lang: Lang.en)),
+          home: const EditorScreen(problem: start),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final c = editorOf(tester);
+
+      // The tool list down the start side, the panel down the end side,
+      // the sheet between them and ANALYZE in the bottom bar.
+      final select = tester.getRect(find.byKey(const ValueKey('tool-Select')));
+      final beam = tester.getRect(find.byKey(const ValueKey('tool-Beam')));
+      expect(select.left, lessThan(20));
+      expect(beam.top, greaterThan(select.top));
+      final canvas = tester.getRect(find.byType(EditorCanvas));
+      expect(canvas.left, greaterThan(select.right));
+      expect(canvas.width, greaterThan(892 - 132 - 236 - 40));
+      final status = tester.getRect(find.byKey(const ValueKey('status-card')));
+      expect(status.left, greaterThan(canvas.right));
+      // One support only: the panel says why it cannot be solved yet.
+      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+
+      final left = canvas.left + 56, right = canvas.right - 56;
+      final perMetre = (right - left) / 6;
+      final y = canvas.top + canvas.height * 0.45;
+
+      // Support: pick Roller in the panel, then tap the end of the beam.
+      await tester.tap(find.byKey(const ValueKey('tool-Support')));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Roller'));
+      await tester.pump();
+      await tester.tapAt(Offset(right, y));
+      await tester.pumpAndSettle();
+      expect(c.problem.supports.last.type, SupportType.roller);
+      expect(c.problem.supports.last.x, 6);
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+
+      // Point Load: set 25 kN in the panel before placing it.
+      await tester.tap(find.byKey(const ValueKey('tool-Point Load')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('next-magnitude')),
+          matching: find.byType(TextField),
+        ),
+        '25',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      await tester.tapAt(Offset(left + 3 * perMetre, y));
+      await tester.pumpAndSettle();
+      expect(c.problem.pointLoads.single.magnitude, 25000);
+      expect(c.problem.pointLoads.single.x, 3);
+      // The new load is selected and its values fill the panel's card.
+      final magnitude = tester.getRect(
+        find.widgetWithText(TextField, 'Magnitude'),
+      );
+      expect(magnitude.left, greaterThan(canvas.right));
+
+      // Display switches.
+      await tester.ensureVisible(find.byKey(const ValueKey('switch-grid')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('switch-grid')));
+      await tester.pump();
+      expect(c.showGrid, isFalse);
+
+      // The side panel can be hidden for a wider sheet.
+      await tester.tap(find.byKey(const ValueKey('toggle-panel')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byType(EditorCanvas)).width,
+        greaterThan(canvas.width + 200),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('analyze')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AnalysisScreen), findsOneWidget);
+      expect(find.text('RA = 12.50 kN ↑'), findsWidgets);
+    });
+
+    testWidgets('editor: typing a length on an empty sheet draws the beam', (
+      tester,
+    ) async {
       phoneSize(tester, logical: sideways);
       await tester.pumpWidget(
         await app(
           testState(settings: const AppSettings(lang: Lang.en)),
-          home: EditorScreen(problem: example),
+          home: const EditorScreen(),
         ),
       );
       await tester.pumpAndSettle();
-      // No app bar: the tools are two columns down one side, the actions a
-      // thin column down the other.
-      expect(find.byType(AppBar), findsNothing);
-      final pin = tester.getRect(find.byKey(const ValueKey('tool-Pin')));
-      final roller = tester.getRect(find.byKey(const ValueKey('tool-Roller')));
-      expect(pin.left, lessThan(80));
-      expect(roller.top, greaterThan(pin.top)); // a column, not a row
-      expect(find.byIcon(Icons.undo), findsOneWidget);
-      final canvas = tester.getRect(find.byType(EditorCanvas));
-      expect(canvas.width, greaterThan(892 - 140 - 60));
-      expect(canvas.height, greaterThan(412 - 10));
-
-      // Selecting the load opens one strip under the sheet, which keeps
-      // its width.
-      editorOf(tester).select('p1');
-      await tester.pumpAndSettle();
-      final magnitude = tester.getRect(
-        find.widgetWithText(TextField, 'Magnitude'),
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('bottom-length')),
+          matching: find.byType(TextField),
+        ),
+        '8',
       );
-      expect(magnitude.top, greaterThan(412 * 0.6));
-      final sheet = tester.getRect(find.byType(EditorCanvas));
-      expect(sheet.width, canvas.width);
-      expect(sheet.height, greaterThan(412 * 0.7));
-
-      await tester.tap(find.text('ANALYZE'));
+      await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      expect(find.byType(AnalysisScreen), findsOneWidget);
+      expect(editorOf(tester).problem.length, 8);
+      expect(editorOf(tester).problem.hasBeam, isTrue);
     });
 
     testWidgets('analysis shows the diagrams beside the steps', (tester) async {

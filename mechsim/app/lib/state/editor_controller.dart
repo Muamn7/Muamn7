@@ -26,6 +26,20 @@ enum Tool {
       this == udl ||
       this == uvl ||
       this == moment;
+
+  bool get isSupport => this == pin || this == roller || this == fixed;
+  bool get isDistributed => this == udl || this == uvl;
+}
+
+/// What a newly placed load starts as: set beforehand in the side panel
+/// (sideways), so a student can choose 25 kN up before tapping the beam.
+class PlacementDefaults {
+  double pointMagnitude = 10000;
+  double pointAngle = -90;
+  double intensity = 10000;
+  bool distributedUpward = false;
+  double moment = 10000;
+  bool counterClockwise = true;
 }
 
 /// The state of the drawing screen: the problem, its history, the active
@@ -44,6 +58,14 @@ class EditorController extends ChangeNotifier {
   Tool _tool;
   String? _selected;
   bool _showDimensions = true;
+  bool _showGrid = true;
+  bool _snap = true;
+  final PlacementDefaults defaults = PlacementDefaults();
+
+  /// The kind of support and of distributed load used last, which the
+  /// sideways tool list's single Support and Distributed Load entries pick.
+  Tool lastSupport = Tool.pin;
+  Tool lastDistributed = Tool.udl;
   String? savedId;
   String? _name;
 
@@ -54,6 +76,10 @@ class EditorController extends ChangeNotifier {
   Tool get tool => _tool;
   String? get selected => _selected;
   bool get showDimensions => _showDimensions;
+  bool get showGrid => _showGrid;
+
+  /// Whether dragged and placed elements snap to the grid and to each other.
+  bool get snap => _snap;
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
   String? get name => _name;
@@ -68,8 +94,30 @@ class EditorController extends ChangeNotifier {
       _showDimensions = !_showDimensions;
     } else {
       _tool = tool;
+      if (tool.isSupport) lastSupport = tool;
+      if (tool.isDistributed) lastDistributed = tool;
       if (tool != Tool.select) _selected = null;
     }
+    notifyListeners();
+  }
+
+  void setShowGrid(bool value) {
+    _showGrid = value;
+    notifyListeners();
+  }
+
+  void setShowDimensions(bool value) {
+    _showDimensions = value;
+    notifyListeners();
+  }
+
+  void setSnap(bool value) {
+    _snap = value;
+    notifyListeners();
+  }
+
+  void updateDefaults(void Function(PlacementDefaults d) change) {
+    change(defaults);
     notifyListeners();
   }
 
@@ -159,30 +207,15 @@ class EditorController extends ChangeNotifier {
     return id;
   }
 
-  String addLoad(double x, {double magnitude = 10000, double angle = -90}) {
+  String addLoad(double x) {
     final id = _problem.nextId('p');
     commit(
       _problem.withLoad(
-        PointLoad(id: id, x: x, magnitude: magnitude, angleDeg: angle),
-      ),
-    );
-    _selected = id;
-    notifyListeners();
-    return id;
-  }
-
-  /// A distributed load from [a] to [b]: uniform at 10 kN/m, or rising
-  /// from 0 to 10 kN/m.
-  String addDistributed(double a, double b, {required bool uniform}) {
-    final id = _problem.nextId('w');
-    commit(
-      _problem.withLoad(
-        DistributedLoad(
+        PointLoad(
           id: id,
-          x: a,
-          x2: b,
-          w1: uniform ? 10000 : 0,
-          w2: 10000,
+          x: x,
+          magnitude: defaults.pointMagnitude,
+          angleDeg: defaults.pointAngle,
         ),
       ),
     );
@@ -191,9 +224,39 @@ class EditorController extends ChangeNotifier {
     return id;
   }
 
-  String addMoment(double x, {double magnitude = 10000}) {
+  /// A distributed load from [a] to [b]: uniform at the default intensity
+  /// (10 kN/m), or rising from 0 to it.
+  String addDistributed(double a, double b, {required bool uniform}) {
+    final id = _problem.nextId('w');
+    commit(
+      _problem.withLoad(
+        DistributedLoad(
+          id: id,
+          x: a,
+          x2: b,
+          w1: uniform ? defaults.intensity : 0,
+          w2: defaults.intensity,
+          upward: defaults.distributedUpward,
+        ),
+      ),
+    );
+    _selected = id;
+    notifyListeners();
+    return id;
+  }
+
+  String addMoment(double x) {
     final id = _problem.nextId('c');
-    commit(_problem.withLoad(PointMoment(id: id, x: x, magnitude: magnitude)));
+    commit(
+      _problem.withLoad(
+        PointMoment(
+          id: id,
+          x: x,
+          magnitude: defaults.moment,
+          counterClockwise: defaults.counterClockwise,
+        ),
+      ),
+    );
     _selected = id;
     notifyListeners();
     return id;

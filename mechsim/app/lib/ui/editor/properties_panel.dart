@@ -5,24 +5,27 @@ import '../../state/app_state.dart';
 import '../../state/editor_controller.dart';
 import '../widgets/number_field.dart';
 import '../widgets/tool_icons.dart';
+import 'panel_card.dart';
 
 /// Exact values for the selected element: the beam's length, a support's
 /// type and position, a load's magnitude, position and direction.
 ///
-/// Upright it is a panel above the tools. Sideways ([compact]) it is one
-/// strip under the sheet, so the drawing keeps the whole width and nearly
-/// all of the height.
+/// Upright it is a panel above the tools. Sideways ([card]) it is the
+/// first card of the side panel, two fields to a row.
 class PropertiesPanel extends StatelessWidget {
   const PropertiesPanel({
     super.key,
     required this.controller,
     required this.onMessage,
-    this.compact = false,
+    this.card = false,
   });
 
   final EditorController controller;
   final ValueChanged<String> onMessage;
-  final bool compact;
+  final bool card;
+
+  /// Two fields side by side in the side panel's card.
+  static const cardFieldWidth = 98.0;
 
   @override
   Widget build(BuildContext context) {
@@ -56,41 +59,22 @@ class PropertiesPanel extends StatelessWidget {
       border: Border(top: BorderSide(color: scheme.outlineVariant)),
     );
 
-    if (compact) {
-      final items = [
-        for (final group in props.groups) ...group,
-        if (props.note != null) note(props.note!),
-      ];
-      return Material(
-        color: scheme.surfaceContainerLow,
-        child: Container(
-          decoration: border,
-          child: Row(
-            children: [
-              close,
-              ToolIcon(props.icon, size: 22),
-              const SizedBox(width: 4),
-              Text(
-                props.short,
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              // Everything stays in view: a second line rather than
-              // controls hidden off the edge.
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: items,
-                  ),
-                ),
-              ),
-              delete,
-            ],
-          ),
-        ),
+    if (card) {
+      return PanelCard(
+        key: ValueKey('props-$id'),
+        icon: ToolIcon(props.icon),
+        title: props.short,
+        actions: [delete, close],
+        children: [
+          for (final group in props.groups)
+            Wrap(
+              spacing: 8,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: group,
+            ),
+          if (props.note != null) note(props.note!),
+        ],
       );
     }
 
@@ -164,16 +148,16 @@ class PropertiesPanel extends StatelessWidget {
 
     String? positive(double v) => v > 0 ? null : s.mustBePositive;
 
-    // Narrower fields sideways, so a whole load fits in one or two lines.
-    final width = compact ? 100.0 : 120.0;
+    // Two to a row in the side panel's card.
+    final width = card ? cardFieldWidth : 120.0;
 
-    /// Upright, a two-way choice spells itself out; sideways the arrow
-    /// alone, with the words as a tooltip.
+    /// Upright, a two-way choice spells itself out; in the narrow card the
+    /// arrow alone, with the words as a tooltip.
     ButtonSegment<T> choice<T>(T value, String arrow, String words) =>
         ButtonSegment(
           value: value,
-          label: Text(compact ? arrow : words),
-          tooltip: compact ? words : null,
+          label: Text(card ? arrow : words),
+          tooltip: card ? words : null,
         );
 
     if (id == 'beam') {
@@ -201,13 +185,18 @@ class PropertiesPanel extends StatelessWidget {
       ButtonSegment<SupportType> segment(SupportType t, Tool tool, String l) =>
           ButtonSegment(
             value: t,
-            label: compact ? null : Text(l),
-            tooltip: compact ? l : null,
+            label: card ? null : Text(l),
+            tooltip: card ? l : null,
             icon: ToolIcon(tool, size: 18),
           );
       return _Props(
         title: '${s.supportProps} ${labels.pointOf(id)}',
-        short: labels.pointOf(id),
+        short:
+            '${labels.pointOf(id)} · ${switch (support.type) {
+              SupportType.pin => s.toolPin,
+              SupportType.roller => s.toolRoller,
+              SupportType.fixed => s.toolFixed,
+            }}',
         icon: switch (support.type) {
           SupportType.pin => Tool.pin,
           SupportType.roller => Tool.roller,
@@ -247,13 +236,24 @@ class PropertiesPanel extends StatelessWidget {
 
     switch (p.loadById(id)) {
       case final PointLoad load:
-        const directions = [-90.0, 90.0, 0.0, 180.0, -45.0, -135.0];
+        final angle = NumberField(
+          key: ValueKey('ang-$id'),
+          label: s.angle,
+          value: normaliseAngle(load.angleDeg),
+          unit: '°',
+          width: card ? cardFieldWidth : 96,
+          allowNegative: true,
+          onChanged:
+              (v) => controller.updateLoad(
+                load.copyWith(angleDeg: normaliseAngle(v)),
+              ),
+        );
         final picker = Directionality(
           textDirection: TextDirection.ltr,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final a in directions)
+              for (final a in DirectionDropdown.angles)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: IconButton.filledTonal(
@@ -266,24 +266,13 @@ class PropertiesPanel extends StatelessWidget {
                   ),
                 ),
               const SizedBox(width: 6),
-              NumberField(
-                key: ValueKey('ang-$id'),
-                label: s.angle,
-                value: normaliseAngle(load.angleDeg),
-                unit: '°',
-                width: compact ? 84 : 96,
-                allowNegative: true,
-                onChanged:
-                    (v) => controller.updateLoad(
-                      load.copyWith(angleDeg: normaliseAngle(v)),
-                    ),
-              ),
+              angle,
             ],
           ),
         );
         return _Props(
           title: '${s.loadProps} ${labels.loadName(id)}',
-          short: labels.loadName(id),
+          short: '${labels.loadName(id)} · ${s.toolPointLoad}',
           icon: Tool.pointLoad,
           help: s.angleHelp,
           groups: [
@@ -313,10 +302,22 @@ class PropertiesPanel extends StatelessWidget {
                     (v) => controller.updateLoad(load.copyWith(x: fromL(v))),
               ),
             ],
-            [
-              if (compact)
-                picker
-              else
+            if (card)
+              [
+                SizedBox(
+                  width: cardFieldWidth,
+                  child: DirectionDropdown(
+                    label: s.direction,
+                    angleDeg: normaliseAngle(load.angleDeg),
+                    onChanged:
+                        (a) =>
+                            controller.updateLoad(load.copyWith(angleDeg: a)),
+                  ),
+                ),
+                angle,
+              ]
+            else
+              [
                 Row(
                   children: [
                     Text(
@@ -331,7 +332,7 @@ class PropertiesPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-            ],
+              ],
           ],
         );
 
@@ -344,7 +345,7 @@ class PropertiesPanel extends StatelessWidget {
         final name = labels.loadName(id);
         return _Props(
           title: '${load.isUniform ? s.udlProps : s.uvlProps}  $name',
-          short: name,
+          short: '$name · ${load.isUniform ? s.toolUdl : s.toolUvl}',
           icon: load.isUniform ? Tool.udl : Tool.uvl,
           // The single force it is equivalent to, and where it acts.
           note:
@@ -447,7 +448,7 @@ class PropertiesPanel extends StatelessWidget {
       case final PointMoment load:
         return _Props(
           title: '${s.momentProps}  ${labels.loadName(id)}',
-          short: labels.loadName(id),
+          short: '${labels.loadName(id)} · ${s.toolMoment}',
           icon: Tool.moment,
           groups: [
             [
@@ -510,7 +511,7 @@ class _Props {
   /// The full heading, upright.
   final String title;
 
-  /// The element's name alone (W1, A, Beam), sideways.
+  /// The name and kind in a few words (W1 · UDL), for the side card.
   final String short;
   final Tool icon;
 

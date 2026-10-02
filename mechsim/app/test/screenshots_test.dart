@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mechsim/state/app_state.dart';
+import 'package:mechsim/state/editor_controller.dart';
 import 'package:mechsim/ui/analysis/analysis_screen.dart';
 import 'package:mechsim/ui/editor/editor_screen.dart';
 import 'package:mechsim/ui/player/player_screen.dart';
@@ -328,5 +329,11 @@ void main() {
     (state as dynamic).controller.select('p1');
     await settle(tester);
     await shoot(tester, dir, '40_land_dark_load_selected');
+    (state as dynamic).controller.setTool(Tool.uvl);
+    await settle(tester);
+    await shoot(tester, dir, '41_land_dark_next_uvl');
+    (state as dynamic).controller.setTool(Tool.roller);
+    await settle(tester);
+    await shoot(tester, dir, '42_land_dark_next_support');
   });
 }

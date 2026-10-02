@@ -21,10 +21,30 @@ class MechSimApp extends StatelessWidget {
 
   static ThemeData theme(Brightness brightness) {
     final dark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2E5E8C),
-      brightness: brightness,
-    );
+    final scheme =
+        dark
+            // Deep navy panels and a bright blue for what is active, like a
+            // drafting tool at night.
+            ? ColorScheme.fromSeed(
+              seedColor: const Color(0xFF2F7BF6),
+              brightness: brightness,
+            ).copyWith(
+              primary: const Color(0xFF2F7BF6),
+              onPrimary: Colors.white,
+              primaryContainer: const Color(0xFF1F5FD1),
+              onPrimaryContainer: Colors.white,
+              surface: const Color(0xFF0B1524),
+              surfaceContainerLowest: const Color(0xFF070F1B),
+              surfaceContainerLow: const Color(0xFF0E1A2C),
+              surfaceContainer: const Color(0xFF122136),
+              surfaceContainerHigh: const Color(0xFF172941),
+              surfaceContainerHighest: const Color(0xFF1D314D),
+              outlineVariant: const Color(0xFF263B59),
+            )
+            : ColorScheme.fromSeed(
+              seedColor: const Color(0xFF2E5E8C),
+              brightness: brightness,
+            );
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,

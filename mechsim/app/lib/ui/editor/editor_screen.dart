@@ -12,6 +12,7 @@ import '../analysis/analysis_screen.dart';
 import '../widgets/layout.dart';
 import '../widgets/tool_icons.dart';
 import 'properties_panel.dart';
+import 'wide_editor.dart';
 
 /// "New Problem": an engineering sheet the student draws the problem on.
 class EditorScreen extends StatefulWidget {
@@ -104,56 +105,12 @@ class _EditorScreenState extends State<EditorScreen> {
         final analyze = controller.problem.hasBeam ? _analyze : null;
         final canvas = EditorCanvas(controller: controller, onMessage: _snack);
         if (isWide(context)) {
-          // Sideways every pixel goes to the sheet: no app bar, the tools
-          // in two columns down one side, the few actions in a thin column
-          // down the other, and the selection's values in one strip under
-          // the drawing.
-          return Scaffold(
-            body: SafeArea(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Toolbar(
-                    controller: controller,
-                    onAnalyze: analyze,
-                    vertical: true,
-                  ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              Positioned.fill(child: canvas),
-                              PositionedDirectional(
-                                top: 6,
-                                start: 8,
-                                end: 8,
-                                child: _HintBar(
-                                  controller: controller,
-                                  floating: true,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (controller.selected != null)
-                          PropertiesPanel(
-                            controller: controller,
-                            onMessage: _snack,
-                            compact: true,
-                          ),
-                      ],
-                    ),
-                  ),
-                  _ActionRail(
-                    controller: controller,
-                    onSave: _save,
-                    vertical: true,
-                  ),
-                ],
-              ),
-            ),
+          return WideEditor(
+            controller: controller,
+            canvas: canvas,
+            onSave: _save,
+            onAnalyze: analyze,
+            onMessage: _snack,
           );
         }
         return Scaffold(
@@ -186,82 +143,54 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 }
 
-/// Undo, redo, save and the menu: in the app bar upright, a thin column
-/// beside the sheet sideways (with the way back at the top).
+/// Undo, redo, save and the menu, in the upright app bar.
 class _ActionRail extends StatelessWidget {
-  const _ActionRail({
-    required this.controller,
-    required this.onSave,
-    this.vertical = false,
-  });
+  const _ActionRail({required this.controller, required this.onSave});
 
   final EditorController controller;
   final VoidCallback onSave;
-  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).s;
-    final buttons = [
-      if (vertical && Navigator.canPop(context)) const BackButton(),
-      IconButton(
-        tooltip: s.undo,
-        onPressed: controller.canUndo ? controller.undo : null,
-        icon: const Icon(Icons.undo),
-      ),
-      IconButton(
-        tooltip: s.redo,
-        onPressed: controller.canRedo ? controller.redo : null,
-        icon: const Icon(Icons.redo),
-      ),
-      IconButton(
-        tooltip: s.save,
-        onPressed: onSave,
-        icon: const Icon(Icons.save_outlined),
-      ),
-      if (vertical)
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
         IconButton(
-          tooltip: s.fitView,
-          onPressed: controller.requestFit,
-          icon: const Icon(Icons.fit_screen_outlined),
+          tooltip: s.undo,
+          onPressed: controller.canUndo ? controller.undo : null,
+          icon: const Icon(Icons.undo),
         ),
-      PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'fit') controller.requestFit();
-          if (v == 'clear') controller.clear();
-        },
-        itemBuilder:
-            (_) => [
-              if (!vertical)
+        IconButton(
+          tooltip: s.redo,
+          onPressed: controller.canRedo ? controller.redo : null,
+          icon: const Icon(Icons.redo),
+        ),
+        IconButton(
+          tooltip: s.save,
+          onPressed: onSave,
+          icon: const Icon(Icons.save_outlined),
+        ),
+        PopupMenuButton<String>(
+          onSelected: (v) {
+            if (v == 'fit') controller.requestFit();
+            if (v == 'clear') controller.clear();
+          },
+          itemBuilder:
+              (_) => [
                 PopupMenuItem(value: 'fit', child: Text(s.fitView)),
-              PopupMenuItem(value: 'clear', child: Text(s.clearAll)),
-            ],
-      ),
-    ];
-    if (!vertical) {
-      return Row(mainAxisSize: MainAxisSize.min, children: buttons);
-    }
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      child: SizedBox(
-        width: 52,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(children: buttons),
+                PopupMenuItem(value: 'clear', child: Text(s.clearAll)),
+              ],
         ),
-      ),
+      ],
     );
   }
 }
 
 class _HintBar extends StatelessWidget {
-  const _HintBar({required this.controller, this.floating = false});
+  const _HintBar({required this.controller});
 
   final EditorController controller;
-
-  /// One line laid over the top of the sheet (sideways) instead of a bar
-  /// above it.
-  final bool floating;
 
   @override
   Widget build(BuildContext context) {
@@ -271,28 +200,6 @@ class _HintBar extends StatelessWidget {
         controller.problem.hasBeam
             ? s.hintFor(controller.tool.name)
             : s.hintEmpty;
-    if (floating) {
-      return IgnorePointer(
-        child: Align(
-          alignment: AlignmentDirectional.topStart,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer.withValues(
-                alpha: 0.85,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-        ),
-      );
-    }
     return Container(
       width: double.infinity,
       color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
@@ -303,27 +210,20 @@ class _HintBar extends StatelessWidget {
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar({
-    required this.controller,
-    required this.onAnalyze,
-    this.vertical = false,
-  });
+  const _Toolbar({required this.controller, required this.onAnalyze});
 
   final EditorController controller;
 
   /// Null until there is a beam to analyse.
   final VoidCallback? onAnalyze;
 
-  /// Two columns down the side of the sheet, for landscape.
-  final bool vertical;
-
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).s;
     final scheme = Theme.of(context).colorScheme;
     // Every tool in view at once, nothing to scroll: the beam and its
-    // supports in one row (or column), the loads in the other, with
-    // ANALYZE closing the loads row so it never covers the drawing.
+    // supports in one row, the loads in the other, with ANALYZE closing
+    // the loads row so it never covers the drawing.
     final groups = <List<(Tool, String)>>[
       [
         (Tool.select, s.toolSelect),
@@ -435,10 +335,7 @@ class _Toolbar extends StatelessWidget {
               : Colors.transparent;
       return Container(
         color: tint,
-        child:
-            vertical
-                ? SizedBox(width: 66, child: Column(children: children))
-                : SizedBox(height: 54, child: Row(children: children)),
+        child: SizedBox(height: 54, child: Row(children: children)),
       );
     }
 
@@ -448,13 +345,7 @@ class _Toolbar extends StatelessWidget {
       color: scheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(2),
-        child:
-            vertical
-                ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: both,
-                )
-                : Column(mainAxisSize: MainAxisSize.min, children: both),
+        child: Column(mainAxisSize: MainAxisSize.min, children: both),
       ),
     );
   }
@@ -543,9 +434,13 @@ class _EditorCanvasState extends State<EditorCanvas> {
   );
 
   /// Snaps a world x to the ends, to other elements within a fingertip, or
-  /// else to a quarter-metre grid.
+  /// else to a quarter-metre grid. With snapping off, only to the nearest
+  /// centimetre.
   double _snap(double x, {String? ignore}) {
     final p = c.problem;
+    if (!c.snap) {
+      return ((x * 100).round() / 100).clamp(0.0, p.length).toDouble();
+    }
     final tol = 12 / _vp!.scale;
     final targets = <double>[
       0,
@@ -801,7 +696,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                   child: ClipRect(
                     child: CustomPaint(
                       size: constraints.biggest,
-                      painter: BeamScenePainter(scene, grid: true),
+                      painter: BeamScenePainter(scene, grid: c.showGrid),
                     ),
                   ),
                 ),

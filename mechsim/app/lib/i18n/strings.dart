@@ -47,6 +47,8 @@ abstract class S {
   String get toolMoment => 'Moment';
   String get toolDimension => 'Dimension';
   String get toolDelete => 'Delete';
+  String get toolDistributed => 'Distributed Load';
+  String get toolSupport => 'Support';
   String get undo => 'Undo';
   String get redo => 'Redo';
   String get analyze => 'ANALYZE';
@@ -84,6 +86,19 @@ abstract class S {
   String get loadUp;
   String get ccw;
   String get cw;
+
+  // the sideways editor's panels
+  String get loadSettings;
+  String get beamStatus;
+  String get readyToAnalyze;
+  String get display;
+  String get grid;
+  String get snapLabel;
+  String get dimensions;
+  String get typeUniform;
+  String get typeVarying;
+  String get sidePanel;
+  String get projectMenu;
   String get length => 'Length';
   String get position => 'Position';
   String get magnitude => 'Magnitude';
@@ -304,6 +319,28 @@ class _Ar extends S {
   String get ccw => '↺ عكس عقارب الساعة';
   @override
   String get cw => '↻ مع عقارب الساعة';
+  @override
+  String get loadSettings => 'إعدادات الحمل';
+  @override
+  String get beamStatus => 'حالة الكمرة';
+  @override
+  String get readyToAnalyze => 'محددة استاتيكيًا وجاهزة للتحليل ✓';
+  @override
+  String get display => 'العرض';
+  @override
+  String get grid => 'الشبكة';
+  @override
+  String get snapLabel => 'الالتصاق بالشبكة';
+  @override
+  String get dimensions => 'الأبعاد';
+  @override
+  String get typeUniform => 'منتظم UDL';
+  @override
+  String get typeVarying => 'متغير UVL';
+  @override
+  String get sidePanel => 'اللوحة الجانبية';
+  @override
+  String get projectMenu => 'المسألة';
   @override
   String get angle => 'θ';
   @override
@@ -601,6 +638,28 @@ class _En extends S {
   String get ccw => '↺ Counter-clockwise';
   @override
   String get cw => '↻ Clockwise';
+  @override
+  String get loadSettings => 'Load settings';
+  @override
+  String get beamStatus => 'Beam status';
+  @override
+  String get readyToAnalyze => 'Statically determinate: ready to analyse ✓';
+  @override
+  String get display => 'Display';
+  @override
+  String get grid => 'Grid';
+  @override
+  String get snapLabel => 'Snap';
+  @override
+  String get dimensions => 'Dimensions';
+  @override
+  String get typeUniform => 'Uniform UDL';
+  @override
+  String get typeVarying => 'Varying UVL';
+  @override
+  String get sidePanel => 'Side panel';
+  @override
+  String get projectMenu => 'Problem';
   @override
   String get angle => 'θ';
   @override

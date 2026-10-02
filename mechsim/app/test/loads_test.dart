@@ -29,6 +29,16 @@ const _labels = [
   'ANALYZE',
 ];
 
+const _sideways = [
+  'Select',
+  'Point Load',
+  'Distributed Load',
+  'Moment',
+  'Beam',
+  'Support',
+  'Dimension',
+];
+
 void main() {
   const bare = BeamProblem(
     length: 6,
@@ -66,12 +76,43 @@ void main() {
     );
   }
 
+  testWidgets('every tool is on screen at once on a small phone upright', (
+    tester,
+  ) async {
+    const size = Size(360, 740);
+    phoneSize(tester, logical: size);
+    await tester.pumpWidget(
+      await app(
+        testState(settings: const AppSettings(lang: Lang.en)),
+        home: const EditorScreen(problem: bare),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final screen = Offset.zero & size;
+    for (final label in _labels) {
+      final rect = tester.getRect(find.byKey(ValueKey('tool-$label')));
+      expect(
+        screen.contains(rect.topLeft) && screen.contains(rect.bottomRight),
+        isTrue,
+        reason: '$label at $rect',
+      );
+      expect(rect.width, greaterThanOrEqualTo(44), reason: label);
+      expect(rect.height, greaterThanOrEqualTo(40), reason: label);
+    }
+    // Tapping one really picks it.
+    await tester.tap(find.byKey(const ValueKey('tool-UDL')));
+    await tester.pump();
+    expect(editorOf(tester).tool, Tool.udl);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final (name, size) in [
-    ('a small phone upright', const Size(360, 740)),
     ('a phone sideways', const Size(892, 412)),
     ('a small phone sideways', const Size(740, 360)),
   ]) {
-    testWidgets('every tool is on screen at once on $name', (tester) async {
+    testWidgets('sideways, the tool list and ANALYZE fit on $name', (
+      tester,
+    ) async {
       phoneSize(tester, logical: size);
       await tester.pumpWidget(
         await app(
@@ -81,20 +122,29 @@ void main() {
       );
       await tester.pumpAndSettle();
       final screen = Offset.zero & size;
-      for (final label in _labels) {
+      for (final label in _sideways) {
         final rect = tester.getRect(find.byKey(ValueKey('tool-$label')));
         expect(
           screen.contains(rect.topLeft) && screen.contains(rect.bottomRight),
           isTrue,
           reason: '$label at $rect',
         );
-        expect(rect.width, greaterThanOrEqualTo(44), reason: label);
-        expect(rect.height, greaterThanOrEqualTo(40), reason: label);
+        expect(rect.width, greaterThanOrEqualTo(100), reason: label);
+        expect(rect.height, greaterThanOrEqualTo(32), reason: label);
       }
-      // Tapping one really picks it.
-      await tester.tap(find.byKey(const ValueKey('tool-UDL')));
+      final analyze = tester.getRect(find.byKey(const ValueKey('analyze')));
+      expect(screen.contains(analyze.bottomRight), isTrue);
+      // One entry for both kinds of distributed load and of support; the
+      // side panel picks the kind.
+      await tester.tap(find.byKey(const ValueKey('tool-Distributed Load')));
       await tester.pump();
       expect(editorOf(tester).tool, Tool.udl);
+      await tester.tap(find.text('Varying UVL'));
+      await tester.pump();
+      expect(editorOf(tester).tool, Tool.uvl);
+      await tester.tap(find.byKey(const ValueKey('tool-Support')));
+      await tester.pump();
+      expect(editorOf(tester).tool, Tool.pin);
       expect(tester.takeException(), isNull);
     });
   }
