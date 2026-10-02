@@ -5,6 +5,7 @@ import '../learn/learn_tab.dart';
 import '../practice/practice_screen.dart';
 import '../saved/saved_tab.dart';
 import '../settings/settings_tab.dart';
+import '../widgets/layout.dart';
 import 'home_tab.dart';
 
 /// The app's frame: five destinations on a bottom navigation bar.
@@ -30,50 +31,74 @@ class HomeShellState extends State<HomeShell> {
       s.tutorials,
       s.settings,
     ];
+    final destinations = [
+      (Icons.home_outlined, Icons.home, s.navHome),
+      (Icons.quiz_outlined, Icons.quiz, s.navPractice),
+      (Icons.bookmark_border, Icons.bookmark, s.navSaved),
+      (Icons.school_outlined, Icons.school, s.navLearn),
+      (Icons.settings_outlined, Icons.settings, s.navSettings),
+    ];
+    final body = IndexedStack(
+      index: tab,
+      children: [
+        HomeTab(onGo: go),
+        const PracticeView(),
+        const SavedTab(),
+        const LearnTab(),
+        const SettingsTab(),
+      ],
+    );
+    final wide = isWide(context);
     return Scaffold(
-      appBar: tab == 0 ? null : AppBar(title: Text(titles[tab])),
-      body: IndexedStack(
-        index: tab,
-        children: [
-          HomeTab(onGo: go),
-          const PracticeView(),
-          const SavedTab(),
-          const LearnTab(),
-          const SettingsTab(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: go,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home),
-            label: s.navHome,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.quiz_outlined),
-            selectedIcon: const Icon(Icons.quiz),
-            label: s.navPractice,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.bookmark_border),
-            selectedIcon: const Icon(Icons.bookmark),
-            label: s.navSaved,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.school_outlined),
-            selectedIcon: const Icon(Icons.school),
-            label: s.navLearn,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            selectedIcon: const Icon(Icons.settings),
-            label: s.navSettings,
-          ),
-        ],
-      ),
+      appBar:
+          tab == 0
+              ? null
+              : AppBar(
+                title: Text(titles[tab]),
+                toolbarHeight: wide ? 48 : null,
+              ),
+      // Sideways the navigation moves to a rail on the side, leaving the
+      // short height to the content.
+      body:
+          wide
+              ? SafeArea(
+                child: Row(
+                  children: [
+                    NavigationRail(
+                      selectedIndex: tab,
+                      onDestinationSelected: go,
+                      labelType: NavigationRailLabelType.all,
+                      destinations: [
+                        for (final (icon, selected, label) in destinations)
+                          NavigationRailDestination(
+                            icon: Icon(icon),
+                            selectedIcon: Icon(selected),
+                            label: Text(label),
+                          ),
+                      ],
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: body),
+                  ],
+                ),
+              )
+              : body,
+      bottomNavigationBar:
+          wide
+              ? null
+              : NavigationBar(
+                selectedIndex: tab,
+                onDestinationSelected: go,
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: [
+                  for (final (icon, selected, label) in destinations)
+                    NavigationDestination(
+                      icon: Icon(icon),
+                      selectedIcon: Icon(selected),
+                      label: label,
+                    ),
+                ],
+              ),
     );
   }
 }

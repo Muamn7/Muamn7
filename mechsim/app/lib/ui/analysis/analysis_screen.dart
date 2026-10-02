@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import '../../state/highlight_controller.dart';
 import '../player/player_screen.dart';
 import '../practice/practice_screen.dart';
+import '../widgets/layout.dart';
 import 'step_card.dart';
 
 /// The result of ANALYZE: the FBD, SFD and BMD on one axis at the top, and
@@ -78,6 +79,35 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final solution = _solve(app);
     final height = MediaQuery.sizeOf(context).height;
     final diagramHeight = (height * 0.42).clamp(260.0, 470.0);
+    final wide = isWide(context);
+    final details = ListView(
+      padding: const EdgeInsets.only(bottom: 32),
+      children: [
+        if (solution.isSolved) ...[
+          _ReactionsCard(solution: solution, highlights: highlights),
+          _KeyResultsCard(solution: solution, highlights: highlights),
+          _VerificationCard(solution: solution),
+        ] else
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: FilledButton.tonalIcon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.edit_outlined),
+              label: Text(s.backToEdit),
+            ),
+          ),
+        _SectionTitle(s.steps),
+        for (var i = 0; i < solution.steps.length; i++)
+          StepCard(
+            key: _stepKeys.putIfAbsent(i, GlobalKey.new),
+            step: solution.steps[i],
+            index: i,
+            highlights: highlights,
+            emphasised: i == widget.focusStep,
+            initiallyExplained: i == widget.focusStep,
+          ),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -123,56 +153,45 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (solution.isSolved) ...[
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              height: _diagramsOpen ? diagramHeight : 0,
-              child: ClipRect(
-                child: LinkedDiagrams(
-                  solution: solution,
-                  highlights: highlights,
-                ),
-              ),
-            ),
-            _DiagramHandle(
-              open: _diagramsOpen,
-              onToggle: () => setState(() => _diagramsOpen = !_diagramsOpen),
-            ),
-          ],
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 32),
-              children: [
-                if (solution.isSolved) ...[
-                  _ReactionsCard(solution: solution, highlights: highlights),
-                  _KeyResultsCard(solution: solution, highlights: highlights),
-                  _VerificationCard(solution: solution),
-                ] else
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: FilledButton.tonalIcon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.edit_outlined),
-                      label: Text(s.backToEdit),
+      body:
+          wide && solution.isSolved
+              // Sideways: the drawings take the full height on one side and
+              // the explanation scrolls beside them, so both stay in view.
+              ? Row(
+                children: [
+                  Expanded(
+                    flex: 11,
+                    child: LinkedDiagrams(
+                      solution: solution,
+                      highlights: highlights,
                     ),
                   ),
-                _SectionTitle(s.steps),
-                for (var i = 0; i < solution.steps.length; i++)
-                  StepCard(
-                    key: _stepKeys.putIfAbsent(i, GlobalKey.new),
-                    step: solution.steps[i],
-                    index: i,
-                    highlights: highlights,
-                    emphasised: i == widget.focusStep,
-                    initiallyExplained: i == widget.focusStep,
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+                  const VerticalDivider(width: 1),
+                  Expanded(flex: 9, child: details),
+                ],
+              )
+              : Column(
+                children: [
+                  if (solution.isSolved) ...[
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      height: _diagramsOpen ? diagramHeight : 0,
+                      child: ClipRect(
+                        child: LinkedDiagrams(
+                          solution: solution,
+                          highlights: highlights,
+                        ),
+                      ),
+                    ),
+                    _DiagramHandle(
+                      open: _diagramsOpen,
+                      onToggle:
+                          () => setState(() => _diagramsOpen = !_diagramsOpen),
+                    ),
+                  ],
+                  Expanded(child: details),
+                ],
+              ),
     );
   }
 }

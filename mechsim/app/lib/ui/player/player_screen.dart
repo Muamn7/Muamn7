@@ -7,6 +7,7 @@ import '../../drawing/linked_diagrams.dart';
 import '../../state/app_state.dart';
 import '../../state/highlight_controller.dart';
 import '../analysis/step_card.dart';
+import '../widgets/layout.dart';
 
 /// Plays the solution like a video: the load, the FBD, each equation with
 /// its reaction appearing on the drawing, then the SFD and the BMD drawn
@@ -96,74 +97,96 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final step = solution.steps[index];
     final total = solution.steps.length;
     final height = MediaQuery.sizeOf(context).height;
+    final wide = isWide(context);
+    final diagrams = LinkedDiagrams(
+      solution: solution,
+      highlights: highlights,
+      reveal: step.reveal,
+      showCursorHint: false,
+    );
+    final card = SingleChildScrollView(
+      padding: const EdgeInsets.only(top: 6, bottom: 12),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: StepCard(
+          key: ValueKey(index),
+          step: step,
+          index: index,
+          highlights: highlights,
+        ),
+      ),
+    );
+    final progress = LinearProgressIndicator(
+      value: (index + 1) / total,
+      minHeight: 3,
+    );
+    final controls = Material(
+      elevation: 6,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        // Media controls keep their left-to-right order in every language.
+        child: Row(
+          textDirection: TextDirection.ltr,
+          children: [
+            Expanded(
+              child: Text(
+                s.step(index + 1, total),
+                style: Theme.of(context).textTheme.labelLarge,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              tooltip: s.previous,
+              onPressed: index > 0 ? () => _step(-1) : null,
+              icon: const Icon(Icons.skip_previous),
+            ),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: _toggle,
+              icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+              label: Text(playing ? s.pause : s.start),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: s.next,
+              onPressed: index < total - 1 ? () => _step(1) : null,
+              icon: const Icon(Icons.skip_next),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (wide) {
+      // Sideways: the drawing on one side, the step and its controls on
+      // the other, so nothing has to share the short height.
+      return Scaffold(
+        appBar: AppBar(title: Text(s.playSteps)),
+        body: SafeArea(
+          child: Row(
+            children: [
+              Expanded(flex: 11, child: diagrams),
+              const VerticalDivider(width: 1),
+              Expanded(
+                flex: 9,
+                child: Column(
+                  children: [progress, Expanded(child: card), controls],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: Text(s.playSteps)),
       body: Column(
         children: [
-          SizedBox(
-            height: (height * 0.4).clamp(240.0, 440.0),
-            child: LinkedDiagrams(
-              solution: solution,
-              highlights: highlights,
-              reveal: step.reveal,
-              showCursorHint: false,
-            ),
-          ),
-          LinearProgressIndicator(value: (index + 1) / total, minHeight: 3),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(top: 6, bottom: 12),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: StepCard(
-                  key: ValueKey(index),
-                  step: step,
-                  index: index,
-                  highlights: highlights,
-                ),
-              ),
-            ),
-          ),
+          SizedBox(height: (height * 0.4).clamp(240.0, 440.0), child: diagrams),
+          progress,
+          Expanded(child: card),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Material(
-          elevation: 6,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            // Media controls keep their left-to-right order in every language.
-            child: Row(
-              textDirection: TextDirection.ltr,
-              children: [
-                Expanded(
-                  child: Text(
-                    s.step(index + 1, total),
-                    style: Theme.of(context).textTheme.labelLarge,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: s.previous,
-                  onPressed: index > 0 ? () => _step(-1) : null,
-                  icon: const Icon(Icons.skip_previous),
-                ),
-                const SizedBox(width: 4),
-                FilledButton.icon(
-                  onPressed: _toggle,
-                  icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                  label: Text(playing ? s.pause : s.start),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: s.next,
-                  onPressed: index < total - 1 ? () => _step(1) : null,
-                  icon: const Icon(Icons.skip_next),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      bottomNavigationBar: SafeArea(child: controls),
     );
   }
 }

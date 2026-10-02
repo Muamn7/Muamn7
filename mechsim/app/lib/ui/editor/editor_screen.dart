@@ -9,6 +9,7 @@ import '../../drawing/viewport.dart';
 import '../../state/app_state.dart';
 import '../../state/editor_controller.dart';
 import '../analysis/analysis_screen.dart';
+import '../widgets/layout.dart';
 import '../widgets/tool_icons.dart';
 import 'properties_panel.dart';
 
@@ -100,8 +101,45 @@ class _EditorScreenState extends State<EditorScreen> {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
+        final wide = isWide(context);
+        final analyze =
+            controller.problem.hasBeam
+                ? FloatingActionButton.extended(
+                  onPressed: _analyze,
+                  icon: const Icon(Icons.calculate_outlined),
+                  label: Text(
+                    s.analyze,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                )
+                : null;
+        final sheet = Column(
+          children: [
+            _HintBar(controller: controller),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: EditorCanvas(
+                      controller: controller,
+                      onMessage: _snack,
+                    ),
+                  ),
+                  // Sideways the button sits on the sheet itself, clear of
+                  // the side panels.
+                  if (wide && analyze != null)
+                    PositionedDirectional(end: 16, bottom: 16, child: analyze),
+                ],
+              ),
+            ),
+          ],
+        );
         return Scaffold(
           appBar: AppBar(
+            toolbarHeight: wide ? 48 : null,
             title: Text(
               controller.name ?? s.untitled,
               overflow: TextOverflow.ellipsis,
@@ -135,38 +173,52 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              _HintBar(controller: controller),
-              Expanded(
-                child: EditorCanvas(controller: controller, onMessage: _snack),
-              ),
-            ],
-          ),
-          floatingActionButton:
-              controller.problem.hasBeam
-                  ? FloatingActionButton.extended(
-                    onPressed: _analyze,
-                    icon: const Icon(Icons.calculate_outlined),
-                    label: Text(
-                      s.analyze,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                      ),
+          body:
+              wide
+                  // Sideways: tools in a column down one side, the properties of
+                  // the selection down the other, and the whole height for the
+                  // sheet in between.
+                  ? SafeArea(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _Toolbar(
+                          controller: controller,
+                          onMessage: _snack,
+                          vertical: true,
+                        ),
+                        Expanded(child: sheet),
+                        if (controller.selected != null)
+                          SizedBox(
+                            width: 340,
+                            child: SingleChildScrollView(
+                              child: PropertiesPanel(
+                                controller: controller,
+                                onMessage: _snack,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   )
-                  : null,
-          bottomNavigationBar: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (controller.selected != null)
-                  PropertiesPanel(controller: controller, onMessage: _snack),
-                _Toolbar(controller: controller, onMessage: _snack),
-              ],
-            ),
-          ),
+                  : sheet,
+          floatingActionButton: wide ? null : analyze,
+          bottomNavigationBar:
+              wide
+                  ? null
+                  : SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (controller.selected != null)
+                          PropertiesPanel(
+                            controller: controller,
+                            onMessage: _snack,
+                          ),
+                        _Toolbar(controller: controller, onMessage: _snack),
+                      ],
+                    ),
+                  ),
         );
       },
     );
@@ -197,10 +249,17 @@ class _HintBar extends StatelessWidget {
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar({required this.controller, required this.onMessage});
+  const _Toolbar({
+    required this.controller,
+    required this.onMessage,
+    this.vertical = false,
+  });
 
   final EditorController controller;
   final ValueChanged<String> onMessage;
+
+  /// A column down the side of the sheet, for landscape.
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
@@ -287,10 +346,14 @@ class _Toolbar extends StatelessWidget {
       elevation: 6,
       color: scheme.surfaceContainer,
       child: SizedBox(
-        height: 66,
+        height: vertical ? null : 66,
+        width: vertical ? 74 : null,
         child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
+          padding:
+              vertical
+                  ? const EdgeInsets.symmetric(vertical: 4)
+                  : const EdgeInsets.symmetric(horizontal: 6),
           children: [
             for (final (tool, label) in tools)
               button(
@@ -363,7 +426,18 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   void _ensureViewport(Size size) {
     if (size != _size || _vp == null || c.fitRequest != _fitSeen) {
-      final refit = _vp == null || c.fitRequest != _fitSeen;
+      var refit = _vp == null || c.fitRequest != _fitSeen;
+      // After a rotation or a side panel opening, refit if the beam no
+      // longer sits inside the sheet.
+      if (!refit && size != _size && c.problem.hasBeam) {
+        final left = _vp!.sx(0), right = _vp!.sx(c.problem.length);
+        final y = _vp!.origin.dy;
+        refit =
+            left < 8 ||
+            right > size.width - 8 ||
+            y < 40 ||
+            y > size.height - 40;
+      }
       _size = size;
       if (refit) {
         _fitSeen = c.fitRequest;

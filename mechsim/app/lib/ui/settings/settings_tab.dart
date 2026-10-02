@@ -70,6 +70,21 @@ class SettingsTab extends StatelessWidget {
           settings.lang,
           (v) => app.updateSettings(settings.copyWith(lang: v)),
         ),
+        section(s.orientation),
+        choice<OrientationPref>(
+          s.orientation,
+          [
+            (OrientationPref.auto, s.orientationAuto),
+            (OrientationPref.landscape, s.orientationLandscape),
+            (OrientationPref.portrait, s.orientationPortrait),
+          ],
+          settings.orientation,
+          (v) => app.updateSettings(settings.copyWith(orientation: v)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(s.orientationHelp, style: theme.textTheme.bodySmall),
+        ),
         section(s.units),
         choice<Unit>(
           s.force,

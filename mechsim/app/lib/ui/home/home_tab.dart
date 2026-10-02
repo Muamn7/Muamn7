@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import '../editor/editor_screen.dart';
 import '../learn/learn_tab.dart';
 import '../som/som_screen.dart';
+import '../widgets/layout.dart';
 
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key, required this.onGo});
@@ -105,7 +106,7 @@ class HomeTab extends StatelessWidget {
               crossAxisCount: MediaQuery.sizeOf(context).width > 640 ? 3 : 2,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              childAspectRatio: 1.3,
+              childAspectRatio: isWide(context) ? 1.7 : 1.3,
               children: [for (final c in cards) _HomeCardView(card: c)],
             ),
           ),
@@ -188,22 +189,45 @@ class _HomeCardView extends StatelessWidget {
                     ),
                 ],
               ),
-              const Spacer(),
-              Text(
-                card.title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+              const SizedBox(height: 6),
+              // The words take what room is left and shrink rather than
+              // overflow, whatever the card's shape on the screen.
+              Expanded(
+                child: LayoutBuilder(
+                  builder:
+                      (context, box) => Align(
+                        alignment: AlignmentDirectional.bottomStart,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.bottomStart,
+                          child: SizedBox(
+                            width: box.maxWidth,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  card.title,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  maxLines: 2,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  card.subtitle,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                 ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 3),
-              Text(
-                card.subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

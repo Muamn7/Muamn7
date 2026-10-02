@@ -70,7 +70,9 @@ Future<void> shoot(WidgetTester tester, String dir, String name) async {
   await tester.runAsync(() async {
     final boundary =
         shotKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    final scale = double.tryParse(Platform.environment['MECHSIM_SHOTS_SCALE'] ?? '') ?? 2.0;
+    final scale =
+        double.tryParse(Platform.environment['MECHSIM_SHOTS_SCALE'] ?? '') ??
+        2.0;
     final image = await boundary.toImage(pixelRatio: scale);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     File('$dir/$name.png')

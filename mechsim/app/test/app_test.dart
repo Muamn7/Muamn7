@@ -244,4 +244,92 @@ void main() {
     expect(state.lang, Lang.en);
     expect(find.text('Home'), findsOneWidget);
   });
+
+  group('landscape', () {
+    const sideways = Size(892, 412);
+
+    testWidgets('home uses a navigation rail instead of the bottom bar', (
+      tester,
+    ) async {
+      phoneSize(tester, logical: sideways);
+      await tester.pumpWidget(await app(testState()));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
+    });
+
+    testWidgets('editor puts the tools down the side', (tester) async {
+      phoneSize(tester, logical: sideways);
+      await tester.pumpWidget(
+        await app(
+          testState(settings: const AppSettings(lang: Lang.en)),
+          home: EditorScreen(problem: example),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final pin = tester.getRect(find.byKey(const ValueKey('tool-Pin')));
+      final roller = tester.getRect(find.byKey(const ValueKey('tool-Roller')));
+      expect(pin.left, lessThan(80));
+      expect(roller.top, greaterThan(pin.top)); // a column, not a row
+      // Selecting the load opens its properties beside the sheet.
+      editorOf(tester).select('p1');
+      await tester.pumpAndSettle();
+      final magnitude = tester.getRect(
+        find.widgetWithText(TextField, 'Magnitude'),
+      );
+      expect(magnitude.left, greaterThan(892 - 340 - 1));
+      expect(find.text('ANALYZE'), findsOneWidget);
+    });
+
+    testWidgets('analysis shows the diagrams beside the steps', (tester) async {
+      phoneSize(tester, logical: sideways);
+      await tester.pumpWidget(
+        await app(
+          testState(settings: const AppSettings(lang: Lang.en)),
+          home: AnalysisScreen(problem: example),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final diagrams = tester.getRect(find.byType(LinkedDiagrams));
+      expect(diagrams.width, lessThan(892 * 0.6));
+      expect(diagrams.height, greaterThan(300));
+      expect(find.text('RB = 10.00 kN ↑'), findsWidgets);
+    });
+
+    testWidgets('player and practice fit sideways', (tester) async {
+      phoneSize(tester, logical: sideways);
+      await tester.pumpWidget(
+        await app(
+          testState(settings: const AppSettings(lang: Lang.en)),
+          home: PlayerScreen(problem: example),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Step 1 of 12'), findsOneWidget);
+      await tester.pumpWidget(
+        await app(
+          testState(settings: const AppSettings(lang: Lang.en)),
+          home: Scaffold(body: PracticeView(problem: example)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('practice-check')), findsOneWidget);
+    });
+
+    testWidgets('the orientation setting is kept', (tester) async {
+      phoneSize(tester);
+      final state = testState(settings: const AppSettings(lang: Lang.en));
+      await tester.pumpWidget(await app(state));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Landscape'));
+      await tester.pumpAndSettle();
+      expect(state.settings.orientation, OrientationPref.landscape);
+      expect(
+        AppSettings.fromJson(state.settings.toJson()).orientation,
+        OrientationPref.landscape,
+      );
+    });
+  });
 }

@@ -152,6 +152,11 @@ abstract class S {
   String get themeSystem;
   String get themeLight;
   String get themeDark;
+  String get orientation;
+  String get orientationAuto;
+  String get orientationLandscape;
+  String get orientationPortrait;
+  String get orientationHelp;
   String get about;
   String get aboutText;
 
@@ -392,6 +397,17 @@ class _Ar extends S {
   String get themeLight => 'فاتح';
   @override
   String get themeDark => 'داكن';
+  @override
+  String get orientation => 'اتجاه الشاشة';
+  @override
+  String get orientationAuto => 'تلقائي';
+  @override
+  String get orientationLandscape => 'بالعرض';
+  @override
+  String get orientationPortrait => 'بالطول';
+  @override
+  String get orientationHelp =>
+      '«بالعرض» يُبقي التطبيق أفقيًا حتى لو كان تدوير الهاتف مقفلًا. «تلقائي» يتبع الهاتف.';
   @override
   String get about => 'عن التطبيق';
   @override
@@ -649,6 +665,17 @@ class _En extends S {
   String get themeLight => 'Light';
   @override
   String get themeDark => 'Dark';
+  @override
+  String get orientation => 'Screen orientation';
+  @override
+  String get orientationAuto => 'Auto';
+  @override
+  String get orientationLandscape => 'Landscape';
+  @override
+  String get orientationPortrait => 'Portrait';
+  @override
+  String get orientationHelp =>
+      'Landscape keeps the app sideways even when the phone\'s rotation is locked. Auto follows the phone.';
   @override
   String get about => 'About';
   @override

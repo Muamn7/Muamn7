@@ -8,6 +8,7 @@ import '../../i18n/strings.dart';
 import '../../state/app_state.dart';
 import '../analysis/analysis_screen.dart';
 import '../analysis/math_view.dart';
+import '../widgets/layout.dart';
 
 /// Practice for one given problem (from the analysis screen).
 class PracticeScreen extends StatelessWidget {
@@ -136,107 +137,128 @@ class _PracticeViewState extends State<PracticeView> {
     final colors = MechColors.of(context);
     final done = q >= session.questions.length;
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        if (widget.problem == null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final l in PracticeLevel.values)
-                          Padding(
-                            padding: const EdgeInsetsDirectional.only(end: 6),
-                            child: ChoiceChip(
-                              label: Text(s.levelName(l)),
-                              selected: level == l,
-                              onSelected: (_) {
-                                level = l;
-                                _newProblem();
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                IconButton.filledTonal(
-                  tooltip: s.newPracticeProblem,
-                  onPressed: _newProblem,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-          ),
-        Card(
-          margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            height: 210,
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final vp = SheetView.fit(
-                  problem.length,
-                  c.biggest,
-                  margin: 54,
-                  yFraction: 0.42,
-                );
-                return CustomPaint(
-                  size: c.biggest,
-                  painter: BeamScenePainter(
-                    BeamScene(
-                      problem: problem,
-                      viewport: vp,
-                      colors: colors,
-                      units: app.units,
-                      metrics: SceneMetrics.compact,
-                      showDimensions: true,
-                      highlights: _questionHighlights(session),
-                    ),
-                    grid: true,
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+    final problemSide = <Widget>[
+      if (widget.problem == null)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
           child: Row(
             children: [
-              for (var i = 0; i < session.questions.length; i++)
-                Container(
-                  margin: const EdgeInsetsDirectional.only(end: 6),
-                  width: i == q ? 22 : 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(5),
-                    color: switch (statuses[i]) {
-                      _Status.correct => colors.reaction,
-                      _Status.wrong => colors.negative,
-                      _Status.revealed => colors.highlight,
-                      _ => theme.colorScheme.outlineVariant,
-                    },
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final l in PracticeLevel.values)
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: Text(s.levelName(l)),
+                            selected: level == l,
+                            onSelected: (_) {
+                              level = l;
+                              _newProblem();
+                            },
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+              ),
+              IconButton.filledTonal(
+                tooltip: s.newPracticeProblem,
+                onPressed: _newProblem,
+                icon: const Icon(Icons.refresh),
+              ),
             ],
           ),
         ),
-        if (done)
-          _DoneCard(
-            correct: firstTry.values.where((v) => v).length,
-            total: session.questions.length,
-            onNew: widget.problem == null ? _newProblem : null,
-            onSolution: () => _openSolution(null),
-          )
-        else
-          _questionCard(session, s, theme, colors),
-      ],
+      Card(
+        margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: 210,
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final vp = SheetView.fit(
+                problem.length,
+                c.biggest,
+                margin: 54,
+                yFraction: 0.42,
+              );
+              return CustomPaint(
+                size: c.biggest,
+                painter: BeamScenePainter(
+                  BeamScene(
+                    problem: problem,
+                    viewport: vp,
+                    colors: colors,
+                    units: app.units,
+                    metrics: SceneMetrics.compact,
+                    showDimensions: true,
+                    highlights: _questionHighlights(session),
+                  ),
+                  grid: true,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(
+          children: [
+            for (var i = 0; i < session.questions.length; i++)
+              Container(
+                margin: const EdgeInsetsDirectional.only(end: 6),
+                width: i == q ? 22 : 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  color: switch (statuses[i]) {
+                    _Status.correct => colors.reaction,
+                    _Status.wrong => colors.negative,
+                    _Status.revealed => colors.highlight,
+                    _ => theme.colorScheme.outlineVariant,
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
+    final Widget questionSide =
+        done
+            ? _DoneCard(
+              correct: firstTry.values.where((v) => v).length,
+              total: session.questions.length,
+              onNew: widget.problem == null ? _newProblem : null,
+              onSolution: () => _openSolution(null),
+            )
+            : _questionCard(session, s, theme, colors);
+    if (isWide(context)) {
+      // Sideways: the problem on one side, the question on the other.
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: problemSide,
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(top: 4, bottom: 24),
+              children: [questionSide],
+            ),
+          ),
+        ],
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [...problemSide, questionSide],
     );
   }
 

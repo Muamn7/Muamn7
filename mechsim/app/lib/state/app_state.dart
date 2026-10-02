@@ -2,11 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mechsim_core/mechsim_core.dart';
 
 import '../i18n/strings.dart';
 
 enum ThemePref { system, light, dark }
+
+/// Which way the screen may turn. [auto] follows the phone (and its
+/// rotation lock); [landscape] keeps the app sideways even when the phone
+/// is locked upright.
+enum OrientationPref { auto, landscape, portrait }
 
 class AppSettings {
   const AppSettings({
@@ -14,23 +20,27 @@ class AppSettings {
     this.units = UnitSystem.knM,
     this.convention = SignConvention.standard,
     this.theme = ThemePref.system,
+    this.orientation = OrientationPref.auto,
   });
 
   final Lang lang;
   final UnitSystem units;
   final SignConvention convention;
   final ThemePref theme;
+  final OrientationPref orientation;
 
   AppSettings copyWith({
     Lang? lang,
     UnitSystem? units,
     SignConvention? convention,
     ThemePref? theme,
+    OrientationPref? orientation,
   }) => AppSettings(
     lang: lang ?? this.lang,
     units: units ?? this.units,
     convention: convention ?? this.convention,
     theme: theme ?? this.theme,
+    orientation: orientation ?? this.orientation,
   );
 
   Map<String, Object?> toJson() => {
@@ -38,6 +48,7 @@ class AppSettings {
     'units': units.toJson(),
     'convention': convention.toJson(),
     'theme': theme.name,
+    'orientation': orientation.name,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> json) {
@@ -56,6 +67,11 @@ class AppSettings {
               )
               : SignConvention.standard,
       theme: byName(ThemePref.values, json['theme'], ThemePref.system),
+      orientation: byName(
+        OrientationPref.values,
+        json['orientation'],
+        OrientationPref.auto,
+      ),
     );
   }
 }
@@ -129,9 +145,31 @@ class AppState extends ChangeNotifier {
   Solution solve(BeamProblem problem) => builder.build(problem);
 
   void updateSettings(AppSettings next) {
+    final turned = next.orientation != _settings.orientation;
     _settings = next;
     notifyListeners();
     settingsStore.save(next);
+    if (turned) applyOrientation(next.orientation);
+  }
+
+  /// Tells the platform which orientations the app allows.
+  static Future<void> applyOrientation(OrientationPref pref) async {
+    final allowed = switch (pref) {
+      OrientationPref.auto => DeviceOrientation.values,
+      OrientationPref.landscape => const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ],
+      OrientationPref.portrait => const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ],
+    };
+    try {
+      await SystemChrome.setPreferredOrientations(allowed);
+    } on Object {
+      // Desktop platforms have no orientation; nothing to do there.
+    }
   }
 
   List<SavedProblem> get saved => _saved;

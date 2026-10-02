@@ -180,4 +180,68 @@ void main() {
     await settle(tester);
     await shoot(tester, dir, '15_tutorial_sfd');
   });
+
+  const sideways = Size(892, 412);
+
+  shot('landscape: home', (tester) async {
+    phoneSize(tester, logical: sideways);
+    await tester.pumpWidget(await app(testState()));
+    await settle(tester);
+    await shoot(tester, dir!, '20_land_home');
+  });
+
+  shot('landscape: editor', (tester) async {
+    phoneSize(tester, logical: sideways);
+    await tester.pumpWidget(
+      await app(
+        testState(),
+        home: EditorScreen(problem: example, name: 'Beam 6 m'),
+      ),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '21_land_editor');
+    final state = tester.state<State<EditorScreen>>(find.byType(EditorScreen));
+    (state as dynamic).controller.select('p1');
+    await settle(tester);
+    await shoot(tester, dir, '22_land_editor_selected');
+  });
+
+  shot('landscape: analysis', (tester) async {
+    phoneSize(tester, logical: sideways);
+    await tester.pumpWidget(
+      await app(testState(), home: AnalysisScreen(problem: example)),
+    );
+    await settle(tester);
+    final term = find.text('RB × 6', findRichText: true);
+    await scrollTo(tester, term);
+    await tester.tap(term.first);
+    await settle(tester);
+    await shoot(tester, dir!, '23_land_analysis');
+  });
+
+  shot('landscape: player', (tester) async {
+    phoneSize(tester, logical: sideways);
+    await tester.pumpWidget(
+      await app(testState(), home: PlayerScreen(problem: example)),
+    );
+    await settle(tester);
+    for (var i = 0; i < 8; i++) {
+      await tester.tap(find.byIcon(Icons.skip_next));
+      await settle(tester);
+    }
+    await settle(tester);
+    await shoot(tester, dir!, '24_land_player');
+  });
+
+  shot('landscape: practice', (tester) async {
+    phoneSize(tester, logical: sideways);
+    await tester.pumpWidget(await app(testState()));
+    await settle(tester);
+    await tester.tap(find.byIcon(Icons.quiz_outlined).last);
+    await settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('practice-answer')), '3');
+    await tester.tap(find.byKey(const ValueKey('practice-check')));
+    await settle(tester);
+    await shoot(tester, dir!, '25_land_practice');
+  });
 }

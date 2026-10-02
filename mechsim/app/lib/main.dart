@@ -12,6 +12,7 @@ Future<void> main() async {
   final dir = await getApplicationSupportDirectory();
   final settingsStore = FileSettingsStore(File('${dir.path}/settings.json'));
   final settings = await settingsStore.load() ?? const AppSettings();
+  await AppState.applyOrientation(settings.orientation);
   final state = AppState(
     settings: settings,
     repository: FileProblemRepository(File('${dir.path}/problems.json')),
