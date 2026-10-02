@@ -25,7 +25,7 @@ class PropertiesPanel extends StatelessWidget {
   final bool card;
 
   /// Two fields side by side in the side panel's card.
-  static const cardFieldWidth = 98.0;
+  static const cardFieldWidth = 86.0;
 
   @override
   Widget build(BuildContext context) {
@@ -36,14 +36,20 @@ class PropertiesPanel extends StatelessWidget {
     final s = AppScope.of(context).s;
     final id = controller.selected!;
 
+    // Small in the side card, where every pixel counts.
+    final small = card ? PanelCard.smallButton : null;
     final close = IconButton(
       visualDensity: VisualDensity.compact,
+      style: small,
+      iconSize: card ? 18 : null,
       tooltip: s.cancel,
       onPressed: () => controller.select(null),
       icon: const Icon(Icons.close),
     );
     final delete = IconButton(
       visualDensity: VisualDensity.compact,
+      style: small,
+      iconSize: card ? 18 : null,
       tooltip: s.delete,
       onPressed: () => controller.delete(id),
       icon: const Icon(Icons.delete_outline),
@@ -169,6 +175,7 @@ class PropertiesPanel extends StatelessWidget {
           [
             NumberField(
               width: width,
+              dense: card,
               key: const ValueKey('beam-length'),
               label: s.length,
               value: toL(p.length),
@@ -220,6 +227,7 @@ class PropertiesPanel extends StatelessWidget {
             ),
             NumberField(
               width: width,
+              dense: card,
               key: ValueKey('pos-$id'),
               label: '${s.position} x',
               value: toL(support.x),
@@ -242,6 +250,7 @@ class PropertiesPanel extends StatelessWidget {
           value: normaliseAngle(load.angleDeg),
           unit: '°',
           width: card ? cardFieldWidth : 96,
+          dense: card,
           allowNegative: true,
           onChanged:
               (v) => controller.updateLoad(
@@ -272,13 +281,15 @@ class PropertiesPanel extends StatelessWidget {
         );
         return _Props(
           title: '${s.loadProps} ${labels.loadName(id)}',
-          short: '${labels.loadName(id)} · ${s.toolPointLoad}',
+          // The arrow icon beside it says it is a point load.
+          short: labels.loadName(id),
           icon: Tool.pointLoad,
           help: s.angleHelp,
           groups: [
             [
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('mag-$id'),
                 label: s.magnitude,
                 value: u.toDisplay(load.magnitude, Dimension.force),
@@ -293,6 +304,7 @@ class PropertiesPanel extends StatelessWidget {
               ),
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('pos-$id'),
                 label: '${s.position} x',
                 value: toL(load.x),
@@ -355,6 +367,7 @@ class PropertiesPanel extends StatelessWidget {
             [
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('from-$id'),
                 label: s.startX,
                 value: toL(load.x),
@@ -369,6 +382,7 @@ class PropertiesPanel extends StatelessWidget {
               ),
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('to-$id'),
                 label: s.endX,
                 value: toL(load.x2),
@@ -384,6 +398,7 @@ class PropertiesPanel extends StatelessWidget {
               if (load.isUniform)
                 NumberField(
                   width: width,
+                  dense: card,
                   key: ValueKey('w-$id'),
                   label: s.intensity,
                   value: toW(load.w1),
@@ -397,6 +412,7 @@ class PropertiesPanel extends StatelessWidget {
               [
                 NumberField(
                   width: width,
+                  dense: card,
                   key: ValueKey('w1-$id'),
                   label: s.intensityStart,
                   value: toW(load.w1),
@@ -409,6 +425,7 @@ class PropertiesPanel extends StatelessWidget {
                 ),
                 NumberField(
                   width: width,
+                  dense: card,
                   key: ValueKey('w2-$id'),
                   label: s.intensityEnd,
                   value: toW(load.w2),
@@ -454,6 +471,7 @@ class PropertiesPanel extends StatelessWidget {
             [
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('mag-$id'),
                 label: s.magnitude,
                 value: u.toDisplay(load.magnitude, Dimension.moment),
@@ -468,6 +486,7 @@ class PropertiesPanel extends StatelessWidget {
               ),
               NumberField(
                 width: width,
+                dense: card,
                 key: ValueKey('pos-$id'),
                 label: '${s.position} x',
                 value: toL(load.x),

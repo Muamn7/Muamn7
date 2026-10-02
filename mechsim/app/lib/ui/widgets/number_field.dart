@@ -15,6 +15,7 @@ class NumberField extends StatefulWidget {
     this.validator,
     this.allowNegative = false,
     this.width = 120,
+    this.dense = false,
   });
 
   final String label;
@@ -26,6 +27,9 @@ class NumberField extends StatefulWidget {
   final String? Function(double value)? validator;
   final bool allowNegative;
   final double width;
+
+  /// Smaller text and padding, for the sideways editor's panels.
+  final bool dense;
 
   @override
   State<NumberField> createState() => _NumberFieldState();
@@ -99,16 +103,19 @@ class _NumberFieldState extends State<NumberField> {
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _commit(),
           onTapOutside: (_) => _focus.unfocus(),
+          style: widget.dense ? const TextStyle(fontSize: 14) : null,
           decoration: InputDecoration(
             isDense: true,
             labelText: widget.label,
+            labelStyle: widget.dense ? const TextStyle(fontSize: 13) : null,
             suffixText: widget.unit,
+            suffixStyle: widget.dense ? const TextStyle(fontSize: 12) : null,
             errorText: _error,
             errorMaxLines: 2,
             border: const OutlineInputBorder(),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 10,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: widget.dense ? 8 : 10,
+              vertical: widget.dense ? 8 : 10,
             ),
           ),
         ),

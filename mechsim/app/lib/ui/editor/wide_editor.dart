@@ -32,8 +32,16 @@ class WideEditor extends StatefulWidget {
   final VoidCallback? onAnalyze;
   final ValueChanged<String> onMessage;
 
-  static const railWidth = 132.0;
-  static const panelWidth = 236.0;
+  static const railWidth = 108.0;
+  static const panelWidth = 200.0;
+
+  /// Bar buttons: 36 px with a 20 px icon, so the bars stay thin.
+  static final barButton = IconButton.styleFrom(
+    minimumSize: const Size(36, 36),
+    padding: const EdgeInsets.all(8),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    iconSize: 20,
+  );
 
   @override
   State<WideEditor> createState() => _WideEditorState();
@@ -61,7 +69,7 @@ class _WideEditorState extends State<WideEditor> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -69,7 +77,7 @@ class _WideEditorState extends State<WideEditor> {
                       width: WideEditor.railWidth,
                       child: _ToolRail(controller: c),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -101,7 +109,7 @@ class _WideEditorState extends State<WideEditor> {
                       ),
                     ),
                     if (_panel) ...[
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
                       SizedBox(
                         width: WideEditor.panelWidth,
                         child: _SidePanel(
@@ -168,13 +176,15 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScope.of(context).s;
     final scheme = Theme.of(context).colorScheme;
+    final b = WideEditor.barButton;
     return SizedBox(
-      height: 46,
+      height: 38,
       child: Row(
         children: [
           Builder(
             builder:
                 (context) => IconButton(
+                  style: b,
                   tooltip:
                       MaterialLocalizations.of(context).openAppDrawerTooltip,
                   onPressed: () => Scaffold.of(context).openDrawer(),
@@ -185,30 +195,31 @@ class _TopBar extends StatelessWidget {
             height: 24,
             child: VerticalDivider(width: 12, color: scheme.outlineVariant),
           ),
-          Icon(Icons.architecture, color: scheme.primary, size: 24),
-          const SizedBox(width: 8),
+          Icon(Icons.architecture, color: scheme.primary, size: 20),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               'MechSim 2D',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
           ),
           const Spacer(),
           IconButton(
+            style: b,
             tooltip: s.undo,
             onPressed: controller.canUndo ? controller.undo : null,
             icon: const Icon(Icons.undo),
           ),
           IconButton(
+            style: b,
             tooltip: s.redo,
             onPressed: controller.canRedo ? controller.redo : null,
             icon: const Icon(Icons.redo),
           ),
           IconButton(
+            style: b,
             key: const ValueKey('toggle-panel'),
             tooltip: s.sidePanel,
             isSelected: panel,
@@ -221,6 +232,8 @@ class _TopBar extends StatelessWidget {
             child: VerticalDivider(width: 12, color: scheme.outlineVariant),
           ),
           PopupMenuButton<String>(
+            style: b,
+            iconSize: 20,
             onSelected: (v) {
               if (v == 'fit') controller.requestFit();
               if (v == 'clear') controller.clear();
@@ -359,26 +372,26 @@ class _ToolRail extends StatelessWidget {
           Expanded(
             child: Padding(
               key: ValueKey('tool-$label'),
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: const EdgeInsets.symmetric(vertical: 1.5),
               child: Material(
                 color: active ? scheme.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   onTap: onTap,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(
                       children: [
                         ToolIcon(
                           icon,
-                          size: 22,
+                          size: 18,
                           color:
                               active
                                   ? scheme.onPrimary
                                   : scheme.onSurfaceVariant,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
@@ -387,7 +400,7 @@ class _ToolRail extends StatelessWidget {
                               label,
                               maxLines: 1,
                               style: TextStyle(
-                                fontSize: 13.5,
+                                fontSize: 12.5,
                                 fontWeight:
                                     active ? FontWeight.w800 : FontWeight.w600,
                                 color:
@@ -431,9 +444,9 @@ class _SidePanel extends StatelessWidget {
             )
           else
             _NextCard(controller: controller),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           _StatusCard(controller: controller),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           _DisplayCard(controller: controller),
         ],
       ),
@@ -712,12 +725,14 @@ class _DisplayCard extends StatelessWidget {
     final s = AppScope.of(context).s;
     Widget row(String key, String label, bool value, ValueChanged<bool> f) =>
         SizedBox(
-          height: 34,
+          height: 28,
           child: Row(
             children: [
-              Expanded(child: Text(label)),
+              Expanded(
+                child: Text(label, style: const TextStyle(fontSize: 13)),
+              ),
               Transform.scale(
-                scale: 0.8,
+                scale: 0.7,
                 child: Switch(
                   key: ValueKey('switch-$key'),
                   value: value,
@@ -763,7 +778,7 @@ class _BottomBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final p = controller.problem;
     return Container(
-      height: 56,
+      height: 44,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         border: Border(top: BorderSide(color: scheme.outlineVariant)),
@@ -787,35 +802,39 @@ class _BottomBar extends StatelessWidget {
                     PopupMenuItem(value: 'fit', child: Text(s.fitView)),
                   ],
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.description_outlined),
-                    const SizedBox(width: 8),
+                    const Icon(Icons.description_outlined, size: 18),
+                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
                         controller.name ?? s.untitled,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    const Icon(Icons.arrow_drop_down),
+                    const Icon(Icons.arrow_drop_down, size: 20),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          const ToolIcon(Tool.dimension, size: 22),
           const SizedBox(width: 8),
+          const ToolIcon(Tool.dimension, size: 18),
+          const SizedBox(width: 6),
           NumberField(
             key: const ValueKey('bottom-length'),
+            dense: true,
             label: s.length,
             value: p.hasBeam ? u.toDisplay(p.length, Dimension.length) : 0,
             unit: u.length.symbol,
-            width: 120,
+            width: 104,
             validator: (v) => v > 0 ? null : s.mustBePositive,
             onChanged: (v) {
               final length = u.fromDisplay(v, Dimension.length);
@@ -825,22 +844,25 @@ class _BottomBar extends StatelessWidget {
                   : controller.setBeam(length);
             },
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           FilledButton.icon(
             key: const ValueKey('analyze'),
             onPressed: onAnalyze,
             style: FilledButton.styleFrom(
-              minimumSize: const Size(150, 44),
+              minimumSize: const Size(112, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(9),
               ),
             ),
-            icon: const Icon(Icons.play_arrow_rounded),
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
             label: Text(
               s.analyze,
               style: const TextStyle(
+                fontSize: 13,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 1.1,
+                letterSpacing: 1,
               ),
             ),
           ),

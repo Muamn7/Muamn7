@@ -18,34 +18,42 @@ class PanelCard extends StatelessWidget {
   final List<Widget> actions;
   final List<Widget> children;
 
+  /// A 32 px icon button for card headers.
+  static final smallButton = IconButton.styleFrom(
+    minimumSize: const Size(32, 32),
+    padding: const EdgeInsets.all(6),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 6, 12),
+      padding: const EdgeInsets.fromLTRB(8, 2, 4, 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            height: 40,
+            height: 32,
             child: Row(
               children: [
                 IconTheme(
-                  data: IconThemeData(color: scheme.onSurface, size: 22),
+                  data: IconThemeData(color: scheme.onSurface, size: 18),
                   child: icon,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    style: const TextStyle(
+                      fontSize: 13.5,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -54,14 +62,14 @@ class PanelCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Padding(
-            padding: const EdgeInsetsDirectional.only(end: 6),
+            padding: const EdgeInsetsDirectional.only(end: 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < children.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 10),
+                  if (i > 0) const SizedBox(height: 8),
                   children[i],
                 ],
               ],
@@ -106,7 +114,7 @@ class DirectionDropdown extends StatelessWidget {
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 8,
-            vertical: 10,
+            vertical: 8,
           ),
         ),
         hint: Text(degrees(angleDeg)),

@@ -414,7 +414,9 @@ class _EditorCanvasState extends State<EditorCanvas> {
                 ? SheetView.fit(
                   c.problem.length,
                   size,
-                  margin: 56,
+                  // Sideways the sheet is short and wide: thinner margins
+                  // give the beam more of it.
+                  margin: size.width > size.height ? 40 : 56,
                   yFraction: 0.45,
                 )
                 : SheetView(scale: 50, origin: Offset(40, size.height * 0.45));

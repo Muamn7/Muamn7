@@ -283,13 +283,13 @@ void main() {
       expect(beam.top, greaterThan(select.top));
       final canvas = tester.getRect(find.byType(EditorCanvas));
       expect(canvas.left, greaterThan(select.right));
-      expect(canvas.width, greaterThan(892 - 132 - 236 - 40));
+      expect(canvas.width, greaterThan(892 - 108 - 200 - 30));
       final status = tester.getRect(find.byKey(const ValueKey('status-card')));
       expect(status.left, greaterThan(canvas.right));
       // One support only: the panel says why it cannot be solved yet.
       expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
 
-      final left = canvas.left + 56, right = canvas.right - 56;
+      final left = canvas.left + 40, right = canvas.right - 40;
       final perMetre = (right - left) / 6;
       final y = canvas.top + canvas.height * 0.45;
 
