@@ -309,4 +309,24 @@ void main() {
     await settle(tester);
     await shoot(tester, dir!, '37_loads_small_phone');
   });
+
+  shot('loads: phone sideways, dark', (tester) async {
+    // The size of a typical phone turned sideways, in the dark theme.
+    phoneSize(tester, logical: const Size(800, 360));
+    await tester.pumpWidget(
+      await app(
+        testState(settings: const AppSettings(theme: ThemePref.dark)),
+        home: const EditorScreen(problem: mixed),
+      ),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '38_land_dark_editor');
+    final state = tester.state<State<EditorScreen>>(find.byType(EditorScreen));
+    (state as dynamic).controller.select('w2');
+    await settle(tester);
+    await shoot(tester, dir, '39_land_dark_uvl_selected');
+    (state as dynamic).controller.select('p1');
+    await settle(tester);
+    await shoot(tester, dir, '40_land_dark_load_selected');
+  });
 }

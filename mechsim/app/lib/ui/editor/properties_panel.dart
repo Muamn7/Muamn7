@@ -8,24 +8,148 @@ import '../widgets/tool_icons.dart';
 
 /// Exact values for the selected element: the beam's length, a support's
 /// type and position, a load's magnitude, position and direction.
+///
+/// Upright it is a panel above the tools. Sideways ([compact]) it is one
+/// strip under the sheet, so the drawing keeps the whole width and nearly
+/// all of the height.
 class PropertiesPanel extends StatelessWidget {
   const PropertiesPanel({
     super.key,
     required this.controller,
     required this.onMessage,
+    this.compact = false,
   });
 
   final EditorController controller;
   final ValueChanged<String> onMessage;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final props = _props(context);
+    if (props == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final s = AppScope.of(context).s;
+    final id = controller.selected!;
+
+    final close = IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: s.cancel,
+      onPressed: () => controller.select(null),
+      icon: const Icon(Icons.close),
+    );
+    final delete = IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: s.delete,
+      onPressed: () => controller.delete(id),
+      icon: const Icon(Icons.delete_outline),
+    );
+    Widget note(String value) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Text(
+        value,
+        style: text.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+    final border = BoxDecoration(
+      border: Border(top: BorderSide(color: scheme.outlineVariant)),
+    );
+
+    if (compact) {
+      final items = [
+        for (final group in props.groups) ...group,
+        if (props.note != null) note(props.note!),
+      ];
+      return Material(
+        color: scheme.surfaceContainerLow,
+        child: Container(
+          decoration: border,
+          child: Row(
+            children: [
+              close,
+              ToolIcon(props.icon, size: 22),
+              const SizedBox(width: 4),
+              Text(
+                props.short,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              // Everything stays in view: a second line rather than
+              // controls hidden off the edge.
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: items,
+                  ),
+                ),
+              ),
+              delete,
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: Container(
+        width: double.infinity,
+        decoration: border,
+        padding: const EdgeInsets.fromLTRB(14, 4, 6, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    props.title,
+                    style: text.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                delete,
+                close,
+              ],
+            ),
+            for (var i = 0; i < props.groups.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              props.groups[i].length == 1
+                  ? props.groups[i].single
+                  : Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: props.groups[i],
+                  ),
+            ],
+            if (props.note != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: note(props.note!),
+              ),
+            if (props.help != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(props.help!, style: text.bodySmall),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  _Props? _props(BuildContext context) {
     final app = AppScope.of(context);
     final s = app.s;
     final u = app.units;
     final p = controller.problem;
     final id = controller.selected!;
-    final scheme = Theme.of(context).colorScheme;
     final labels = ProblemLabels.of(p);
 
     double toL(double si) => u.toDisplay(si, Dimension.length);
@@ -40,114 +164,132 @@ class PropertiesPanel extends StatelessWidget {
 
     String? positive(double v) => v > 0 ? null : s.mustBePositive;
 
-    Widget header(String title, {VoidCallback? onDelete}) => Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-          ),
-        ),
-        if (onDelete != null)
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: s.delete,
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline),
-          ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: () => controller.select(null),
-          icon: const Icon(Icons.close),
-        ),
-      ],
-    );
+    // Narrower fields sideways, so a whole load fits in one or two lines.
+    final width = compact ? 100.0 : 120.0;
 
-    Widget content;
+    /// Upright, a two-way choice spells itself out; sideways the arrow
+    /// alone, with the words as a tooltip.
+    ButtonSegment<T> choice<T>(T value, String arrow, String words) =>
+        ButtonSegment(
+          value: value,
+          label: Text(compact ? arrow : words),
+          tooltip: compact ? words : null,
+        );
+
     if (id == 'beam') {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(s.beamProps, onDelete: () => controller.delete('beam')),
-          NumberField(
-            key: const ValueKey('beam-length'),
-            label: s.length,
-            value: toL(p.length),
-            unit: u.length.symbol,
-            validator: positive,
-            onChanged: (v) => controller.setLength(fromL(v)),
-          ),
+      return _Props(
+        title: s.beamProps,
+        short: s.toolBeam,
+        icon: Tool.beam,
+        groups: [
+          [
+            NumberField(
+              width: width,
+              key: const ValueKey('beam-length'),
+              label: s.length,
+              value: toL(p.length),
+              unit: u.length.symbol,
+              validator: positive,
+              onChanged: (v) => controller.setLength(fromL(v)),
+            ),
+          ],
         ],
       );
-    } else if (p.supportById(id) case final support?) {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(
-            '${s.supportProps} ${labels.pointOf(id)}',
-            onDelete: () => controller.delete(id),
-          ),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+    }
+
+    if (p.supportById(id) case final support?) {
+      ButtonSegment<SupportType> segment(SupportType t, Tool tool, String l) =>
+          ButtonSegment(
+            value: t,
+            label: compact ? null : Text(l),
+            tooltip: compact ? l : null,
+            icon: ToolIcon(tool, size: 18),
+          );
+      return _Props(
+        title: '${s.supportProps} ${labels.pointOf(id)}',
+        short: labels.pointOf(id),
+        icon: switch (support.type) {
+          SupportType.pin => Tool.pin,
+          SupportType.roller => Tool.roller,
+          SupportType.fixed => Tool.fixed,
+        },
+        groups: [
+          [
+            SegmentedButton<SupportType>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: [
+                segment(SupportType.pin, Tool.pin, s.toolPin),
+                segment(SupportType.roller, Tool.roller, s.toolRoller),
+                segment(SupportType.fixed, Tool.fixed, s.toolFixed),
+              ],
+              selected: {support.type},
+              onSelectionChanged:
+                  (v) => controller.updateSupport(
+                    support.copyWith(type: v.single),
+                  ),
+            ),
+            NumberField(
+              width: width,
+              key: ValueKey('pos-$id'),
+              label: '${s.position} x',
+              value: toL(support.x),
+              unit: u.length.symbol,
+              validator: onBeam,
+              onChanged:
+                  (v) =>
+                      controller.updateSupport(support.copyWith(x: fromL(v))),
+            ),
+          ],
+        ],
+      );
+    }
+
+    switch (p.loadById(id)) {
+      case final PointLoad load:
+        const directions = [-90.0, 90.0, 0.0, 180.0, -45.0, -135.0];
+        final picker = Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SegmentedButton<SupportType>(
-                showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: [
-                  ButtonSegment(
-                    value: SupportType.pin,
-                    label: Text(s.toolPin),
-                    icon: const ToolIcon(Tool.pin, size: 18),
+              for (final a in directions)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: IconButton.filledTonal(
+                    isSelected:
+                        normaliseAngle(load.angleDeg) == normaliseAngle(a),
+                    visualDensity: VisualDensity.compact,
+                    onPressed:
+                        () => controller.updateLoad(load.copyWith(angleDeg: a)),
+                    icon: DirectionGlyph(a),
                   ),
-                  ButtonSegment(
-                    value: SupportType.roller,
-                    label: Text(s.toolRoller),
-                    icon: const ToolIcon(Tool.roller, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: SupportType.fixed,
-                    label: Text(s.toolFixed),
-                    icon: const ToolIcon(Tool.fixed, size: 18),
-                  ),
-                ],
-                selected: {support.type},
-                onSelectionChanged:
-                    (v) => controller.updateSupport(
-                      support.copyWith(type: v.single),
-                    ),
-              ),
+                ),
+              const SizedBox(width: 6),
               NumberField(
-                key: ValueKey('pos-$id'),
-                label: '${s.position} x',
-                value: toL(support.x),
-                unit: u.length.symbol,
-                validator: onBeam,
+                key: ValueKey('ang-$id'),
+                label: s.angle,
+                value: normaliseAngle(load.angleDeg),
+                unit: '°',
+                width: compact ? 84 : 96,
+                allowNegative: true,
                 onChanged:
-                    (v) =>
-                        controller.updateSupport(support.copyWith(x: fromL(v))),
+                    (v) => controller.updateLoad(
+                      load.copyWith(angleDeg: normaliseAngle(v)),
+                    ),
               ),
             ],
           ),
-        ],
-      );
-    } else if (p.loadById(id) case final PointLoad load) {
-      const directions = [-90.0, 90.0, 0.0, 180.0, -45.0, -135.0];
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(
-            '${s.loadProps} ${labels.loadName(id)}',
-            onDelete: () => controller.delete(id),
-          ),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
+        );
+        return _Props(
+          title: '${s.loadProps} ${labels.loadName(id)}',
+          short: labels.loadName(id),
+          icon: Tool.pointLoad,
+          help: s.angleHelp,
+          groups: [
+            [
               NumberField(
+                width: width,
                 key: ValueKey('mag-$id'),
                 label: s.magnitude,
                 value: u.toDisplay(load.magnitude, Dimension.force),
@@ -161,6 +303,7 @@ class PropertiesPanel extends StatelessWidget {
                     ),
               ),
               NumberField(
+                width: width,
                 key: ValueKey('pos-$id'),
                 label: '${s.position} x',
                 value: toL(load.x),
@@ -170,83 +313,47 @@ class PropertiesPanel extends StatelessWidget {
                     (v) => controller.updateLoad(load.copyWith(x: fromL(v))),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                '${s.direction}:  ',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              Expanded(
-                child: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final a in directions)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: IconButton.filledTonal(
-                              isSelected:
-                                  normaliseAngle(load.angleDeg) ==
-                                  normaliseAngle(a),
-                              visualDensity: VisualDensity.compact,
-                              onPressed:
-                                  () => controller.updateLoad(
-                                    load.copyWith(angleDeg: a),
-                                  ),
-                              icon: DirectionGlyph(a),
-                            ),
-                          ),
-                        const SizedBox(width: 6),
-                        NumberField(
-                          key: ValueKey('ang-$id'),
-                          label: s.angle,
-                          value: normaliseAngle(load.angleDeg),
-                          unit: '°',
-                          width: 96,
-                          allowNegative: true,
-                          onChanged:
-                              (v) => controller.updateLoad(
-                                load.copyWith(angleDeg: normaliseAngle(v)),
-                              ),
-                        ),
-                      ],
+            [
+              if (compact)
+                picker
+              else
+                Row(
+                  children: [
+                    Text(
+                      '${s.direction}:  ',
+                      style: Theme.of(context).textTheme.labelLarge,
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: picker,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
             ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              s.angleHelp,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
-      );
-    } else if (p.loadById(id) case final DistributedLoad load) {
-      double toW(double si) => u.toDisplay(si, Dimension.intensity);
-      double fromW(double v) => u.fromDisplay(v, Dimension.intensity);
-      final wUnit = u.intensity.symbol;
-      String? nonNegative(double v) => v >= 0 ? null : s.mustBePositive;
-      void update(DistributedLoad next) => controller.updateAnyLoad(next);
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(
-            '${load.isUniform ? s.udlProps : s.uvlProps}  ${labels.loadName(id)}',
-            onDelete: () => controller.delete(id),
-          ),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
+          ],
+        );
+
+      case final DistributedLoad load:
+        double toW(double si) => u.toDisplay(si, Dimension.intensity);
+        double fromW(double v) => u.fromDisplay(v, Dimension.intensity);
+        final wUnit = u.intensity.symbol;
+        String? nonNegative(double v) => v >= 0 ? null : s.mustBePositive;
+        void update(DistributedLoad next) => controller.updateAnyLoad(next);
+        final name = labels.loadName(id);
+        return _Props(
+          title: '${load.isUniform ? s.udlProps : s.uvlProps}  $name',
+          short: name,
+          icon: load.isUniform ? Tool.udl : Tool.uvl,
+          // The single force it is equivalent to, and where it acts.
+          note:
+              '$name = ${Num.compact(u.toDisplay(load.resultant, Dimension.force))} ${u.force.symbol}'
+              '   @  x̄ = ${Num.compact(toL(load.centroid))} ${u.length.symbol}',
+          groups: [
+            [
               NumberField(
+                width: width,
                 key: ValueKey('from-$id'),
                 label: s.startX,
                 value: toL(load.x),
@@ -260,6 +367,7 @@ class PropertiesPanel extends StatelessWidget {
                 onChanged: (v) => update(load.copyWith(x: fromL(v))),
               ),
               NumberField(
+                width: width,
                 key: ValueKey('to-$id'),
                 label: s.endX,
                 value: toL(load.x2),
@@ -274,6 +382,7 @@ class PropertiesPanel extends StatelessWidget {
               ),
               if (load.isUniform)
                 NumberField(
+                  width: width,
                   key: ValueKey('w-$id'),
                   label: s.intensity,
                   value: toW(load.w1),
@@ -283,14 +392,10 @@ class PropertiesPanel extends StatelessWidget {
                       (v) => update(load.copyWith(w1: fromW(v), w2: fromW(v))),
                 ),
             ],
-          ),
-          if (!load.isUniform) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
+            if (!load.isUniform)
+              [
                 NumberField(
+                  width: width,
                   key: ValueKey('w1-$id'),
                   label: s.intensityStart,
                   value: toW(load.w1),
@@ -302,6 +407,7 @@ class PropertiesPanel extends StatelessWidget {
                   onChanged: (v) => update(load.copyWith(w1: fromW(v))),
                 ),
                 NumberField(
+                  width: width,
                   key: ValueKey('w2-$id'),
                   label: s.intensityEnd,
                   value: toW(load.w2),
@@ -313,14 +419,7 @@ class PropertiesPanel extends StatelessWidget {
                   onChanged: (v) => update(load.copyWith(w2: fromW(v))),
                 ),
               ],
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
+            [
               FilterChip(
                 key: ValueKey('uniform-$id'),
                 label: Text(s.uniformToggle),
@@ -334,45 +433,26 @@ class PropertiesPanel extends StatelessWidget {
                 showSelectedIcon: false,
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
                 segments: [
-                  ButtonSegment(value: false, label: Text(s.loadDown)),
-                  ButtonSegment(value: true, label: Text(s.loadUp)),
+                  choice(false, '↓', s.loadDown),
+                  choice(true, '↑', s.loadUp),
                 ],
                 selected: {load.upward},
                 onSelectionChanged:
                     (v) => update(load.copyWith(upward: v.single)),
               ),
             ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Directionality(
-              textDirection: TextDirection.ltr,
-              child: Text(
-                // The single force it is equivalent to, and where it acts.
-                '${labels.loadName(id)} = ${Num.compact(u.toDisplay(load.resultant, Dimension.force))} ${u.force.symbol}'
-                '   @  x̄ = ${Num.compact(toL(load.centroid))} ${u.length.symbol}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
-      );
-    } else if (p.loadById(id) case final PointMoment load) {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(
-            '${s.momentProps}  ${labels.loadName(id)}',
-            onDelete: () => controller.delete(id),
-          ),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
+          ],
+        );
+
+      case final PointMoment load:
+        return _Props(
+          title: '${s.momentProps}  ${labels.loadName(id)}',
+          short: labels.loadName(id),
+          icon: Tool.moment,
+          groups: [
+            [
               NumberField(
+                width: width,
                 key: ValueKey('mag-$id'),
                 label: s.magnitude,
                 value: u.toDisplay(load.magnitude, Dimension.moment),
@@ -386,6 +466,7 @@ class PropertiesPanel extends StatelessWidget {
                     ),
               ),
               NumberField(
+                width: width,
                 key: ValueKey('pos-$id'),
                 label: '${s.position} x',
                 value: toL(load.x),
@@ -397,10 +478,7 @@ class PropertiesPanel extends StatelessWidget {
               SegmentedButton<bool>(
                 showSelectedIcon: false,
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: [
-                  ButtonSegment(value: true, label: Text(s.ccw)),
-                  ButtonSegment(value: false, label: Text(s.cw)),
-                ],
+                segments: [choice(true, '↺', s.ccw), choice(false, '↻', s.cw)],
                 selected: {load.counterClockwise},
                 onSelectionChanged:
                     (v) => controller.updateAnyLoad(
@@ -408,23 +486,40 @@ class PropertiesPanel extends StatelessWidget {
                     ),
               ),
             ],
-          ),
-        ],
-      );
-    } else {
-      return const SizedBox.shrink();
-    }
+          ],
+        );
 
-    return Material(
-      color: scheme.surfaceContainerLow,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: scheme.outlineVariant)),
-        ),
-        padding: const EdgeInsets.fromLTRB(14, 4, 6, 10),
-        child: content,
-      ),
-    );
+      case null:
+        return null;
+    }
   }
+}
+
+/// What the panel shows for one kind of element, laid out upright or
+/// sideways by [PropertiesPanel.build].
+class _Props {
+  const _Props({
+    required this.title,
+    required this.short,
+    required this.icon,
+    required this.groups,
+    this.note,
+    this.help,
+  });
+
+  /// The full heading, upright.
+  final String title;
+
+  /// The element's name alone (W1, A, Beam), sideways.
+  final String short;
+  final Tool icon;
+
+  /// Controls in rows: a row each upright, all in one line sideways.
+  final List<List<Widget>> groups;
+
+  /// A result worth seeing in both layouts (a resultant and its x̄).
+  final String? note;
+
+  /// A how-to line, upright only.
+  final String? help;
 }

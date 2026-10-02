@@ -26,6 +26,7 @@ const _labels = [
   'UVL',
   'Moment',
   'Dimension',
+  'ANALYZE',
 ];
 
 void main() {

@@ -101,153 +101,218 @@ class _EditorScreenState extends State<EditorScreen> {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final wide = isWide(context);
-        final analyze =
-            controller.problem.hasBeam
-                ? FloatingActionButton.extended(
-                  onPressed: _analyze,
-                  icon: const Icon(Icons.calculate_outlined),
-                  label: Text(
-                    s.analyze,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                )
-                : null;
-        final sheet = Column(
-          children: [
-            _HintBar(controller: controller),
-            Expanded(
-              child: Stack(
+        final analyze = controller.problem.hasBeam ? _analyze : null;
+        final canvas = EditorCanvas(controller: controller, onMessage: _snack);
+        if (isWide(context)) {
+          // Sideways every pixel goes to the sheet: no app bar, the tools
+          // in two columns down one side, the few actions in a thin column
+          // down the other, and the selection's values in one strip under
+          // the drawing.
+          return Scaffold(
+            body: SafeArea(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Positioned.fill(
-                    child: EditorCanvas(
-                      controller: controller,
-                      onMessage: _snack,
-                    ),
+                  _Toolbar(
+                    controller: controller,
+                    onAnalyze: analyze,
+                    vertical: true,
                   ),
-                  // Sideways the button sits on the sheet itself, clear of
-                  // the side panels.
-                  if (wide && analyze != null)
-                    PositionedDirectional(end: 16, bottom: 16, child: analyze),
-                ],
-              ),
-            ),
-          ],
-        );
-        return Scaffold(
-          appBar: AppBar(
-            toolbarHeight: wide ? 48 : null,
-            title: Text(
-              controller.name ?? s.untitled,
-              overflow: TextOverflow.ellipsis,
-            ),
-            actions: [
-              IconButton(
-                tooltip: s.undo,
-                onPressed: controller.canUndo ? controller.undo : null,
-                icon: const Icon(Icons.undo),
-              ),
-              IconButton(
-                tooltip: s.redo,
-                onPressed: controller.canRedo ? controller.redo : null,
-                icon: const Icon(Icons.redo),
-              ),
-              IconButton(
-                tooltip: s.save,
-                onPressed: _save,
-                icon: const Icon(Icons.save_outlined),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (v) {
-                  if (v == 'fit') controller.requestFit();
-                  if (v == 'clear') controller.clear();
-                },
-                itemBuilder:
-                    (_) => [
-                      PopupMenuItem(value: 'fit', child: Text(s.fitView)),
-                      PopupMenuItem(value: 'clear', child: Text(s.clearAll)),
-                    ],
-              ),
-            ],
-          ),
-          body:
-              wide
-                  // Sideways: tools in a column down one side, the properties of
-                  // the selection down the other, and the whole height for the
-                  // sheet in between.
-                  ? SafeArea(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _Toolbar(controller: controller, vertical: true),
-                        Expanded(child: sheet),
-                        if (controller.selected != null)
-                          SizedBox(
-                            width: 340,
-                            child: SingleChildScrollView(
-                              child: PropertiesPanel(
-                                controller: controller,
-                                onMessage: _snack,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  )
-                  : sheet,
-          floatingActionButton: wide ? null : analyze,
-          bottomNavigationBar:
-              wide
-                  ? null
-                  : SafeArea(
+                  Expanded(
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(child: canvas),
+                              PositionedDirectional(
+                                top: 6,
+                                start: 8,
+                                end: 8,
+                                child: _HintBar(
+                                  controller: controller,
+                                  floating: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         if (controller.selected != null)
                           PropertiesPanel(
                             controller: controller,
                             onMessage: _snack,
+                            compact: true,
                           ),
-                        _Toolbar(controller: controller),
                       ],
                     ),
                   ),
+                  _ActionRail(
+                    controller: controller,
+                    onSave: _save,
+                    vertical: true,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              controller.name ?? s.untitled,
+              overflow: TextOverflow.ellipsis,
+            ),
+            actions: [_ActionRail(controller: controller, onSave: _save)],
+          ),
+          body: Column(
+            children: [
+              _HintBar(controller: controller),
+              Expanded(child: canvas),
+            ],
+          ),
+          bottomNavigationBar: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.selected != null)
+                  PropertiesPanel(controller: controller, onMessage: _snack),
+                _Toolbar(controller: controller, onAnalyze: analyze),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 }
 
-class _HintBar extends StatelessWidget {
-  const _HintBar({required this.controller});
+/// Undo, redo, save and the menu: in the app bar upright, a thin column
+/// beside the sheet sideways (with the way back at the top).
+class _ActionRail extends StatelessWidget {
+  const _ActionRail({
+    required this.controller,
+    required this.onSave,
+    this.vertical = false,
+  });
 
   final EditorController controller;
+  final VoidCallback onSave;
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).s;
+    final buttons = [
+      if (vertical && Navigator.canPop(context)) const BackButton(),
+      IconButton(
+        tooltip: s.undo,
+        onPressed: controller.canUndo ? controller.undo : null,
+        icon: const Icon(Icons.undo),
+      ),
+      IconButton(
+        tooltip: s.redo,
+        onPressed: controller.canRedo ? controller.redo : null,
+        icon: const Icon(Icons.redo),
+      ),
+      IconButton(
+        tooltip: s.save,
+        onPressed: onSave,
+        icon: const Icon(Icons.save_outlined),
+      ),
+      if (vertical)
+        IconButton(
+          tooltip: s.fitView,
+          onPressed: controller.requestFit,
+          icon: const Icon(Icons.fit_screen_outlined),
+        ),
+      PopupMenuButton<String>(
+        onSelected: (v) {
+          if (v == 'fit') controller.requestFit();
+          if (v == 'clear') controller.clear();
+        },
+        itemBuilder:
+            (_) => [
+              if (!vertical)
+                PopupMenuItem(value: 'fit', child: Text(s.fitView)),
+              PopupMenuItem(value: 'clear', child: Text(s.clearAll)),
+            ],
+      ),
+    ];
+    if (!vertical) {
+      return Row(mainAxisSize: MainAxisSize.min, children: buttons);
+    }
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: SizedBox(
+        width: 52,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(children: buttons),
+        ),
+      ),
+    );
+  }
+}
+
+class _HintBar extends StatelessWidget {
+  const _HintBar({required this.controller, this.floating = false});
+
+  final EditorController controller;
+
+  /// One line laid over the top of the sheet (sideways) instead of a bar
+  /// above it.
+  final bool floating;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context).s;
+    final theme = Theme.of(context);
     final text =
         controller.problem.hasBeam
             ? s.hintFor(controller.tool.name)
             : s.hintEmpty;
+    if (floating) {
+      return IgnorePointer(
+        child: Align(
+          alignment: AlignmentDirectional.topStart,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer.withValues(
+                alpha: 0.85,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ),
+      );
+    }
     return Container(
       width: double.infinity,
-      color: Theme.of(
-        context,
-      ).colorScheme.secondaryContainer.withValues(alpha: 0.6),
+      color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+      child: Text(text, style: theme.textTheme.bodySmall),
     );
   }
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar({required this.controller, this.vertical = false});
+  const _Toolbar({
+    required this.controller,
+    required this.onAnalyze,
+    this.vertical = false,
+  });
 
   final EditorController controller;
+
+  /// Null until there is a beam to analyse.
+  final VoidCallback? onAnalyze;
 
   /// Two columns down the side of the sheet, for landscape.
   final bool vertical;
@@ -257,7 +322,8 @@ class _Toolbar extends StatelessWidget {
     final s = AppScope.of(context).s;
     final scheme = Theme.of(context).colorScheme;
     // Every tool in view at once, nothing to scroll: the beam and its
-    // supports in one row (or column), the loads in the other.
+    // supports in one row (or column), the loads in the other, with
+    // ANALYZE closing the loads row so it never covers the drawing.
     final groups = <List<(Tool, String)>>[
       [
         (Tool.select, s.toolSelect),
@@ -276,22 +342,24 @@ class _Toolbar extends StatelessWidget {
       ],
     ];
 
-    Widget button(Tool tool, String label) {
-      final active =
-          tool == Tool.dimension
-              ? controller.showDimensions
-              : controller.tool == tool;
-      final color =
-          active ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    Widget slot({
+      required Key key,
+      required Widget icon,
+      required String label,
+      required Color background,
+      required Color foreground,
+      required VoidCallback? onTap,
+      FontWeight weight = FontWeight.w700,
+    }) {
       return Padding(
-        key: ValueKey('tool-$label'),
+        key: key,
         padding: const EdgeInsets.all(2),
         child: Material(
-          color: active ? scheme.primaryContainer : Colors.transparent,
+          color: background,
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => controller.setTool(tool),
+            onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
               child: Center(
@@ -301,8 +369,8 @@ class _Toolbar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconTheme(
-                        data: IconThemeData(color: color),
-                        child: ToolIcon(tool),
+                        data: IconThemeData(color: foreground),
+                        child: icon,
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -310,8 +378,8 @@ class _Toolbar extends StatelessWidget {
                         maxLines: 1,
                         style: TextStyle(
                           fontSize: 10.5,
-                          color: color,
-                          fontWeight: FontWeight.w700,
+                          color: foreground,
+                          fontWeight: weight,
                         ),
                       ),
                     ],
@@ -324,9 +392,42 @@ class _Toolbar extends StatelessWidget {
       );
     }
 
-    Widget group(List<(Tool, String)> tools, bool loads) {
+    Widget button(Tool tool, String label) {
+      final active =
+          tool == Tool.dimension
+              ? controller.showDimensions
+              : controller.tool == tool;
+      return slot(
+        key: ValueKey('tool-$label'),
+        icon: ToolIcon(tool),
+        label: label,
+        background: active ? scheme.primaryContainer : Colors.transparent,
+        foreground:
+            active ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+        onTap: () => controller.setTool(tool),
+      );
+    }
+
+    final analyze = slot(
+      key: const ValueKey('tool-ANALYZE'),
+      icon: const Icon(Icons.calculate_outlined),
+      label: s.analyze,
+      background:
+          onAnalyze == null
+              ? scheme.onSurface.withValues(alpha: 0.08)
+              : scheme.primary,
+      foreground:
+          onAnalyze == null
+              ? scheme.onSurface.withValues(alpha: 0.38)
+              : scheme.onPrimary,
+      onTap: onAnalyze,
+      weight: FontWeight.w900,
+    );
+
+    Widget group(List<(Tool, String)> tools, {bool loads = false}) {
       final children = [
         for (final (tool, label) in tools) Expanded(child: button(tool, label)),
+        if (loads) Expanded(child: analyze),
       ];
       final tint =
           loads
@@ -336,11 +437,12 @@ class _Toolbar extends StatelessWidget {
         color: tint,
         child:
             vertical
-                ? SizedBox(width: 64, child: Column(children: children))
+                ? SizedBox(width: 66, child: Column(children: children))
                 : SizedBox(height: 54, child: Row(children: children)),
       );
     }
 
+    final both = [group(groups[0]), group(groups[1], loads: true)];
     return Material(
       elevation: 6,
       color: scheme.surfaceContainer,
@@ -350,12 +452,9 @@ class _Toolbar extends StatelessWidget {
             vertical
                 ? Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [group(groups[0], false), group(groups[1], true)],
+                  children: both,
                 )
-                : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [group(groups[0], false), group(groups[1], true)],
-                ),
+                : Column(mainAxisSize: MainAxisSize.min, children: both),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:mechsim_core/mechsim_core.dart';
 
@@ -57,9 +58,42 @@ class MechSimApp extends StatelessWidget {
             supportedLocales: const [Locale('ar'), Locale('en')],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
             home: home ?? const HomeShell(),
+            builder: (context, child) => _FullScreenSideways(child: child!),
           );
         },
       ),
     );
   }
+}
+
+/// Sideways, the status and navigation bars are hidden so the app gets the
+/// whole screen (a swipe from the edge shows them for a moment); upright
+/// they come back.
+class _FullScreenSideways extends StatefulWidget {
+  const _FullScreenSideways({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_FullScreenSideways> createState() => _FullScreenSidewaysState();
+}
+
+class _FullScreenSidewaysState extends State<_FullScreenSideways> {
+  bool _hidden = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final size = MediaQuery.sizeOf(context);
+    final sideways = size.width > size.height;
+    if (sideways == _hidden) return;
+    _hidden = sideways;
+    SystemChrome.setEnabledSystemUIMode(
+      sideways ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
+      overlays: sideways ? null : SystemUiOverlay.values,
+    ).catchError((Object _) {});
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

@@ -258,7 +258,7 @@ void main() {
       expect(find.byType(NavigationBar), findsNothing);
     });
 
-    testWidgets('editor puts the tools down the side', (tester) async {
+    testWidgets('editor gives the sheet the whole screen', (tester) async {
       phoneSize(tester, logical: sideways);
       await tester.pumpWidget(
         await app(
@@ -267,18 +267,33 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // No app bar: the tools are two columns down one side, the actions a
+      // thin column down the other.
+      expect(find.byType(AppBar), findsNothing);
       final pin = tester.getRect(find.byKey(const ValueKey('tool-Pin')));
       final roller = tester.getRect(find.byKey(const ValueKey('tool-Roller')));
       expect(pin.left, lessThan(80));
       expect(roller.top, greaterThan(pin.top)); // a column, not a row
-      // Selecting the load opens its properties beside the sheet.
+      expect(find.byIcon(Icons.undo), findsOneWidget);
+      final canvas = tester.getRect(find.byType(EditorCanvas));
+      expect(canvas.width, greaterThan(892 - 140 - 60));
+      expect(canvas.height, greaterThan(412 - 10));
+
+      // Selecting the load opens one strip under the sheet, which keeps
+      // its width.
       editorOf(tester).select('p1');
       await tester.pumpAndSettle();
       final magnitude = tester.getRect(
         find.widgetWithText(TextField, 'Magnitude'),
       );
-      expect(magnitude.left, greaterThan(892 - 340 - 1));
-      expect(find.text('ANALYZE'), findsOneWidget);
+      expect(magnitude.top, greaterThan(412 * 0.6));
+      final sheet = tester.getRect(find.byType(EditorCanvas));
+      expect(sheet.width, canvas.width);
+      expect(sheet.height, greaterThan(412 * 0.7));
+
+      await tester.tap(find.text('ANALYZE'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AnalysisScreen), findsOneWidget);
     });
 
     testWidgets('analysis shows the diagrams beside the steps', (tester) async {
