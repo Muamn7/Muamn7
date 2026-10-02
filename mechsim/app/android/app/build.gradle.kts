@@ -15,8 +15,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.muamn.mechsim"
+        // Changed from com.muamn.mechsim in 0.2.0: a leftover copy of an older
+        // build on a phone (signed with a different throwaway key) blocked
+        // installing new builds under that id.
+        applicationId = "com.muamn.mechsim2d"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
