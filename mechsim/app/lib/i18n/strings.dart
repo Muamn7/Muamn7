@@ -105,6 +105,23 @@ abstract class S {
   String get knownLabel;
   String get unknownOnlyStraight;
   String get reactionsKnownHelp;
+
+  // the animated tour of the method of sections
+  String get tourTitle;
+  String get tourButton;
+  String get tourIntro;
+  String get tourStart;
+  String get tourPoint;
+  String get tourZero;
+  String get tourEnd;
+  String get tourShearHow;
+  String get tourMomentHow;
+  String get tourRules;
+  String get tourPlay;
+  String get tourPause;
+  String get tourNext;
+  String get tourPrev;
+  String get tourLeftPart;
   String get length => 'Length';
   String get position => 'Position';
   String get magnitude => 'Magnitude';
@@ -353,6 +370,39 @@ class _Ar extends S {
   String get knownLabel => 'معلوم';
   @override
   String get unknownOnlyStraight => 'المجهول للأحمال الرأسية أو الأفقية فقط';
+  @override
+  String get tourTitle => 'كيف نرسم SFD و BMD';
+  @override
+  String get tourButton => 'أنيميشن: كيف نرسم SFD و BMD';
+  @override
+  String get tourIntro =>
+      'نحرّك مقطعًا (قطعًا) من يسار الكمرة إلى يمينها. عند كل موضع x نأخذ الجزء الأيسر فقط: '
+      'V = مجموع القوى الرأسية على يسار المقطع (↑ موجب)، وM = مجموع عزوم هذه القوى حول المقطع (العزم الذي يجعل الكمرة تتقعّر للأعلى موجب). '
+      'نرسم قيمتيهما تحت المقطع، فيتكوّن المخططان نقطة بعد نقطة.';
+  @override
+  String get tourStart => 'البداية: الطرف الأيسر';
+  @override
+  String get tourPoint => 'هنا يتغيّر شيء';
+  @override
+  String get tourZero => 'V = 0 هنا ⇒ ميل BMD صفر ⇒ M قيمة قصوى';
+  @override
+  String get tourEnd => 'النهاية: الطرف الأيمن — نتحقق من الإغلاق';
+  @override
+  String get tourShearHow => 'قوة القص V(x) — الجزء الأيسر';
+  @override
+  String get tourMomentHow => 'عزم الانحناء M(x) — الجزء الأيسر';
+  @override
+  String get tourRules => 'لماذا يأخذ المخطط هذا الشكل';
+  @override
+  String get tourPlay => 'تشغيل';
+  @override
+  String get tourPause => 'إيقاف مؤقت';
+  @override
+  String get tourNext => 'النقطة التالية';
+  @override
+  String get tourPrev => 'النقطة السابقة';
+  @override
+  String get tourLeftPart => 'الجزء الأيسر';
   @override
   String get reactionsKnownHelp =>
       'ردود الأفعال مجهولة عادةً. فعّل «معلوم» لتعطي أحدها قيمة (+ للأعلى ↑، لليمين →، عكس عقارب الساعة ↺)، واجعل حملًا مجهولًا ليبقى 3 مجاهيل.';
@@ -682,6 +732,39 @@ class _En extends S {
   @override
   String get unknownOnlyStraight =>
       'Only a vertical or horizontal load can be unknown';
+  @override
+  String get tourTitle => 'How to draw the SFD and BMD';
+  @override
+  String get tourButton => 'Animation: how to draw the SFD and BMD';
+  @override
+  String get tourIntro =>
+      'A cut moves along the beam from left to right. At each x keep only the left part: '
+      'V is the sum of the vertical forces left of the cut (↑ positive), and M the sum of their moments about the cut (sagging positive). '
+      'Plotting the two under the cut draws the diagrams point by point.';
+  @override
+  String get tourStart => 'Start: the left end';
+  @override
+  String get tourPoint => 'Something changes here';
+  @override
+  String get tourZero => 'V = 0 here ⇒ the BMD is flat ⇒ M is extreme';
+  @override
+  String get tourEnd => 'End: the right end — the diagrams must close';
+  @override
+  String get tourShearHow => 'Shear V(x) — the left part';
+  @override
+  String get tourMomentHow => 'Moment M(x) — the left part';
+  @override
+  String get tourRules => 'Why the diagram has this shape';
+  @override
+  String get tourPlay => 'Play';
+  @override
+  String get tourPause => 'Pause';
+  @override
+  String get tourNext => 'Next point';
+  @override
+  String get tourPrev => 'Previous point';
+  @override
+  String get tourLeftPart => 'left part';
   @override
   String get reactionsKnownHelp =>
       'Reactions are normally unknown. Switch one to known to give it a value (+ is ↑, →, ↺), and make a load unknown so there are still 3 unknowns.';

@@ -23,6 +23,7 @@ export 'src/explain/lang.dart';
 export 'src/explain/solution.dart';
 export 'src/explain/solution_builder.dart';
 export 'src/explain/text_renderer.dart';
+export 'src/explain/tour.dart';
 export 'src/model/beam_problem.dart';
 export 'src/model/labels.dart';
 export 'src/model/sign_convention.dart';

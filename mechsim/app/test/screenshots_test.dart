@@ -14,6 +14,7 @@ import 'package:mechsim/state/editor_controller.dart';
 import 'package:mechsim/ui/analysis/analysis_screen.dart';
 import 'package:mechsim/ui/editor/editor_screen.dart';
 import 'package:mechsim/ui/player/player_screen.dart';
+import 'package:mechsim/ui/tour/tour_screen.dart';
 import 'package:mechsim_core/mechsim_core.dart';
 
 import 'support/harness.dart';
@@ -386,5 +387,58 @@ void main() {
     await tester.tap(term.first);
     await settle(tester);
     await shoot(tester, dir, '47_unknown_equation');
+  });
+
+  Future<void> frames(WidgetTester tester, int ms) async {
+    for (var t = 0; t < ms; t += 50) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
+  Future<void> tapCanvasAt(WidgetTester tester, double fraction) async {
+    final canvas = tester.getRect(find.byKey(const ValueKey('tour-canvas')));
+    final left = canvas.left + 58, right = canvas.right - 58;
+    await tester.tapAt(
+      Offset(
+        left + (right - left) * fraction,
+        canvas.top + canvas.height * 0.2,
+      ),
+    );
+    await frames(tester, 200);
+  }
+
+  shot('tour', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(
+        testState(),
+        home: const TourScreen(problem: mixed, autoplay: false),
+      ),
+    );
+    await frames(tester, 400);
+    await shoot(tester, dir!, '48_tour_start');
+    await tapCanvasAt(tester, 0.22); // inside the UDL
+    await shoot(tester, dir, '49_tour_inside_udl');
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const ValueKey('tour-next')));
+      await frames(tester, 600);
+    }
+    await shoot(tester, dir, '50_tour_stop');
+  });
+
+  shot('tour sideways, dark', (tester) async {
+    phoneSize(tester, logical: const Size(800, 360));
+    await tester.pumpWidget(
+      await app(
+        testState(settings: const AppSettings(theme: ThemePref.dark)),
+        home: TourScreen(
+          problem: ExampleLibrary.byId('two-loads').problem,
+          autoplay: false,
+        ),
+      ),
+    );
+    await frames(tester, 400);
+    await tapCanvasAt(tester, 0.55);
+    await shoot(tester, dir!, '51_tour_land_dark');
   });
 }

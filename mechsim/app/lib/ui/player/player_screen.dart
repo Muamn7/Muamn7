@@ -7,6 +7,7 @@ import '../../drawing/linked_diagrams.dart';
 import '../../state/app_state.dart';
 import '../../state/highlight_controller.dart';
 import '../analysis/step_card.dart';
+import '../tour/tour_screen.dart';
 import '../widgets/layout.dart';
 
 /// Plays the solution like a video: the load, the FBD, each equation with
@@ -160,7 +161,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       // Sideways: the drawing on one side, the step and its controls on
       // the other, so nothing has to share the short height.
       return Scaffold(
-        appBar: AppBar(title: Text(s.playSteps)),
+        appBar: AppBar(
+          title: Text(s.playSteps),
+          actions: [
+            IconButton(
+              tooltip: s.tourButton,
+              icon: const Icon(Icons.animation),
+              onPressed:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => TourScreen(problem: widget.problem),
+                    ),
+                  ),
+            ),
+          ],
+        ),
         body: SafeArea(
           child: Row(
             children: [
@@ -178,7 +193,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text(s.playSteps)),
+      appBar: AppBar(
+        title: Text(s.playSteps),
+        actions: [
+          IconButton(
+            tooltip: s.tourButton,
+            icon: const Icon(Icons.animation),
+            onPressed:
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => TourScreen(problem: widget.problem),
+                  ),
+                ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           SizedBox(height: (height * 0.4).clamp(240.0, 440.0), child: diagrams),

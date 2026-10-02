@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import '../../state/highlight_controller.dart';
 import '../player/player_screen.dart';
 import '../practice/practice_screen.dart';
+import '../tour/tour_screen.dart';
 import '../widgets/layout.dart';
 import 'step_card.dart';
 
@@ -57,6 +58,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     return _solution!;
   }
 
+  void _openTour(BuildContext context) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TourScreen(problem: widget.problem),
+    ),
+  );
+
   void _scrollToStep(int index) {
     final ctx = _stepKeys[index]?.currentContext;
     if (ctx != null) {
@@ -86,6 +93,19 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         if (solution.isSolved) ...[
           _ReactionsCard(solution: solution, highlights: highlights),
           _KeyResultsCard(solution: solution, highlights: highlights),
+          // The animated walk along the beam that draws the SFD and BMD.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('open-tour'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: () => _openTour(context),
+              icon: const Icon(Icons.animation),
+              label: Text(s.tourButton),
+            ),
+          ),
           _VerificationCard(solution: solution),
         ] else
           Padding(
@@ -114,6 +134,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         title: Text(s.analysis),
         actions: [
           if (solution.isSolved) ...[
+            IconButton(
+              tooltip: s.tourButton,
+              icon: const Icon(Icons.animation),
+              onPressed: () => _openTour(context),
+            ),
             IconButton(
               tooltip: s.playSteps,
               icon: const Icon(Icons.play_circle_outline),
