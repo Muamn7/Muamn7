@@ -27,6 +27,28 @@ BeamProblem randomBeam(math.Random rng) {
         .withSupport(Support(id: 's1', type: pinFirst ? SupportType.pin : SupportType.roller, x: a))
         .withSupport(Support(id: 's2', type: pinFirst ? SupportType.roller : SupportType.pin, x: b));
   }
+  if (rng.nextInt(3) == 0) {
+    var a = anywhere(), b = anywhere();
+    if (a > b) (a, b) = (b, a);
+    if (b - a >= 0.25) {
+      p = p.withLoad(DistributedLoad(
+        id: p.nextId('w'),
+        x: a,
+        x2: b,
+        w1: rng.nextInt(20) * 500.0,
+        w2: rng.nextInt(20) * 500.0,
+        upward: rng.nextInt(5) == 0,
+      ));
+    }
+  }
+  if (rng.nextInt(4) == 0) {
+    p = p.withLoad(PointMoment(
+      id: p.nextId('c'),
+      x: anywhere(),
+      magnitude: (1 + rng.nextInt(40)) * 500.0,
+      counterClockwise: rng.nextBool(),
+    ));
+  }
   final loads = rng.nextInt(5);
   for (var i = 0; i < loads; i++) {
     p = p.withLoad(PointLoad(
@@ -59,7 +81,15 @@ void checkThoroughly(BeamProblem p, {String reason = ''}) {
   for (final step in plan) {
     known[step.solves.id] = step.equation.solveSingle(known);
   }
-  final scale = math.max(1.0, p.pointLoads.fold(0.0, (a, l) => a + l.magnitude));
+  final scale = math.max(
+      1.0,
+      p.loads.fold(
+          0.0,
+          (a, l) => a + switch (l) {
+                PointLoad() => l.magnitude,
+                DistributedLoad() => l.resultant.abs(),
+                PointMoment() => l.magnitude / math.max(1.0, p.length),
+              }));
   for (final r in s.reactions) {
     final tol = 1e-9 * scale * (r.kind == ReactionKind.moment ? math.max(1.0, p.length) : 1);
     expect(known[r.id], closeTo(s.valueOf(r.id), tol), reason: '$reason ${r.symbol}');
@@ -106,7 +136,9 @@ void main() {
       for (var i = 0; i < 150; i++) {
         final p = gen.generate(level);
         checkThoroughly(p, reason: '$level #$i');
-        for (final load in p.loads) {
+        // A UDL over the whole span starts on a support, as it should; a
+        // point load there would only teach that it goes into the support.
+        for (final load in p.pointLoads) {
           for (final sup in p.supports) {
             expect((load.x - sup.x).abs(), greaterThan(1e-9),
                 reason: 'a practice load should not sit on a support');

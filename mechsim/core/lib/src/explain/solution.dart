@@ -15,6 +15,7 @@ enum StepKind {
   given,
   freeBody,
   components,
+  resultants,
   equilibrium,
   check,
   reactions,

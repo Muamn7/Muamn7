@@ -244,4 +244,69 @@ void main() {
     await settle(tester);
     await shoot(tester, dir!, '25_land_practice');
   });
+
+  const mixed = BeamProblem(
+    length: 8,
+    supports: [
+      Support(id: 's1', type: SupportType.pin, x: 0),
+      Support(id: 's2', type: SupportType.roller, x: 6),
+    ],
+    loads: [
+      DistributedLoad(id: 'w1', x: 0, x2: 4, w1: 5000, w2: 5000),
+      DistributedLoad(id: 'w2', x: 6, x2: 8, w1: 0, w2: 6000),
+      PointLoad(id: 'p1', x: 5, magnitude: 10000),
+      PointMoment(id: 'c1', x: 4.5, magnitude: 8000),
+    ],
+  );
+
+  shot('loads: editor', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: const EditorScreen(problem: mixed)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '30_loads_editor');
+    final state = tester.state<State<EditorScreen>>(find.byType(EditorScreen));
+    (state as dynamic).controller.select('w1');
+    await settle(tester);
+    await shoot(tester, dir, '31_loads_udl_selected');
+    (state as dynamic).controller.select('w2');
+    await settle(tester);
+    await shoot(tester, dir, '32_loads_uvl_selected');
+    (state as dynamic).controller.select('c1');
+    await settle(tester);
+    await shoot(tester, dir, '33_loads_moment_selected');
+  });
+
+  shot('loads: analysis', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: const AnalysisScreen(problem: mixed)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '34_loads_analysis');
+    final term = find.text('x̄(W1)', findRichText: true);
+    await scrollTo(tester, term);
+    await tester.tap(term.first);
+    await settle(tester);
+    await shoot(tester, dir, '35_loads_resultant');
+  });
+
+  shot('loads: landscape editor', (tester) async {
+    phoneSize(tester, logical: const Size(892, 412));
+    await tester.pumpWidget(
+      await app(testState(), home: const EditorScreen(problem: mixed)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '36_loads_land_editor');
+  });
+
+  shot('loads: small phone', (tester) async {
+    phoneSize(tester, logical: const Size(360, 740));
+    await tester.pumpWidget(
+      await app(testState(), home: const EditorScreen(problem: mixed)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '37_loads_small_phone');
+  });
 }

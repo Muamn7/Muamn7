@@ -31,12 +31,18 @@ Matcher closeToKnm(double kNmValue) => closeTo(kNmValue * kN, 1e-6);
 double momentFromRight(StaticsSolution s, double x) {
   var m = 0.0;
   for (final a in s.allActions) {
-    if (a.x <= x + 1e-12) continue;
+    if (a is! DistributedForce && a.x <= x + 1e-12) continue;
     switch (a) {
       case PointForce(:final fy):
         m += (a.x - x) * fy;
       case PointCouple(moment: final c):
         m += c;
+      case DistributedForce():
+        // The part of the load right of the cut, by numerical integration —
+        // deliberately not the closed forms the analyzer uses.
+        final from = a.x > x ? a.x : x;
+        if (a.x1 <= from) break;
+        m += simpson((s) => a.intensityAt(s) * (s - x), from, a.x1);
     }
   }
   return m;
@@ -45,8 +51,24 @@ double momentFromRight(StaticsSolution s, double x) {
 double shearFromRight(StaticsSolution s, double x) {
   var v = 0.0;
   for (final a in s.allActions) {
+    if (a is DistributedForce) {
+      final from = a.x > x ? a.x : x;
+      if (a.x1 <= from) continue;
+      v -= simpson(a.intensityAt, from, a.x1);
+      continue;
+    }
     if (a.x <= x + 1e-12) continue;
     if (a is PointForce) v -= a.fy;
   }
   return v;
+}
+
+/// Composite Simpson's rule: exact for the polynomials met here.
+double simpson(double Function(double) f, double a, double b, {int n = 10}) {
+  final h = (b - a) / n;
+  var sum = f(a) + f(b);
+  for (var i = 1; i < n; i++) {
+    sum += f(a + i * h) * (i.isOdd ? 4 : 2);
+  }
+  return sum * h / 3;
 }

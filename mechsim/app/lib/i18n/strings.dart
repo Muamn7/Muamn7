@@ -71,6 +71,19 @@ abstract class S {
   String get beamProps;
   String get supportProps;
   String get loadProps;
+  String get udlProps;
+  String get uvlProps;
+  String get momentProps;
+  String get startX;
+  String get endX;
+  String get intensity;
+  String get intensityStart;
+  String get intensityEnd;
+  String get uniformToggle;
+  String get loadDown;
+  String get loadUp;
+  String get ccw;
+  String get cw;
   String get length => 'Length';
   String get position => 'Position';
   String get magnitude => 'Magnitude';
@@ -221,6 +234,10 @@ class _Ar extends S {
     'roller' => 'اضغط على الكمرة لوضع Roller',
     'fixed' => 'اضغط على طرف الكمرة لوضع Fixed',
     'pointLoad' => 'اضغط على الكمرة لوضع حمل مركّز',
+    'udl' =>
+      'اسحب على الكمرة من بداية الحمل إلى نهايته، أو اضغط لوضع حمل طوله 2 m',
+    'uvl' => 'اسحب على الكمرة من بداية الحمل إلى نهايته (يبدأ من الصفر ويزداد)',
+    'moment' => 'اضغط على الكمرة لوضع عزم مركّز',
     'delete' => 'اضغط على عنصر لحذفه',
     _ => 'اضغط على عنصر لتعديله، واسحبه لتحريكه. ضغطة مطوّلة للخيارات',
   };
@@ -261,6 +278,32 @@ class _Ar extends S {
   String get supportProps => 'Support — المسند';
   @override
   String get loadProps => 'Point Load — حمل مركّز';
+  @override
+  String get udlProps => 'UDL — حمل موزّع منتظم';
+  @override
+  String get uvlProps => 'UVL — حمل موزّع متغير';
+  @override
+  String get momentProps => 'Moment — عزم مركّز';
+  @override
+  String get startX => 'من x';
+  @override
+  String get endX => 'إلى x';
+  @override
+  String get intensity => 'الشدة w';
+  @override
+  String get intensityStart => 'w البداية';
+  @override
+  String get intensityEnd => 'w النهاية';
+  @override
+  String get uniformToggle => 'منتظم (UDL)';
+  @override
+  String get loadDown => '↓ للأسفل';
+  @override
+  String get loadUp => '↑ للأعلى';
+  @override
+  String get ccw => '↺ عكس عقارب الساعة';
+  @override
+  String get cw => '↻ مع عقارب الساعة';
   @override
   String get angle => 'θ';
   @override
@@ -487,6 +530,10 @@ class _En extends S {
     'roller' => 'Tap the beam to place a roller',
     'fixed' => 'Tap an end of the beam to fix it',
     'pointLoad' => 'Tap the beam to place a point load',
+    'udl' =>
+      'Drag along the beam from where the load starts to where it ends, or tap for a 2 m load',
+    'uvl' => 'Drag along the beam from start to end (it rises from zero)',
+    'moment' => 'Tap the beam to place a concentrated moment',
     'delete' => 'Tap an element to delete it',
     _ => 'Tap an element to edit it, drag to move it, long-press for options',
   };
@@ -528,6 +575,32 @@ class _En extends S {
   String get supportProps => 'Support';
   @override
   String get loadProps => 'Point Load';
+  @override
+  String get udlProps => 'UDL — uniformly distributed load';
+  @override
+  String get uvlProps => 'UVL — uniformly varying load';
+  @override
+  String get momentProps => 'Moment — concentrated couple';
+  @override
+  String get startX => 'From x';
+  @override
+  String get endX => 'To x';
+  @override
+  String get intensity => 'Intensity w';
+  @override
+  String get intensityStart => 'w at start';
+  @override
+  String get intensityEnd => 'w at end';
+  @override
+  String get uniformToggle => 'Uniform (UDL)';
+  @override
+  String get loadDown => '↓ Down';
+  @override
+  String get loadUp => '↑ Up';
+  @override
+  String get ccw => '↺ Counter-clockwise';
+  @override
+  String get cw => '↻ Clockwise';
   @override
   String get angle => 'θ';
   @override

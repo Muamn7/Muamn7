@@ -14,8 +14,18 @@ enum Tool {
   dimension,
   delete;
 
-  /// Tools that are drawn in the toolbar but arrive after the MVP.
-  bool get comingSoon => this == udl || this == uvl || this == moment;
+  /// Tools that are drawn in the toolbar but not available yet.
+  bool get comingSoon => false;
+
+  /// Tools that put something on the beam where it is tapped.
+  bool get places =>
+      this == pin ||
+      this == roller ||
+      this == fixed ||
+      this == pointLoad ||
+      this == udl ||
+      this == uvl ||
+      this == moment;
 }
 
 /// The state of the drawing screen: the problem, its history, the active
@@ -161,6 +171,36 @@ class EditorController extends ChangeNotifier {
     return id;
   }
 
+  /// A distributed load from [a] to [b]: uniform at 10 kN/m, or rising
+  /// from 0 to 10 kN/m.
+  String addDistributed(double a, double b, {required bool uniform}) {
+    final id = _problem.nextId('w');
+    commit(
+      _problem.withLoad(
+        DistributedLoad(
+          id: id,
+          x: a,
+          x2: b,
+          w1: uniform ? 10000 : 0,
+          w2: 10000,
+        ),
+      ),
+    );
+    _selected = id;
+    notifyListeners();
+    return id;
+  }
+
+  String addMoment(double x, {double magnitude = 10000}) {
+    final id = _problem.nextId('c');
+    commit(_problem.withLoad(PointMoment(id: id, x: x, magnitude: magnitude)));
+    _selected = id;
+    notifyListeners();
+    return id;
+  }
+
+  void updateAnyLoad(Load l) => commit(_problem.replaceLoad(l));
+
   void delete(String id) {
     if (id == 'beam') {
       commit(const BeamProblem());
@@ -185,8 +225,15 @@ class EditorController extends ChangeNotifier {
 
   void flipLoad(String id) {
     final l = _problem.loadById(id);
-    if (l is PointLoad) {
-      updateLoad(l.copyWith(angleDeg: normaliseAngle(l.angleDeg + 180)));
+    switch (l) {
+      case PointLoad():
+        updateLoad(l.copyWith(angleDeg: normaliseAngle(l.angleDeg + 180)));
+      case DistributedLoad():
+        updateAnyLoad(l.copyWith(upward: !l.upward));
+      case PointMoment():
+        updateAnyLoad(l.copyWith(counterClockwise: !l.counterClockwise));
+      case null:
+        break;
     }
   }
 

@@ -7,6 +7,8 @@
 // Lengths in metres and forces in kN unless --units says otherwise
 // (kN-m, N-m or N-mm). A load is MAGNITUDE@X or MAGNITUDE@X@ANGLE, the angle
 // in degrees counter-clockwise from +x (−90, the default, points down).
+// Distributed loads: --udl W@FROM:TO, --uvl W1:W2@FROM:TO (downward);
+// couples: --couple M@X (counter-clockwise positive).
 // ignore_for_file: avoid_print
 
 import 'dart:convert';
@@ -54,6 +56,29 @@ void main(List<String> args) {
           magnitude: force(parts[0]),
           x: len(parts[1]),
           angleDeg: parts.length > 2 ? _number(parts[2]) : -90,
+        ));
+      case '--udl' || '--uvl':
+        // --udl W@FROM:TO  or  --uvl W1:W2@FROM:TO   (kN/m, downward)
+        final parts = next().split('@');
+        final w = parts[0].split(':');
+        final span = parts[1].split(':');
+        final unit = units.force.toSi / units.length.toSi;
+        problem = problem.withLoad(DistributedLoad(
+          id: problem.nextId('w'),
+          x: len(span[0]),
+          x2: len(span[1]),
+          w1: _number(w[0]) * unit,
+          w2: _number(w.length > 1 ? w[1] : w[0]) * unit,
+        ));
+      case '--couple':
+        // --couple M@X   (positive counter-clockwise)
+        final parts = next().split('@');
+        final value = units.fromDisplay(_number(parts[0]), Dimension.moment);
+        problem = problem.withLoad(PointMoment(
+          id: problem.nextId('c'),
+          x: len(parts[1]),
+          magnitude: value.abs(),
+          counterClockwise: value >= 0,
         ));
       case '--json':
         final json = jsonDecode(File(next()).readAsStringSync());

@@ -8,7 +8,7 @@ library;
 
 /// The physical dimension a unit measures. Two units convert into each other
 /// only when they share a dimension.
-enum Dimension { force, length, moment, stress, area }
+enum Dimension { force, length, moment, stress, area, intensity }
 
 class Unit {
   const Unit(this.symbol, this.dimension, this.toSi);
@@ -117,7 +117,12 @@ class UnitSystem {
         Dimension.moment => moment,
         Dimension.stress => stress,
         Dimension.area => Units.squareMillimetre,
+        Dimension.intensity => intensity,
       };
+
+  /// The unit of a distributed load: force per length, such as kN/m.
+  Unit get intensity => Unit('${force.symbol}/${length.symbol}',
+      Dimension.intensity, force.toSi / length.toSi);
 
   double toDisplay(double si, Dimension dimension) =>
       unitFor(dimension).fromSiValue(si);

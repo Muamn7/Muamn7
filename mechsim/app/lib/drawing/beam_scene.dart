@@ -74,6 +74,7 @@ class BeamScene {
     this.showDimensions = false,
     this.pulse = 0,
     this.ghostLength,
+    this.ghostRange,
   }) : labels = ProblemLabels.of(problem);
 
   final BeamProblem problem;
@@ -98,6 +99,9 @@ class BeamScene {
 
   /// A beam being drawn but not committed yet.
   final double? ghostLength;
+
+  /// A distributed load being dragged out along the beam.
+  final (double, double)? ghostRange;
   final ProblemLabels labels;
 
   double get y0 => viewport.origin.dy;
@@ -126,8 +130,19 @@ class BeamScene {
     for (final h in highlights.whereType<SectionHighlight>()) {
       _paintSection(canvas, size, h.x);
     }
+    for (final d in problem.distributedLoads) {
+      _paintDistributed(canvas, d);
+    }
+    if (ghostRange != null) _paintGhostRange(canvas, ghostRange!);
     for (final l in problem.pointLoads) {
       _paintLoad(canvas, l);
+    }
+    for (final c in problem.moments) {
+      _paintCouple(canvas, c);
+    }
+    for (final h in highlights.whereType<ResultantHighlight>()) {
+      final d = problem.loadById(h.loadId);
+      if (d is DistributedLoad) _paintResultant(canvas, d);
     }
     if (mode == SceneMode.freeBody && statics != null) {
       for (final r in statics!.reactions) {
@@ -343,6 +358,178 @@ class BeamScene {
     );
   }
 
+  // ---- distributed loads and couples -------------------------------------
+
+  double get _wMax => problem.distributedLoads.fold(
+    0.0,
+    (m, d) => math.max(m, math.max(d.w1, d.w2)),
+  );
+
+  /// Arrow height for an intensity, scaled to the largest on the beam.
+  double _h(double w) {
+    final max = _wMax;
+    return max == 0 ? 0 : metrics.loadLength * 0.75 * w / max;
+  }
+
+  double get _loadBase => y0 - metrics.beamHalf - 1;
+
+  Rect distributedBounds(DistributedLoad d) => Rect.fromLTRB(
+    viewport.sx(d.x),
+    _loadBase - metrics.loadLength * 0.75 - 4,
+    viewport.sx(d.x2),
+    _loadBase,
+  );
+
+  String _intensity(double si) =>
+      Num.compact(units.toDisplay(si, Dimension.intensity));
+
+  void _paintDistributed(Canvas canvas, DistributedLoad d) {
+    final highlighted = _hl<LoadHighlight>((h) => h.loadId == d.id);
+    final c = highlighted ? colors.highlight : colors.load;
+    final a = viewport.sx(d.x), b = viewport.sx(d.x2);
+    final base = _loadBase;
+    final topA = Offset(a, base - _h(d.w1));
+    final topB = Offset(b, base - _h(d.w2));
+    final shape =
+        Path()
+          ..moveTo(a, base)
+          ..lineTo(topA.dx, topA.dy)
+          ..lineTo(topB.dx, topB.dy)
+          ..lineTo(b, base)
+          ..close();
+    if (highlighted) canvas.drawPath(shape, Symbols.fill(_glow));
+    canvas.drawPath(shape, Symbols.fill(c.withValues(alpha: 0.10)));
+    canvas.drawLine(topA, topB, Symbols.stroke(c, 1.8));
+    final count = ((b - a) / 20).clamp(1, 40).round();
+    final scale = math.max(0.7, metrics.symbolScale).toDouble();
+    for (var i = 0; i <= count; i++) {
+      final x = a + (b - a) * i / count;
+      final h = _h(d.w1 + (d.w2 - d.w1) * i / count);
+      if (h < 7) continue;
+      final top = Offset(x, base - h), bottom = Offset(x, base);
+      if (d.upward) {
+        Symbols.arrow(
+          canvas,
+          bottom,
+          top,
+          c,
+          width: 1.4 * scale,
+          headSize: 7 * scale,
+        );
+      } else {
+        Symbols.arrow(
+          canvas,
+          top,
+          bottom,
+          c,
+          width: 1.4 * scale,
+          headSize: 7 * scale,
+        );
+      }
+    }
+    if (selectedId == d.id) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          distributedBounds(d).inflate(6),
+          const Radius.circular(6),
+        ),
+        Symbols.stroke(colors.selection, 1.5),
+      );
+    }
+    if (metrics.labelSize <= 0) return;
+    final unit = units.intensity.symbol;
+    final text =
+        d.isUniform
+            ? '${labels.loadName(d.id)}: ${_intensity(d.w1)} $unit'
+            : '${labels.loadName(d.id)}: ${_intensity(d.w1)} → ${_intensity(d.w2)} $unit';
+    final topY = math.min(topA.dy, topB.dy);
+    Symbols.label(
+      canvas,
+      text,
+      Offset((a + b) / 2, topY - 4),
+      c,
+      fontSize: metrics.labelSize,
+      weight: FontWeight.w700,
+      anchor: Alignment.bottomCenter,
+      background: colors.paper.withValues(alpha: 0.8),
+    );
+  }
+
+  void _paintGhostRange(Canvas canvas, (double, double) range) {
+    final a = viewport.sx(math.min(range.$1, range.$2));
+    final b = viewport.sx(math.max(range.$1, range.$2));
+    final rect = Rect.fromLTRB(
+      a,
+      _loadBase - metrics.loadLength * 0.75,
+      b,
+      _loadBase,
+    );
+    canvas.drawRect(rect, Symbols.fill(colors.load.withValues(alpha: 0.18)));
+    canvas.drawRect(
+      rect,
+      Symbols.stroke(colors.load.withValues(alpha: 0.7), 1.2),
+    );
+    Symbols.label(
+      canvas,
+      lu((range.$2 - range.$1).abs()),
+      Offset((a + b) / 2, rect.top - 4),
+      colors.ink,
+      fontSize: 13,
+      weight: FontWeight.w700,
+      anchor: Alignment.bottomCenter,
+      background: colors.paper.withValues(alpha: 0.9),
+    );
+  }
+
+  /// The single force equivalent to a distributed load, at its centroid.
+  void _paintResultant(Canvas canvas, DistributedLoad d) {
+    final x = viewport.sx(d.centroid);
+    final base = _loadBase;
+    final top = base - metrics.loadLength * 0.75 - 22;
+    final (tail, head) =
+        d.upward
+            ? (Offset(x, base), Offset(x, top))
+            : (Offset(x, top), Offset(x, base));
+    canvas.drawLine(tail, head, Symbols.stroke(_glow, 10));
+    Symbols.arrow(canvas, tail, head, colors.highlight, width: 3, headSize: 12);
+    if (metrics.labelSize > 0) {
+      Symbols.label(
+        canvas,
+        '${labels.loadName(d.id)} = ${fu(d.resultant)}',
+        Offset(x + 6, top),
+        colors.highlight,
+        fontSize: metrics.labelSize + 1,
+        weight: FontWeight.w800,
+        anchor: Alignment.centerLeft,
+        background: colors.paper.withValues(alpha: 0.9),
+      );
+    }
+  }
+
+  void _paintCouple(Canvas canvas, PointMoment c) {
+    final highlighted = _hl<LoadHighlight>((h) => h.loadId == c.id);
+    final color = highlighted ? colors.highlight : colors.load;
+    final centre = viewport.toScreen(c.x);
+    final r = 20.0 * math.max(0.6, metrics.symbolScale);
+    if (highlighted) canvas.drawCircle(centre, r + 4, Symbols.stroke(_glow, 8));
+    Symbols.momentArc(canvas, centre, r, c.counterClockwise, color, width: 2.4);
+    canvas.drawCircle(centre, 3, Symbols.fill(color));
+    if (selectedId == c.id) {
+      canvas.drawCircle(centre, r + 8, Symbols.stroke(colors.selection, 1.5));
+    }
+    if (metrics.labelSize <= 0) return;
+    Symbols.label(
+      canvas,
+      '${labels.loadName(c.id)} = ${mu(c.magnitude)}',
+      centre + Offset(r + 4, -r - 2),
+      color,
+      fontSize: metrics.labelSize,
+      weight: FontWeight.w700,
+      anchor: Alignment.bottomLeft,
+      background: colors.paper.withValues(alpha: 0.8),
+    );
+  }
+
   Rect loadBounds(PointLoad l) {
     final (tail, head) = loadArrow(l);
     return Rect.fromPoints(tail, head).inflate(14);
@@ -467,7 +654,7 @@ class BeamScene {
             0,
             problem.length,
             for (final s in problem.supports) s.x,
-            for (final l in problem.loads) l.x,
+            for (final l in problem.loads) ...l.positions,
           }.toList()
           ..sort();
     final unique = <double>[];
@@ -559,9 +746,15 @@ class BeamScene {
 
   /// The element under a touch at [p]: a load, a support, or "beam".
   String? hitTest(Offset p) {
+    for (final c in problem.moments.reversed) {
+      if ((p - viewport.toScreen(c.x)).distance < 28) return c.id;
+    }
     for (final l in problem.pointLoads.reversed) {
       final (tail, head) = loadArrow(l);
       if (_distanceToSegment(p, tail, head) < 20) return l.id;
+    }
+    for (final d in problem.distributedLoads.reversed) {
+      if (distributedBounds(d).inflate(8).contains(p)) return d.id;
     }
     for (final s in problem.supports.reversed) {
       if (supportBounds(s).inflate(10).contains(p)) return s.id;

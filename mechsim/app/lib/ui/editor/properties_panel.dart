@@ -229,6 +229,188 @@ class PropertiesPanel extends StatelessWidget {
           ),
         ],
       );
+    } else if (p.loadById(id) case final DistributedLoad load) {
+      double toW(double si) => u.toDisplay(si, Dimension.intensity);
+      double fromW(double v) => u.fromDisplay(v, Dimension.intensity);
+      final wUnit = u.intensity.symbol;
+      String? nonNegative(double v) => v >= 0 ? null : s.mustBePositive;
+      void update(DistributedLoad next) => controller.updateAnyLoad(next);
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header(
+            '${load.isUniform ? s.udlProps : s.uvlProps}  ${labels.loadName(id)}',
+            onDelete: () => controller.delete(id),
+          ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              NumberField(
+                key: ValueKey('from-$id'),
+                label: s.startX,
+                value: toL(load.x),
+                unit: u.length.symbol,
+                validator:
+                    (v) =>
+                        onBeam(v) ??
+                        (fromL(v) < load.x2 - 1e-9
+                            ? null
+                            : '< ${Num.compact(toL(load.x2))}'),
+                onChanged: (v) => update(load.copyWith(x: fromL(v))),
+              ),
+              NumberField(
+                key: ValueKey('to-$id'),
+                label: s.endX,
+                value: toL(load.x2),
+                unit: u.length.symbol,
+                validator:
+                    (v) =>
+                        onBeam(v) ??
+                        (fromL(v) > load.x + 1e-9
+                            ? null
+                            : '> ${Num.compact(toL(load.x))}'),
+                onChanged: (v) => update(load.copyWith(x2: fromL(v))),
+              ),
+              if (load.isUniform)
+                NumberField(
+                  key: ValueKey('w-$id'),
+                  label: s.intensity,
+                  value: toW(load.w1),
+                  unit: wUnit,
+                  validator: positive,
+                  onChanged:
+                      (v) => update(load.copyWith(w1: fromW(v), w2: fromW(v))),
+                ),
+            ],
+          ),
+          if (!load.isUniform) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                NumberField(
+                  key: ValueKey('w1-$id'),
+                  label: s.intensityStart,
+                  value: toW(load.w1),
+                  unit: wUnit,
+                  validator:
+                      (v) =>
+                          nonNegative(v) ??
+                          (v > 0 || load.w2 > 0 ? null : s.mustBePositive),
+                  onChanged: (v) => update(load.copyWith(w1: fromW(v))),
+                ),
+                NumberField(
+                  key: ValueKey('w2-$id'),
+                  label: s.intensityEnd,
+                  value: toW(load.w2),
+                  unit: wUnit,
+                  validator:
+                      (v) =>
+                          nonNegative(v) ??
+                          (v > 0 || load.w1 > 0 ? null : s.mustBePositive),
+                  onChanged: (v) => update(load.copyWith(w2: fromW(v))),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilterChip(
+                key: ValueKey('uniform-$id'),
+                label: Text(s.uniformToggle),
+                selected: load.isUniform,
+                onSelected: (on) {
+                  final w = load.w1 > load.w2 ? load.w1 : load.w2;
+                  update(load.copyWith(w1: on ? w : 0, w2: w));
+                },
+              ),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: false, label: Text(s.loadDown)),
+                  ButtonSegment(value: true, label: Text(s.loadUp)),
+                ],
+                selected: {load.upward},
+                onSelectionChanged:
+                    (v) => update(load.copyWith(upward: v.single)),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                // The single force it is equivalent to, and where it acts.
+                '${labels.loadName(id)} = ${Num.compact(u.toDisplay(load.resultant, Dimension.force))} ${u.force.symbol}'
+                '   @  x̄ = ${Num.compact(toL(load.centroid))} ${u.length.symbol}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else if (p.loadById(id) case final PointMoment load) {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header(
+            '${s.momentProps}  ${labels.loadName(id)}',
+            onDelete: () => controller.delete(id),
+          ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              NumberField(
+                key: ValueKey('mag-$id'),
+                label: s.magnitude,
+                value: u.toDisplay(load.magnitude, Dimension.moment),
+                unit: u.moment.symbol,
+                validator: positive,
+                onChanged:
+                    (v) => controller.updateAnyLoad(
+                      load.copyWith(
+                        magnitude: u.fromDisplay(v, Dimension.moment),
+                      ),
+                    ),
+              ),
+              NumberField(
+                key: ValueKey('pos-$id'),
+                label: '${s.position} x',
+                value: toL(load.x),
+                unit: u.length.symbol,
+                validator: onBeam,
+                onChanged:
+                    (v) => controller.updateAnyLoad(load.copyWith(x: fromL(v))),
+              ),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: true, label: Text(s.ccw)),
+                  ButtonSegment(value: false, label: Text(s.cw)),
+                ],
+                selected: {load.counterClockwise},
+                onSelectionChanged:
+                    (v) => controller.updateAnyLoad(
+                      load.copyWith(counterClockwise: v.single),
+                    ),
+              ),
+            ],
+          ),
+        ],
+      );
     } else {
       return const SizedBox.shrink();
     }

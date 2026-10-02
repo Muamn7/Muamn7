@@ -32,6 +32,19 @@ final class LoadHighlight extends Highlight {
   int get hashCode => loadId.hashCode;
 }
 
+/// The resultant of a distributed load, drawn as one equivalent arrow at
+/// the load's centroid.
+final class ResultantHighlight extends Highlight {
+  const ResultantHighlight(this.loadId);
+  final String loadId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResultantHighlight && other.loadId == loadId;
+  @override
+  int get hashCode => Object.hash('resultant', loadId);
+}
+
 final class SupportHighlight extends Highlight {
   const SupportHighlight(this.supportId);
   final String supportId;

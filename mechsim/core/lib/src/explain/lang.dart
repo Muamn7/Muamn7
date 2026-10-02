@@ -190,6 +190,65 @@ abstract class Texts {
   String get tensionNote;
   String get compressionNote;
 
+  // distributed loads and couples
+  String shapeName(bool uniform, bool triangle);
+  String distributedDescription({
+    required String name,
+    required String shape,
+    required String intensity,
+    required String from,
+    required String to,
+    required String direction,
+  });
+  String coupleDescription({
+    required String name,
+    required String value,
+    required String point,
+    required String x,
+    required bool counterClockwise,
+  });
+  String get resultantsTitle;
+  String get resultantsGoal;
+  String get resultantsExplanation;
+  String get resultantsDetail;
+  String resultantMeaning(String name, String formula);
+  String centroidMeaning(String name, String rule);
+  String get centroidUniform;
+  String get centroidTriangle;
+  String get centroidTrapezoid;
+  String termDistributedMoment({
+    required String name,
+    required String value,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  });
+  String termDistributedForce({
+    required String name,
+    required String value,
+    required String direction,
+    required bool positive,
+  });
+  String termAppliedCouple({
+    required String name,
+    required String value,
+    required bool counterClockwise,
+    required bool positive,
+  });
+  String noForceFromCouple(String name);
+  String shearTermDistributedFull(String name, String value, bool down);
+  String shearTermDistributedPart(String name, String start);
+  String get shearVariesNote;
+  String distributedOn(String intensity);
+  String sfdUnderDistributed(bool uniform);
+  String momentTermDistributedFull(String name, String value, String arm, bool sagging);
+  String momentTermDistributedPart(String name, String start);
+  String momentTermAppliedCouple(String name, String value, bool counterClockwise);
+  String get bmdParabolaNote;
+  String get bmdCubicNote;
+  String coupleJumpMeaning(String name, bool counterClockwise);
+
   // validation
   String checkName(CheckKind kind);
 }
@@ -242,9 +301,9 @@ class ArabicTexts extends Texts {
     final s = supports.map((e) => '${e.$1} عند ${m(e.$2)}').join(' و');
     final loads = switch (loadCount) {
       0 => 'لا توجد عليها أحمال',
-      1 => 'وعليها حمل مركّز واحد',
-      2 => 'وعليها حملان مركّزان',
-      _ => 'وعليها ${m('$loadCount')} أحمال مركّزة',
+      1 => 'وعليها حمل واحد',
+      2 => 'وعليها حملان',
+      _ => 'وعليها ${m('$loadCount')} أحمال',
     };
     return 'كمرة طولها ${m(length)}، مرتكزة على $s، $loads. '
         'المطلوب: ردود الأفعال، ثم مخطط قوة القص (SFD) ومخطط عزم الانحناء (BMD).';
@@ -648,6 +707,122 @@ class ArabicTexts extends Texts {
   String get compressionNote => 'N سالبة ⇐ ضغط (Compression)';
 
   @override
+  String shapeName(bool uniform, bool triangle) => uniform
+      ? 'منتظم (UDL)'
+      : triangle
+          ? 'مثلثي (UVL)'
+          : 'شبه منحرف (UVL)';
+  @override
+  String distributedDescription({
+    required String name,
+    required String shape,
+    required String intensity,
+    required String from,
+    required String to,
+    required String direction,
+  }) =>
+      'الحمل ${m(name)} حمل موزّع $shape شدته ${m(intensity)}، يؤثر $direction من ${m(from)} إلى ${m(to)}.';
+  @override
+  String coupleDescription({
+    required String name,
+    required String value,
+    required String point,
+    required String x,
+    required bool counterClockwise,
+  }) =>
+      '${m(name)} عزم مركّز (Couple) قيمته ${m(value)} ${counterClockwise ? 'عكس عقارب الساعة ↺' : 'مع عقارب الساعة ↻'} عند النقطة ${m(point)} (${m(x)}). '
+      'العزم المركّز لا يدفع الكمرة للأعلى أو للأسفل، بل يديرها فقط.';
+  @override
+  String get resultantsTitle => 'محصّلة الأحمال الموزّعة';
+  @override
+  String get resultantsGoal => 'نستبدل كل حمل موزّع بقوة واحدة';
+  @override
+  String get resultantsExplanation =>
+      'لإيجاد ردود الأفعال نستبدل كل حمل موزّع بقوة واحدة تكافئه: قيمتها = مساحة مخطط الحمل، وتؤثر في مركز هذه المساحة. '
+      'هذا يصلح لمعادلات الاتزان فقط؛ أما قوة القص والعزم فنحسبها من الحمل الموزّع نفسه.';
+  @override
+  String get resultantsDetail =>
+      'لماذا المساحة؟ كل جزء صغير من الكمرة طوله dx يحمل قوة w·dx، ومجموع هذه القوى هو مساحة مخطط الحمل. '
+      'ولماذا المركز؟ لأن عزم القوة الواحدة يجب أن يساوي مجموع عزوم الأجزاء الصغيرة، وهذا يحدث فقط عند المركز.';
+  @override
+  String resultantMeaning(String name, String formula) =>
+      'محصّلة ${m(name)} = مساحة مخطط الحمل: ${m(formula)}.';
+  @override
+  String centroidMeaning(String name, String rule) =>
+      'تؤثر محصّلة ${m(name)} في مركز مساحة الحمل: $rule.';
+  @override
+  String get centroidUniform => 'في منتصف الحمل';
+  @override
+  String get centroidTriangle => 'على بعد ثلث طوله من الطرف الأكبر';
+  @override
+  String get centroidTrapezoid => '${m('x̄ = L(w1 + 2w2) / 3(w1 + w2)')} من بدايته';
+  @override
+  String termDistributedMoment({
+    required String name,
+    required String value,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '${m(value)} هي محصّلة الحمل الموزّع ${m(name)}، و${m(arm)} هي المسافة من ${m(about)} إلى مركز الحمل حيث تؤثر المحصّلة. '
+      'تدير الكمرة حول ${m(about)} ${counterClockwise ? 'عكس عقارب الساعة ↺' : 'مع عقارب الساعة ↻'}، لذلك إشارتها ${positive ? 'موجبة' : 'سالبة'}.';
+  @override
+  String termDistributedForce({
+    required String name,
+    required String value,
+    required String direction,
+    required bool positive,
+  }) =>
+      '${m(value)} هي محصّلة الحمل الموزّع ${m(name)} (مساحة مخطط الحمل)، اتجاهها $direction، لذلك إشارتها ${positive ? 'موجبة' : 'سالبة'}.';
+  @override
+  String termAppliedCouple({
+    required String name,
+    required String value,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '${m(name)} = ${m(value)} عزم مركّز على الكمرة. العزم المزدوج ليس له ذراع: قيمته واحدة حول أي نقطة، فيُكتب كما هو. '
+      'اتجاهه ${counterClockwise ? '↺' : '↻'} لذلك إشارته ${positive ? 'موجبة' : 'سالبة'}.';
+  @override
+  String noForceFromCouple(String name) =>
+      '${m(name)} عزم مركّز وليس قوة، فلا يظهر في معادلات القوى.';
+  @override
+  String shearTermDistributedFull(String name, String value, bool down) =>
+      'كل الحمل الموزّع ${m(name)} يقع على يسار المقطع، فنأخذ محصّلته ${m(value)} ${down ? 'للأسفل فتُطرح' : 'للأعلى فتُضاف'}.';
+  @override
+  String shearTermDistributedPart(String name, String start) =>
+      'المقطع داخل الحمل ${m(name)}، فنأخذ فقط الجزء الواقع بين بدايته (${m('x = $start')}) والمقطع: قوته = مساحة هذا الجزء من مخطط الحمل.';
+  @override
+  String get shearVariesNote =>
+      'داخل الحمل الموزّع تتغير V على طول الجزء: خطيًا تحت حمل منتظم، وعلى شكل منحنى تحت حمل متغير.';
+  @override
+  String distributedOn(String intensity) => 'حمل موزّع ${m(intensity)}';
+  @override
+  String sfdUnderDistributed(bool uniform) => uniform
+      ? 'تحت حمل موزّع منتظم ينحدر SFD في خط مستقيم ميله يساوي شدة الحمل: ${m('dV/dx = −w')}.'
+      : 'تحت حمل متغير الشدة يكون ميل SFD متغيرًا أيضًا (${m('dV/dx = −w(x)')})، فيصبح المخطط منحنى.';
+  @override
+  String momentTermDistributedFull(String name, String value, String arm, bool sagging) =>
+      'كل الحمل ${m(name)} على يسار المقطع: عزمه = محصّلته (${m(value)}) × بعد مركزه عن المقطع (${m(arm)}). '
+      '${sagging ? 'للأعلى ⇐ موجب (Sagging).' : 'للأسفل ⇐ سالب (Hogging).'}';
+  @override
+  String momentTermDistributedPart(String name, String start) =>
+      'جزء الحمل ${m(name)} بين بدايته (${m('x = $start')}) والمقطع: قوته × بعد مركزه عن المقطع. '
+      'للحمل المنتظم هذا يساوي ${m('w(x − a)²/2')}.';
+  @override
+  String momentTermAppliedCouple(String name, String value, bool counterClockwise) =>
+      '${m(name)} عزم مركّز ${m(value)} ${counterClockwise ? '↺' : '↻'} على يسار المقطع. '
+      '${counterClockwise ? 'العزم ↺ على الجزء الأيسر يعاكس الانحناء الموجب فيُطرح.' : 'العزم ↻ على الجزء الأيسر يوافق الانحناء الموجب فيُضاف.'}';
+  @override
+  String get bmdParabolaNote => 'V خطية ⇐ BMD قطع مكافئ (منحنى من الدرجة الثانية)';
+  @override
+  String get bmdCubicNote => 'V منحنى ⇐ BMD منحنى من الدرجة الثالثة';
+  @override
+  String coupleJumpMeaning(String name, bool counterClockwise) =>
+      'عند عزم مركّز يقفز BMD بمقدار العزم نفسه: ${m(name)} ${counterClockwise ? '↺ ⇐ يقفز المخطط للأسفل' : '↻ ⇐ يقفز المخطط للأعلى'}. أما SFD فلا يتأثر.';
+
+  @override
   String checkName(CheckKind kind) => switch (kind) {
         CheckKind.sumFx => 'ΣFx = 0',
         CheckKind.sumFy => 'ΣFy = 0',
@@ -658,6 +833,7 @@ class ArabicTexts extends Texts {
         CheckKind.axialClosesAtEnd => 'N تعود إلى الصفر عند النهاية',
         CheckKind.shearJumpsMatchLoads => 'قفزات SFD = الأحمال المركّزة',
         CheckKind.momentJumpsMatchCouples => 'قفزات BMD = العزوم المركّزة',
+        CheckKind.shearSlopeEqualsLoad => 'ميل SFD = شدة الحمل  (dV/dx = q)',
         CheckKind.slopeEqualsShear => 'ميل BMD = V  (dM/dx = V)',
         CheckKind.areaRule => 'تغيّر M = مساحة SFD',
       };
@@ -707,8 +883,8 @@ class EnglishTexts extends Texts {
     final s = _list([for (final e in supports) 'a ${e.$1} at ${e.$2}']);
     final loads = switch (loadCount) {
       0 => 'no loads',
-      1 => 'one point load',
-      _ => '$loadCount point loads',
+      1 => 'one load',
+      _ => '$loadCount loads',
     };
     return 'A $length beam on $s, carrying $loads. '
         'Find the reactions, then draw the shear force diagram (SFD) and the bending moment diagram (BMD).';
@@ -1111,6 +1287,122 @@ class EnglishTexts extends Texts {
   String get compressionNote => 'N negative ⇒ compression';
 
   @override
+  String shapeName(bool uniform, bool triangle) => uniform
+      ? 'uniform (UDL)'
+      : triangle
+          ? 'triangular (UVL)'
+          : 'trapezoidal (UVL)';
+  @override
+  String distributedDescription({
+    required String name,
+    required String shape,
+    required String intensity,
+    required String from,
+    required String to,
+    required String direction,
+  }) =>
+      'Load $name is a $shape distributed load of $intensity acting $direction from $from to $to.';
+  @override
+  String coupleDescription({
+    required String name,
+    required String value,
+    required String point,
+    required String x,
+    required bool counterClockwise,
+  }) =>
+      '$name is a concentrated couple of $value ${counterClockwise ? 'counter-clockwise ↺' : 'clockwise ↻'} at point $point ($x). '
+      'A couple does not push the beam up or down; it only turns it.';
+  @override
+  String get resultantsTitle => 'Resultants of the distributed loads';
+  @override
+  String get resultantsGoal => 'Replace each distributed load by one force';
+  @override
+  String get resultantsExplanation =>
+      'To find the reactions, each distributed load is replaced by one equivalent force: its size is the area of the load diagram and it acts at the centroid of that area. '
+      'This is only for the equilibrium equations; shear and moment are worked out from the distributed load itself.';
+  @override
+  String get resultantsDetail =>
+      'Why the area? Each small length dx of the beam carries a force w·dx, and these add up to the area of the load diagram. '
+      'Why the centroid? The single force must have the same moment as all the small ones together, which only happens at the centroid.';
+  @override
+  String resultantMeaning(String name, String formula) =>
+      'The resultant of $name is the area of the load diagram: $formula.';
+  @override
+  String centroidMeaning(String name, String rule) =>
+      'The resultant of $name acts at the centroid of the load: $rule.';
+  @override
+  String get centroidUniform => 'at the middle of the load';
+  @override
+  String get centroidTriangle => 'one third of its length from the larger end';
+  @override
+  String get centroidTrapezoid => 'x̄ = L(w1 + 2w2) / 3(w1 + w2) from its start';
+  @override
+  String termDistributedMoment({
+    required String name,
+    required String value,
+    required String about,
+    required String arm,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '$value is the resultant of distributed load $name, and $arm is the distance from $about to the load\'s centroid, where the resultant acts. '
+      'It turns the beam ${counterClockwise ? 'counter-clockwise ↺' : 'clockwise ↻'} about $about, so it is ${positive ? 'positive' : 'negative'}.';
+  @override
+  String termDistributedForce({
+    required String name,
+    required String value,
+    required String direction,
+    required bool positive,
+  }) =>
+      '$value is the resultant of distributed load $name (the area of its diagram), acting $direction, so it is ${positive ? 'positive' : 'negative'}.';
+  @override
+  String termAppliedCouple({
+    required String name,
+    required String value,
+    required bool counterClockwise,
+    required bool positive,
+  }) =>
+      '$name = $value is a couple applied to the beam. A couple has no arm: its moment is the same about every point, so it is written as it is. '
+      'It turns ${counterClockwise ? '↺' : '↻'}, so it is ${positive ? 'positive' : 'negative'}.';
+  @override
+  String noForceFromCouple(String name) =>
+      '$name is a couple, not a force, so it does not appear in the force equations.';
+  @override
+  String shearTermDistributedFull(String name, String value, bool down) =>
+      'All of distributed load $name lies left of the cut, so its resultant $value counts, ${down ? 'downward: subtracted' : 'upward: added'}.';
+  @override
+  String shearTermDistributedPart(String name, String start) =>
+      'The cut is inside load $name, so only the part between its start (x = $start) and the cut counts: its force is the area of that part of the load diagram.';
+  @override
+  String get shearVariesNote =>
+      'Inside a distributed load V changes along the segment: linearly under a uniform load, along a curve under a varying one.';
+  @override
+  String distributedOn(String intensity) => 'distributed load $intensity';
+  @override
+  String sfdUnderDistributed(bool uniform) => uniform
+      ? 'Under a uniform load the SFD slopes in a straight line whose slope is the intensity: dV/dx = −w.'
+      : 'Under a varying load the slope of the SFD varies too (dV/dx = −w(x)), so the diagram is a curve.';
+  @override
+  String momentTermDistributedFull(String name, String value, String arm, bool sagging) =>
+      'All of load $name is left of the cut: its moment = its resultant ($value) × the distance from its centroid to the cut ($arm). '
+      '${sagging ? 'Upward ⇒ positive (sagging).' : 'Downward ⇒ negative (hogging).'}';
+  @override
+  String momentTermDistributedPart(String name, String start) =>
+      'The part of load $name between its start (x = $start) and the cut: its force × the distance from its centroid to the cut. '
+      'For a uniform load that is w(x − a)²/2.';
+  @override
+  String momentTermAppliedCouple(String name, String value, bool counterClockwise) =>
+      '$name is a couple of $value ${counterClockwise ? '↺' : '↻'} left of the cut. '
+      '${counterClockwise ? 'A ↺ couple on the left part opposes sagging, so it is subtracted.' : 'A ↻ couple on the left part adds to sagging, so it is added.'}';
+  @override
+  String get bmdParabolaNote => 'V linear ⇒ the BMD is a parabola';
+  @override
+  String get bmdCubicNote => 'V curved ⇒ the BMD is a cubic curve';
+  @override
+  String coupleJumpMeaning(String name, bool counterClockwise) =>
+      'At a concentrated couple the BMD jumps by the couple itself: $name ${counterClockwise ? '↺ ⇒ the diagram jumps down' : '↻ ⇒ the diagram jumps up'}. The SFD is not affected.';
+
+  @override
   String checkName(CheckKind kind) => switch (kind) {
         CheckKind.sumFx => 'ΣFx = 0',
         CheckKind.sumFy => 'ΣFy = 0',
@@ -1121,6 +1413,7 @@ class EnglishTexts extends Texts {
         CheckKind.axialClosesAtEnd => 'N closes to zero at the end',
         CheckKind.shearJumpsMatchLoads => 'SFD jumps = point loads',
         CheckKind.momentJumpsMatchCouples => 'BMD jumps = point couples',
+        CheckKind.shearSlopeEqualsLoad => 'SFD slope = load intensity  (dV/dx = q)',
         CheckKind.slopeEqualsShear => 'BMD slope = V  (dM/dx = V)',
         CheckKind.areaRule => 'Change in M = area of SFD',
       };

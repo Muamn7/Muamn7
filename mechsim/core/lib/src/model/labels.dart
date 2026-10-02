@@ -35,17 +35,29 @@ class ProblemLabels {
     }
 
     final loads = [...problem.loads]..sort((a, b) => a.x.compareTo(b.x));
-    for (final l in loads) {
-      final letter = existing(l.x) ?? take();
-      letters[l.id] = letter;
-      letterAtX[l.x] = letter;
+    final positions = <(double, String)>[
+      for (final l in loads)
+        for (final x in l.positions) (x, l.id),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    for (final (x, id) in positions) {
+      final letter = existing(x) ?? take();
+      letters.putIfAbsent(id, () => letter);
+      letterAtX[x] = letter;
     }
 
+    // P1, P2… for forces, W1, W2… for distributed loads, C1, C2… for
+    // couples, each numbered left to right.
     final names = <String, String>{};
-    final points = loads.whereType<PointLoad>().toList();
-    for (var i = 0; i < points.length; i++) {
-      names[points[i].id] = 'P${i + 1}';
+    void number<T extends Load>(String prefix) {
+      final list = loads.whereType<T>().toList();
+      for (var i = 0; i < list.length; i++) {
+        names[list[i].id] = '$prefix${i + 1}';
+      }
     }
+
+    number<PointLoad>('P');
+    number<DistributedLoad>('W');
+    number<PointMoment>('C');
     return ProblemLabels._(letters, names, letterAtX);
   }
 
@@ -64,7 +76,7 @@ class ProblemLabels {
     return null;
   }
 
-  /// The name of a load: P1, P2, …
+  /// The name of a load: P1, W1, C1, …
   String loadName(String loadId) => _loadNames[loadId] ?? loadId;
 
   /// All labelled points, left to right.

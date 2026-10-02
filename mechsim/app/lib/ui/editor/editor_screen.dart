@@ -182,11 +182,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _Toolbar(
-                          controller: controller,
-                          onMessage: _snack,
-                          vertical: true,
-                        ),
+                        _Toolbar(controller: controller, vertical: true),
                         Expanded(child: sheet),
                         if (controller.selected != null)
                           SizedBox(
@@ -215,7 +211,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             controller: controller,
                             onMessage: _snack,
                           ),
-                        _Toolbar(controller: controller, onMessage: _snack),
+                        _Toolbar(controller: controller),
                       ],
                     ),
                   ),
@@ -249,92 +245,78 @@ class _HintBar extends StatelessWidget {
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar({
-    required this.controller,
-    required this.onMessage,
-    this.vertical = false,
-  });
+  const _Toolbar({required this.controller, this.vertical = false});
 
   final EditorController controller;
-  final ValueChanged<String> onMessage;
 
-  /// A column down the side of the sheet, for landscape.
+  /// Two columns down the side of the sheet, for landscape.
   final bool vertical;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).s;
     final scheme = Theme.of(context).colorScheme;
-    final tools = <(Tool, String)>[
-      (Tool.select, s.toolSelect),
-      (Tool.beam, s.toolBeam),
-      (Tool.pin, s.toolPin),
-      (Tool.roller, s.toolRoller),
-      (Tool.fixed, s.toolFixed),
-      (Tool.pointLoad, s.toolPointLoad),
-      (Tool.udl, s.toolUdl),
-      (Tool.uvl, s.toolUvl),
-      (Tool.moment, s.toolMoment),
-      (Tool.dimension, s.toolDimension),
-      (Tool.delete, s.toolDelete),
+    // Every tool in view at once, nothing to scroll: the beam and its
+    // supports in one row (or column), the loads in the other.
+    final groups = <List<(Tool, String)>>[
+      [
+        (Tool.select, s.toolSelect),
+        (Tool.beam, s.toolBeam),
+        (Tool.pin, s.toolPin),
+        (Tool.roller, s.toolRoller),
+        (Tool.fixed, s.toolFixed),
+        (Tool.delete, s.toolDelete),
+      ],
+      [
+        (Tool.pointLoad, s.toolPointLoad),
+        (Tool.udl, s.toolUdl),
+        (Tool.uvl, s.toolUvl),
+        (Tool.moment, s.toolMoment),
+        (Tool.dimension, s.toolDimension),
+      ],
     ];
-    Widget button(
-      Widget icon,
-      String label,
-      bool active,
-      bool enabled,
-      VoidCallback onTap, {
-      bool soon = false,
-    }) {
+
+    Widget button(Tool tool, String label) {
+      final active =
+          tool == Tool.dimension
+              ? controller.showDimensions
+              : controller.tool == tool;
       final color =
-          !enabled
-              ? scheme.onSurface.withValues(alpha: 0.35)
-              : active
-              ? scheme.onPrimaryContainer
-              : scheme.onSurfaceVariant;
+          active ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
       return Padding(
         key: ValueKey('tool-$label'),
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        padding: const EdgeInsets.all(2),
         child: Material(
           color: active ? scheme.primaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: onTap,
-            child: SizedBox(
-              width: 66,
-              height: 58,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            onTap: () => controller.setTool(tool),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconTheme(data: IconThemeData(color: color), child: icon),
-                      const SizedBox(height: 3),
+                      IconTheme(
+                        data: IconThemeData(color: color),
+                        child: ToolIcon(tool),
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         label,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 10.5,
                           color: color,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
-                  if (soon)
-                    Positioned(
-                      top: 3,
-                      right: 4,
-                      child: Icon(
-                        Icons.schedule,
-                        size: 11,
-                        color: scheme.outline,
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
           ),
@@ -342,49 +324,38 @@ class _Toolbar extends StatelessWidget {
       );
     }
 
+    Widget group(List<(Tool, String)> tools, bool loads) {
+      final children = [
+        for (final (tool, label) in tools) Expanded(child: button(tool, label)),
+      ];
+      final tint =
+          loads
+              ? scheme.tertiaryContainer.withValues(alpha: 0.35)
+              : Colors.transparent;
+      return Container(
+        color: tint,
+        child:
+            vertical
+                ? SizedBox(width: 64, child: Column(children: children))
+                : SizedBox(height: 54, child: Row(children: children)),
+      );
+    }
+
     return Material(
       elevation: 6,
       color: scheme.surfaceContainer,
-      child: SizedBox(
-        height: vertical ? null : 66,
-        width: vertical ? 74 : null,
-        child: ListView(
-          scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
-          padding:
-              vertical
-                  ? const EdgeInsets.symmetric(vertical: 4)
-                  : const EdgeInsets.symmetric(horizontal: 6),
-          children: [
-            for (final (tool, label) in tools)
-              button(
-                ToolIcon(tool),
-                label,
-                tool == Tool.dimension
-                    ? controller.showDimensions
-                    : controller.tool == tool,
-                !tool.comingSoon,
-                () =>
-                    tool.comingSoon
-                        ? onMessage(s.notInMvp)
-                        : controller.setTool(tool),
-                soon: tool.comingSoon,
-              ),
-            button(
-              const Icon(Icons.undo),
-              s.undo,
-              false,
-              controller.canUndo,
-              controller.undo,
-            ),
-            button(
-              const Icon(Icons.redo),
-              s.redo,
-              false,
-              controller.canRedo,
-              controller.redo,
-            ),
-          ],
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child:
+            vertical
+                ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [group(groups[0], false), group(groups[1], true)],
+                )
+                : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [group(groups[0], false), group(groups[1], true)],
+                ),
       ),
     );
   }
@@ -407,7 +378,7 @@ class EditorCanvas extends StatefulWidget {
   State<EditorCanvas> createState() => _EditorCanvasState();
 }
 
-enum _Gesture { none, pan, zoom, drag, drawBeam }
+enum _Gesture { none, pan, zoom, drag, drawBeam, drawRange }
 
 class _EditorCanvasState extends State<EditorCanvas> {
   SheetView? _vp;
@@ -421,6 +392,13 @@ class _EditorCanvasState extends State<EditorCanvas> {
   double? _ghost;
   double _beamStartX = 0;
   Offset? _down;
+
+  /// A distributed load being dragged out: where the finger started, and
+  /// where it is now.
+  (double, double)? _range;
+
+  /// Where along a distributed load the finger picked it up.
+  double _grab = 0;
 
   EditorController get c => widget.controller;
 
@@ -462,6 +440,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
     selectedId: c.selected,
     showDimensions: c.showDimensions,
     ghostLength: _ghost,
+    ghostRange: _range,
   );
 
   /// Snaps a world x to the ends, to other elements within a fingertip, or
@@ -475,7 +454,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
       for (final s in p.supports)
         if (s.id != ignore) s.x,
       for (final l in p.loads)
-        if (l.id != ignore) l.x,
+        if (l.id != ignore) ...l.positions,
     ];
     for (final t in targets) {
       if ((t - x).abs() < tol) return t;
@@ -502,10 +481,18 @@ class _EditorCanvasState extends State<EditorCanvas> {
       setState(() {});
       return;
     }
+    if ((c.tool == Tool.udl || c.tool == Tool.uvl) && _onBeam(down)) {
+      _gesture = _Gesture.drawRange;
+      final x = _snap(_beamX(down));
+      setState(() => _range = (x, x));
+      return;
+    }
     final hit = scene.hitTest(down);
     if (hit != null && hit != 'beam' && c.tool != Tool.delete) {
       _gesture = _Gesture.drag;
       _dragId = hit;
+      final load = c.problem.loadById(hit);
+      _grab = load is DistributedLoad ? _vp!.worldX(down.dx) - load.x : 0;
       c.select(hit);
       c.beginGesture();
       return;
@@ -521,6 +508,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
       _startVp = _vp;
       _startFocal = d.localFocalPoint;
       _ghost = null;
+      _range = null;
     }
     switch (_gesture) {
       case _Gesture.zoom:
@@ -543,8 +531,14 @@ class _EditorCanvasState extends State<EditorCanvas> {
           );
           _ghost = length;
         });
+      case _Gesture.drawRange:
+        final x = _snap(_beamX(d.localFocalPoint));
+        setState(() => _range = (_range!.$1, x));
       case _Gesture.drag:
-        final x = _snap(_vp!.worldX(d.localFocalPoint.dx), ignore: _dragId);
+        final x = _snap(
+          _vp!.worldX(d.localFocalPoint.dx) - _grab,
+          ignore: _dragId,
+        );
         c.preview(c.problem.move(_dragId!, x));
       case _Gesture.none:
         break;
@@ -561,6 +555,19 @@ class _EditorCanvasState extends State<EditorCanvas> {
         } else {
           setState(() {});
         }
+      case _Gesture.drawRange:
+        final (a, b) = _range!;
+        _range = null;
+        if ((a - b).abs() >= 0.25 - 1e-9) {
+          c.addDistributed(
+            math.min(a, b),
+            math.max(a, b),
+            uniform: c.tool == Tool.udl,
+          );
+        } else {
+          // Barely moved: treat it as a tap.
+          _placeDistributed(a);
+        }
       case _Gesture.drag:
         c.endGesture();
       default:
@@ -568,6 +575,27 @@ class _EditorCanvasState extends State<EditorCanvas> {
     }
     _gesture = _Gesture.none;
     _dragId = null;
+    _grab = 0;
+  }
+
+  /// Whether a touch is on (or close enough to) the beam to place
+  /// something there.
+  bool _onBeam(Offset p) =>
+      c.problem.hasBeam &&
+      (p.dy - _vp!.origin.dy).abs() <= 70 &&
+      p.dx >= _vp!.sx(0) - 24 &&
+      p.dx <= _vp!.sx(c.problem.length) + 24;
+
+  double _beamX(Offset p) =>
+      _vp!.worldX(p.dx).clamp(0.0, c.problem.length).toDouble();
+
+  /// A tap with the UDL or UVL tool: a 2 m load starting where the finger
+  /// touched (pulled back if it would run off the end).
+  void _placeDistributed(double x) {
+    final length = c.problem.length;
+    final span = math.min(2.0, length);
+    final a = x.clamp(0.0, length - span).toDouble();
+    c.addDistributed(a, a + span, uniform: c.tool == Tool.udl);
   }
 
   void _onTap(Offset p, BeamScene scene, AppState app) {
@@ -577,23 +605,16 @@ class _EditorCanvasState extends State<EditorCanvas> {
       widget.onMessage(s.notInMvp);
       return;
     }
-    final placing =
-        tool == Tool.pin ||
-        tool == Tool.roller ||
-        tool == Tool.fixed ||
-        tool == Tool.pointLoad;
-    if (placing) {
+    if (tool.places) {
       if (!c.problem.hasBeam) {
         widget.onMessage(s.drawBeamFirst);
         return;
       }
-      if ((p.dy - _vp!.origin.dy).abs() > 70 ||
-          p.dx < _vp!.sx(0) - 24 ||
-          p.dx > _vp!.sx(c.problem.length) + 24) {
+      if (!_onBeam(p)) {
         widget.onMessage(s.tapOnBeam);
         return;
       }
-      var x = _snap(_vp!.worldX(p.dx).clamp(0.0, c.problem.length).toDouble());
+      var x = _snap(_beamX(p));
       switch (tool) {
         case Tool.pin:
           c.addSupport(SupportType.pin, x);
@@ -602,6 +623,10 @@ class _EditorCanvasState extends State<EditorCanvas> {
         case Tool.fixed:
           x = x < c.problem.length / 2 ? 0 : c.problem.length;
           c.addSupport(SupportType.fixed, x);
+        case Tool.udl || Tool.uvl:
+          _placeDistributed(x);
+        case Tool.moment:
+          c.addMoment(x);
         default:
           c.addLoad(x);
       }

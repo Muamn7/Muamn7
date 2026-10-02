@@ -11,6 +11,7 @@ library;
 import 'dart:math' as math;
 
 import '../diagrams/internal_forces.dart';
+import '../diagrams/polynomial.dart';
 import '../statics/actions.dart';
 import '../statics/equilibrium.dart';
 
@@ -24,6 +25,7 @@ enum CheckKind {
   axialClosesAtEnd,
   shearJumpsMatchLoads,
   momentJumpsMatchCouples,
+  shearSlopeEqualsLoad,
   slopeEqualsShear,
   areaRule,
 }
@@ -69,6 +71,9 @@ abstract final class SolutionValidator {
     for (final a in actions) {
       if (a is PointForce) forceScale += a.fx.abs() + a.fy.abs();
       if (a is PointCouple) forceScale += a.moment.abs() / math.max(length, 1);
+      if (a is DistributedForce) {
+        forceScale += (a.q0.abs() + a.q1.abs()) / 2 * a.span;
+      }
     }
     forceScale = math.max(forceScale, 1);
     final fTol = 1e-9 * forceScale;
@@ -85,6 +90,10 @@ abstract final class SolutionValidator {
         case PointCouple():
           mLeft += a.moment;
           mRight += a.moment;
+        case DistributedForce():
+          sumFy += a.fy;
+          mLeft += a.momentAbout(0);
+          mRight += a.momentAbout(length);
       }
     }
 
@@ -135,6 +144,27 @@ abstract final class SolutionValidator {
       ..add(CheckItem(CheckKind.shearJumpsMatchLoads, worstV, fTol, where: whereV))
       ..add(CheckItem(CheckKind.momentJumpsMatchCouples, worstM, mTol,
           where: whereM));
+
+    // Inside each segment: dV/dx = q, the intensity of the distributed
+    // loads over it (zero where there are none).
+    var worstLoad = 0.0;
+    double? whereLoad;
+    for (final v in forces.shear.pieces) {
+      var q = Polynomial.zero;
+      for (final d in forces.distributed) {
+        if (d.x <= v.x0 + 1e-9 && d.x1 >= v.x1 - 1e-9 && d.span > 0) {
+          final k = (d.q1 - d.q0) / d.span;
+          q += Polynomial([d.q0 - k * d.x, k]);
+        }
+      }
+      final error = (v.p.derivative() - q).c.fold(0.0, (m, k) => math.max(m, k.abs()));
+      if (error > worstLoad) {
+        worstLoad = error;
+        whereLoad = (v.x0 + v.x1) / 2;
+      }
+    }
+    items.add(CheckItem(CheckKind.shearSlopeEqualsLoad, worstLoad,
+        fTol / math.max(length, 1) * 10, where: whereLoad));
 
     // Inside each segment: dM/dx = V, and ΔM across it = area under V.
     var worstSlope = 0.0, worstArea = 0.0;

@@ -73,6 +73,57 @@ abstract final class ExampleLibrary {
       ]),
     ),
     ExampleProblem(
+      id: 'udl',
+      titleAr: 'حمل موزّع منتظم (UDL)',
+      titleEn: 'Uniformly distributed load (UDL)',
+      ideaAr: 'المحصّلة = w × L في المنتصف. SFD خط مائل وBMD قطع مكافئ، وأقصى عزم wL²/8 حيث V = 0.',
+      ideaEn: 'Resultant = w × L at mid-span. The SFD is a sloping line and the BMD a parabola; Mmax = wL²/8 where V = 0.',
+      problem: BeamProblem(length: 6, supports: [
+        Support(id: 's1', type: SupportType.pin, x: 0),
+        Support(id: 's2', type: SupportType.roller, x: 6),
+      ], loads: [
+        DistributedLoad(id: 'w1', x: 0, x2: 6, w1: 5 * _kN, w2: 5 * _kN),
+      ]),
+    ),
+    ExampleProblem(
+      id: 'uvl',
+      titleAr: 'حمل مثلثي (UVL)',
+      titleEn: 'Triangular load (UVL)',
+      ideaAr: 'المحصّلة = ½ × w × L على ثلث الطول من الطرف الأكبر. SFD منحنى وBMD من الدرجة الثالثة.',
+      ideaEn: 'Resultant = ½ × w × L, a third of the length from the larger end. The SFD is a curve and the BMD a cubic.',
+      problem: BeamProblem(length: 6, supports: [
+        Support(id: 's1', type: SupportType.pin, x: 0),
+        Support(id: 's2', type: SupportType.roller, x: 6),
+      ], loads: [
+        DistributedLoad(id: 'w1', x: 0, x2: 6, w1: 0, w2: 6 * _kN),
+      ]),
+    ),
+    ExampleProblem(
+      id: 'udl-cantilever',
+      titleAr: 'كابولي عليه حمل موزّع',
+      titleEn: 'Cantilever with a UDL',
+      ideaAr: 'عزم المسند الثابت = wL²/2، والعزم سالب على طول الكمرة.',
+      ideaEn: 'The fixed-end moment is wL²/2, and the moment is hogging all along.',
+      problem: BeamProblem(length: 4, supports: [
+        Support(id: 's1', type: SupportType.fixed, x: 0),
+      ], loads: [
+        DistributedLoad(id: 'w1', x: 0, x2: 4, w1: 3 * _kN, w2: 3 * _kN),
+      ]),
+    ),
+    ExampleProblem(
+      id: 'couple',
+      titleAr: 'عزم مركّز (Moment)',
+      titleEn: 'Concentrated moment',
+      ideaAr: 'العزم المركّز لا يغيّر SFD لكنه يجعل BMD يقفز بمقداره.',
+      ideaEn: 'A couple leaves the SFD alone but makes the BMD jump by its value.',
+      problem: BeamProblem(length: 6, supports: [
+        Support(id: 's1', type: SupportType.pin, x: 0),
+        Support(id: 's2', type: SupportType.roller, x: 6),
+      ], loads: [
+        PointMoment(id: 'c1', x: 2, magnitude: 12 * _kN),
+      ]),
+    ),
+    ExampleProblem(
       id: 'overhang',
       titleAr: 'كمرة ببروز (Overhang)',
       titleEn: 'Beam with an overhang',

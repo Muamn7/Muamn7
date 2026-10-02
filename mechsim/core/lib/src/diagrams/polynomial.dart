@@ -48,6 +48,29 @@ class Polynomial {
       ? Polynomial.constant(0)
       : Polynomial([for (var i = 1; i < c.length; i++) c[i] * i]);
 
+  /// p(x − x0) expanded into powers of x, so a term written about a local
+  /// coordinate (x − a) can be added to the others.
+  Polynomial shifted(double x0) {
+    var result = Polynomial.zero;
+    // (x − x0)^i built up one factor at a time.
+    var power = Polynomial.constant(1);
+    for (var i = 0; i < c.length; i++) {
+      result += power.scale(c[i]);
+      power = Polynomial([-x0 * 1, 1]).times(power);
+    }
+    return result;
+  }
+
+  Polynomial times(Polynomial other) {
+    final out = List<double>.filled(c.length + other.c.length - 1, 0);
+    for (var i = 0; i < c.length; i++) {
+      for (var j = 0; j < other.c.length; j++) {
+        out[i + j] += c[i] * other.c[j];
+      }
+    }
+    return Polynomial(out);
+  }
+
   /// The antiderivative that is zero at x = 0.
   Polynomial integral() =>
       Polynomial([0, for (var i = 0; i < c.length; i++) c[i] / (i + 1)]);

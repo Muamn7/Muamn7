@@ -37,6 +37,9 @@ class InternalForces {
         DiagramKind.axial => axial,
       };
 
+  /// The distributed loads, for drawing and explaining.
+  List<DistributedForce> get distributed => actions.whereType<DistributedForce>().toList();
+
   /// True when some part of the beam carries axial force.
   bool get hasAxial => axial.pieces.any((p) => p.p.c.any((v) => v.abs() > 1e-9));
 
@@ -76,6 +79,10 @@ abstract final class InternalForceAnalyzer {
             n -= Polynomial.constant(fx);
           case PointCouple(moment: final c):
             m -= Polynomial.constant(c);
+          case DistributedForce():
+            final (dv, dm) = _distributedLeftOf(action, a);
+            v += dv;
+            m += dm;
         }
       }
       shear.add(Piece(a, b, v));
@@ -91,10 +98,33 @@ abstract final class InternalForceAnalyzer {
     );
   }
 
+  /// Shear and moment at a cut x inside the segment starting at [a], from
+  /// the part of a distributed load that lies left of the cut. Breakpoints
+  /// include both ends of the load, so a segment is either wholly past the
+  /// load (it all counts, through its resultant) or wholly inside it (the
+  /// part from its start to the cut counts).
+  static (Polynomial, Polynomial) _distributedLeftOf(DistributedForce d, double a) {
+    if (a >= d.x1 - 1e-9) {
+      return (
+        Polynomial.constant(d.fy),
+        // Taken exactly as Σ q·(x − s): uniform and triangular parts.
+        Polynomial.shiftedLinear(d.q0 * d.span, d.x + d.span / 2) +
+            Polynomial.shiftedLinear((d.q1 - d.q0) * d.span / 2, d.x + 2 * d.span / 3),
+      );
+    }
+    // With u = x − x0 and q = q0 + k·u:
+    //   V = q0·u + k·u²/2        M = q0·u²/2 + k·u³/6
+    final k = d.span == 0 ? 0.0 : (d.q1 - d.q0) / d.span;
+    final v = Polynomial([0, d.q0, k / 2]).shifted(d.x);
+    final m = Polynomial([0, 0, d.q0 / 2, k / 6]).shifted(d.x);
+    return (v, m);
+  }
+
   static List<double> _breakpoints(BeamProblem problem, List<Action> actions) {
     final xs = <double>[0, problem.length];
     for (final a in actions) {
       xs.add(a.x.clamp(0.0, problem.length).toDouble());
+      if (a is DistributedForce) xs.add(a.x1.clamp(0.0, problem.length).toDouble());
     }
     xs.sort();
     final unique = <double>[];

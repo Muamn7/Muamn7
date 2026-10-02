@@ -30,15 +30,18 @@ class ProblemGenerator {
     for (var attempt = 0; attempt < 50; attempt++) {
       final problem = switch (level) {
         PracticeLevel.basic => _simplySupported(loads: 1),
-        PracticeLevel.intermediate => switch (_rng.nextInt(3)) {
+        PracticeLevel.intermediate => switch (_rng.nextInt(4)) {
             0 => _simplySupported(loads: 2),
             1 => _overhang(loads: 1 + _rng.nextInt(2), bothSides: false),
-            _ => _cantilever(loads: 1 + _rng.nextInt(2)),
+            2 => _cantilever(loads: 1 + _rng.nextInt(2)),
+            _ => _withUdl(_simplySupported(loads: _rng.nextInt(2))),
           },
-        PracticeLevel.advanced => switch (_rng.nextInt(3)) {
+        PracticeLevel.advanced => switch (_rng.nextInt(5)) {
             0 => _overhang(loads: 2 + _rng.nextInt(2), bothSides: true),
             1 => _simplySupported(loads: 2, inclined: true),
-            _ => _overhang(loads: 2, bothSides: false, upward: true),
+            2 => _overhang(loads: 2, bothSides: false, upward: true),
+            3 => _withUdl(_simplySupported(loads: 1), triangle: true),
+            _ => _withCouple(_withUdl(_simplySupported(loads: 0))),
           },
       };
       if (StaticsSolver.solve(problem).isSolved) return problem;
@@ -105,6 +108,33 @@ class ProblemGenerator {
           id: p.nextId('p'), x: xs[i], magnitude: _magnitude(), angleDeg: up ? 90 : -90));
     }
     return p;
+  }
+
+  /// Adds a distributed load over the whole span or a whole-metre part of
+  /// it: uniform, or a triangle rising to one end.
+  BeamProblem _withUdl(BeamProblem p, {bool triangle = false}) {
+    final w = _pick(const [2.0, 4.0, 5.0, 6.0, 10.0]) * _kN;
+    final full = triangle || _rng.nextBool();
+    final a = full ? 0.0 : (1 + _rng.nextInt((p.length / 2).floor())).toDouble();
+    final b = full ? p.length : math.min(p.length, a + 2 + _rng.nextInt(2));
+    final rising = _rng.nextBool();
+    return p.withLoad(DistributedLoad(
+      id: p.nextId('w'),
+      x: a,
+      x2: b,
+      w1: triangle ? (rising ? 0 : w) : w,
+      w2: triangle ? (rising ? w : 0) : w,
+    ));
+  }
+
+  BeamProblem _withCouple(BeamProblem p) {
+    final x = _positions(1, 0, p.length).first;
+    return p.withLoad(PointMoment(
+      id: p.nextId('c'),
+      x: x,
+      magnitude: _pick(const [10.0, 15.0, 20.0, 30.0]) * _kN,
+      counterClockwise: _rng.nextBool(),
+    ));
   }
 
   BeamProblem _cantilever({required int loads}) {

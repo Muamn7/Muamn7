@@ -176,7 +176,7 @@ class _Writer {
 
   String point(double x) => labels.pointAt(x) ?? xAt(x);
 
-  String loadName(PointLoad load) => labels.loadName(load.id);
+  String loadName(Load load) => labels.loadName(load.id);
 
   /// The symbol of the component of a load that enters an equation.
   String componentName(PointLoad load, {required bool vertical}) {
@@ -213,6 +213,18 @@ class _Writer {
 
   List<PointLoad> get loads =>
       [...problem.pointLoads]..sort((a, b) => a.x.compareTo(b.x));
+  List<DistributedLoad> get distributed =>
+      [...problem.distributedLoads]..sort((a, b) => a.x.compareTo(b.x));
+  List<PointMoment> get couples =>
+      [...problem.moments]..sort((a, b) => a.x.compareTo(b.x));
+
+  /// "w = 5 kN/m" or "w: 0 → 6 kN/m".
+  String _intensityText(DistributedLoad d) => d.isUniform
+      ? 'w = ${qU(d.w1)}'
+      : 'w: ${Num.compact(qd(d.w1))} → ${qU(d.w2)}';
+
+  String _shape(DistributedLoad d) =>
+      t.shapeName(d.isUniform, d.w1 == 0 || d.w2 == 0);
 
   Iterable<Reaction> get reactions => s.reactions;
 
@@ -227,6 +239,7 @@ class _Writer {
     final list = <SolutionStep>[given(), freeBody()];
     final inclined = loads.where((l) => l.isInclined).toList();
     if (inclined.isNotEmpty) list.add(components(inclined));
+    if (distributed.isNotEmpty) list.add(resultants());
 
     final plan = planEquations(s);
     final known = <String, double>{};
@@ -283,6 +296,35 @@ class _Writer {
             MathToken('@ ${labels.pointOf(load.id)} (${xAt(load.x)})',
                 role: TokenRole.value),
           ], highlights: [LoadHighlight(load.id)]),
+        for (final d in distributed)
+          MathLine([
+            MathToken('${loadName(d)}: ${_intensityText(d)} ${arrowY(d.fy)}',
+                role: TokenRole.term,
+                explanation: t.distributedDescription(
+                  name: loadName(d),
+                  shape: _shape(d),
+                  intensity: _intensityText(d),
+                  from: xAt(d.x),
+                  to: xAt(d.x2),
+                  direction: d.upward ? t.upward : t.downward,
+                ),
+                highlights: [LoadHighlight(d.id)]),
+            MathToken('@ ${l(d.x)} → ${lU(d.x2)}', role: TokenRole.value),
+          ], highlights: [LoadHighlight(d.id)]),
+        for (final c in couples)
+          MathLine([
+            MathToken('${loadName(c)} = ${mDerived(c.magnitude)} ${arrowM(c.moment)}',
+                role: TokenRole.term,
+                explanation: t.coupleDescription(
+                  name: loadName(c),
+                  value: mDerived(c.magnitude),
+                  point: labels.pointOf(c.id),
+                  x: xAt(c.x),
+                  counterClockwise: c.counterClockwise,
+                ),
+                highlights: [LoadHighlight(c.id)]),
+            MathToken('@ ${labels.pointOf(c.id)} (${xAt(c.x)})', role: TokenRole.value),
+          ], highlights: [LoadHighlight(c.id)]),
       ],
       explanation: t.givenExplanation(
         length: lU(problem.length),
@@ -290,7 +332,7 @@ class _Writer {
           for (final sup in supports)
             (t.supportName(sup.type), labels.pointOf(sup.id)),
         ],
-        loadCount: loads.length,
+        loadCount: problem.loads.length,
       ),
       reveal: Reveal.nothing,
     );
@@ -395,6 +437,58 @@ class _Writer {
     );
   }
 
+  /// Each distributed load replaced by its resultant at its centroid.
+  SolutionStep resultants() {
+    final lines = <MathLine>[];
+    for (final d in distributed) {
+      final name = loadName(d);
+      final hl = [LoadHighlight(d.id), ResultantHighlight(d.id)];
+      final span = l(d.span);
+      final String formula;
+      final String rule;
+      if (d.isUniform) {
+        formula = '${Num.compact(qd(d.w1))} × $span';
+        rule = t.centroidUniform;
+      } else if (d.w1 == 0 || d.w2 == 0) {
+        formula = '½ × ${Num.compact(qd(math.max(d.w1, d.w2)))} × $span';
+        rule = t.centroidTriangle;
+      } else {
+        formula = '(${Num.compact(qd(d.w1))} + ${Num.compact(qd(d.w2))})/2 × $span';
+        rule = t.centroidTrapezoid;
+      }
+      lines.add(MathLine([
+        MathToken(name, role: TokenRole.symbol, highlights: hl),
+        const MathToken('=', role: TokenRole.equals),
+        MathToken(formula,
+            role: TokenRole.term,
+            explanation: t.resultantMeaning(name, '$formula = ${fU(d.resultant)}'),
+            highlights: hl),
+        const MathToken('=', role: TokenRole.equals),
+        MathToken('${fU(d.resultant)} ${arrowY(d.fy)}', role: TokenRole.result, highlights: hl),
+      ]));
+      lines.add(MathLine([
+        MathToken('x̄($name)', role: TokenRole.symbol, highlights: hl),
+        const MathToken('=', role: TokenRole.equals),
+        MathToken(lU(d.centroid),
+            role: TokenRole.result,
+            explanation: t.centroidMeaning(name, rule),
+            highlights: [...hl, ArmHighlight(d.x, d.centroid)]),
+      ]));
+    }
+    return SolutionStep(
+      kind: StepKind.resultants,
+      title: t.resultantsTitle,
+      goal: t.resultantsGoal,
+      lines: lines,
+      explanation: t.resultantsExplanation,
+      detail: t.resultantsDetail,
+      highlights: [
+        for (final d in distributed) ...[LoadHighlight(d.id), ResultantHighlight(d.id)],
+      ],
+      reveal: const Reveal(reactions: true),
+    );
+  }
+
   // ---- equilibrium -------------------------------------------------------
 
   double _convSign(EquationKind kind) => switch (kind) {
@@ -446,6 +540,7 @@ class _Writer {
     final hl = <Highlight>[
       if (reaction != null) ReactionHighlight(reaction.id),
       if (load != null) LoadHighlight(load.id),
+      if (load is DistributedLoad) ResultantHighlight(load.id),
       if (about != null && term.arm != null) ...[
         MomentCentreHighlight(about),
         ArmHighlight(about, about + term.arm!),
@@ -486,7 +581,28 @@ class _Writer {
       text = f(term.knownValue!.abs());
     }
     String explanation;
-    if (load is PointLoad) {
+    if (load is DistributedLoad) {
+      final value = fU(load.resultant);
+      explanation = isMoment
+          ? t.termDistributedMoment(
+              name: loadName(load),
+              value: value,
+              about: aboutName,
+              arm: lU(term.arm!.abs()),
+              counterClockwise: term.knownValue! > 0,
+              positive: positiveInConvention)
+          : t.termDistributedForce(
+              name: loadName(load),
+              value: value,
+              direction: arrowY(load.fy),
+              positive: positiveInConvention);
+    } else if (load is PointMoment) {
+      explanation = t.termAppliedCouple(
+          name: loadName(load),
+          value: mDerived(load.magnitude),
+          counterClockwise: load.counterClockwise,
+          positive: positiveInConvention);
+    } else if (load is PointLoad) {
       final vertical = kind != EquationKind.sumFx;
       final name = componentName(load, vertical: vertical);
       final value = fU(vertical ? load.fy.abs() : load.fx.abs());
@@ -743,7 +859,7 @@ class _Writer {
     }
     if (centre == null) {
       final options = [
-        ...loads.map((l) => l.x),
+        for (final load in problem.loads) ...load.positions,
         0.0,
         problem.length,
       ].where((x) => usedCentres.every((c) => (c - x).abs() > 1e-9)).toList();
@@ -804,7 +920,13 @@ class _Writer {
     final up = reactions
         .where((r) => r.kind == ReactionKind.vertical)
         .fold(0.0, (sum, r) => sum + s.valueOf(r.id));
-    final down = -loads.fold(0.0, (sum, l) => sum + l.fy);
+    final down = -s.loadActions.fold(
+        0.0,
+        (sum, a) => sum + switch (a) {
+              PointForce(:final fy) => fy,
+              DistributedForce(:final fy) => fy,
+              PointCouple() => 0.0,
+            });
     return SolutionStep(
       kind: StepKind.reactions,
       title: t.reactionsTitle,
@@ -843,6 +965,7 @@ class _Writer {
   String _actionSymbol(Action a, {required bool vertical}) {
     final load = problem.loadById(a.sourceId);
     if (load is PointLoad) return componentName(load, vertical: vertical);
+    if (load != null) return loadName(load);
     return s.reactions.firstWhere((r) => r.id == a.sourceId).symbol;
   }
 
@@ -866,6 +989,66 @@ class _Writer {
       ? [ReactionHighlight(a.sourceId)]
       : [LoadHighlight(a.sourceId)];
 
+  // ---- display-unit polynomials ------------------------------------------
+
+  /// A distributed intensity in display units (kN/m, N/mm…).
+  double qd(double si) => units.toDisplay(si, Dimension.intensity);
+  String qU(double si) => '${Num.compact(qd(si))} ${units.intensity.symbol}';
+
+  /// Rate of change of an intensity, per display length.
+  double _kd(DistributedForce d) => d.span == 0
+      ? 0
+      : qd((d.q1 - d.q0) / d.span) * units.length.toSi;
+
+  static String _sup(int i) => const {2: '²', 3: '³', 4: '⁴'}[i] ?? '^$i';
+
+  /// "x" from the left end, or "(x − 2)" from a point.
+  String _from(double aSi, [int power = 1]) {
+    final base = aSi == 0 ? 'x' : '(x $minus ${l(aSi)})';
+    return power == 1 ? base : '$base${_sup(power)}';
+  }
+
+  /// A polynomial in x, as a student writes it: "−2.5x² + 20x − 10".
+  String _poly(Polynomial p) {
+    final parts = <String>[];
+    for (var i = p.c.length - 1; i >= 0; i--) {
+      final v = p.c[i];
+      if (Num.isZeroAt(v, 6)) continue;
+      final size = Num.compact(v.abs());
+      final coefficient = size == '1' && i > 0 ? '' : size;
+      final body = switch (i) {
+        0 => size,
+        1 => '${coefficient}x',
+        _ => '${coefficient}x${_sup(i)}',
+      };
+      parts.add(_signedPart(v, parts.isEmpty, body));
+    }
+    return parts.isEmpty ? '0' : parts.join(' ');
+  }
+
+  /// One part of a sum: "10x" first, "−20(x − 3)" first and negative,
+  /// "+ 10x" or "− 20(x − 3)" after the first.
+  String _signedPart(double value, bool first, String magnitude) {
+    if (first) return value < 0 ? '$minus$magnitude' : magnitude;
+    return '${value < 0 ? minus : '+'} $magnitude';
+  }
+
+  /// "5(x − 2)": a coefficient that disappears when it is 1.
+  String _times(double value, String what) {
+    final size = Num.compact(value.abs());
+    return size == '1' ? what : '$size$what';
+  }
+
+  bool _covers(DistributedForce d, double a) => d.x1 > a + 1e-9;
+
+  /// The intensity symbol of a uniform load: w1 for W1.
+  String _w(DistributedForce d) =>
+      _actionSymbol(d, vertical: true).replaceFirst('W', 'w');
+
+  bool _uniform(DistributedForce d) => (d.q0 - d.q1).abs() < 1e-12;
+
+  // ---- shear ---------------------------------------------------------------
+
   SolutionStep shear(InternalForces forces) {
     final lines = <MathLine>[];
     final results = <ResultValue>[];
@@ -873,9 +1056,8 @@ class _Writer {
       final a = piece.x0, b = piece.x1;
       final left = [
         for (final act in _leftOf(forces, a))
-          if (act is PointForce && act.fy != 0) act,
+          if ((act is PointForce && act.fy != 0) || act is DistributedForce) act,
       ];
-      final v = piece.start;
       final range = [
         DiagramRangeHighlight(DiagramKind.shear, a, b),
         SectionHighlight((a + b) / 2),
@@ -885,49 +1067,101 @@ class _Writer {
         const MathToken('V', role: TokenRole.symbol),
         const MathToken('=', role: TokenRole.equals),
       ];
+      final constant = piece.p.degree == 0;
       if (left.isEmpty) {
         tokens.add(const MathToken('0', role: TokenRole.result));
       } else {
-        // Symbols: a reaction is assumed upward (+), a load carries its own
-        // direction.
+        final numeric = <String>[];
         for (var i = 0; i < left.length; i++) {
           final act = left[i];
-          final reaction = _isReaction(act);
-          final plus = reaction || act.fy > 0;
-          if (i > 0 || !plus) {
-            tokens.add(MathToken(plus ? '+' : minus,
-                role: TokenRole.operator));
+          final name = _actionSymbol(act, vertical: true);
+          final String text;
+          final bool plus;
+          final String explanation;
+          switch (act) {
+            case PointForce(:final fy):
+              final reaction = _isReaction(act);
+              plus = reaction || fy > 0;
+              text = name;
+              explanation = reaction
+                  ? t.shearTermReaction(name, fU(fy), fy >= 0)
+                  : t.shearTermLoad(name, fU(fy.abs()), fy < 0);
+              numeric.add(_signedPart(fy, numeric.isEmpty, Num.compact(fd(fy).abs())));
+            case DistributedForce():
+              if (!_covers(act, a)) {
+                plus = act.fy > 0;
+                text = name;
+                explanation = t.shearTermDistributedFull(name, fU(act.fy.abs()), act.fy < 0);
+                numeric.add(_signedPart(act.fy, numeric.isEmpty, Num.compact(fd(act.fy).abs())));
+              } else {
+                plus = act.q0 + act.q1 > 0;
+                text = _uniform(act) ? '${_w(act)}·${_from(act.x)}' : '$name(x)';
+                explanation = t.shearTermDistributedPart(name, l(act.x));
+                final q0 = qd(act.q0), k = _kd(act);
+                if (!Num.isZeroAt(q0, 9)) {
+                  numeric.add(_signedPart(q0, numeric.isEmpty, _times(q0, _from(act.x))));
+                }
+                if (!Num.isZeroAt(k, 9)) {
+                  numeric.add(_signedPart(k, numeric.isEmpty, _times(k / 2, _from(act.x, 2))));
+                }
+              }
+            case PointCouple():
+              continue;
           }
-          tokens.add(MathToken(_actionSymbol(act, vertical: true),
+          final first = tokens.length == 3;
+          if (!first || !plus) {
+            tokens.add(MathToken(plus ? '+' : minus, role: TokenRole.operator));
+          }
+          tokens.add(MathToken(text,
               role: TokenRole.term,
-              spaceBefore: i > 0 || plus,
-              explanation: reaction
-                  ? t.shearTermReaction(_actionSymbol(act, vertical: true),
-                      fU(act.fy), act.fy >= 0)
-                  : t.shearTermLoad(_actionSymbol(act, vertical: true),
-                      fU(act.fy.abs()), act.fy < 0),
-              highlights: _actionHighlights(act)));
+              spaceBefore: !first || plus,
+              explanation: explanation,
+              highlights: [
+                ..._actionHighlights(act),
+                if (act is DistributedForce) DiagramRangeHighlight(DiagramKind.shear, a, b),
+              ]));
         }
-        if (left.length > 1) {
-          tokens.add(const MathToken('=', role: TokenRole.equals));
-          tokens.addAll(_signedNumbers([for (final act in left) fd(act.fy)]));
+        final numericText = numeric.join(' ');
+        if (left.length > 1 || !constant) {
+          tokens
+            ..add(const MathToken('=', role: TokenRole.equals))
+            ..add(MathToken(numericText, role: TokenRole.value));
         }
-        tokens
-          ..add(const MathToken('=', role: TokenRole.equals))
-          ..add(MathToken(fU(v),
-              role: TokenRole.result,
-              highlights: [DiagramRangeHighlight(DiagramKind.shear, a, b)]));
+        if (constant) {
+          tokens
+            ..add(const MathToken('=', role: TokenRole.equals))
+            ..add(MathToken(fU(piece.start),
+                role: TokenRole.result,
+                highlights: [DiagramRangeHighlight(DiagramKind.shear, a, b)]));
+        } else {
+          final simplified = _poly(_displayPoly(piece.p, Dimension.force));
+          if (simplified != numericText) {
+            tokens
+              ..add(const MathToken('=', role: TokenRole.equals))
+              ..add(MathToken(simplified,
+                  role: TokenRole.result,
+                  highlights: [DiagramRangeHighlight(DiagramKind.shear, a, b)]));
+          }
+        }
       }
-      final up = left.where((x) => x.fy > 0).fold(0.0, (s2, x) => s2 + x.fy);
-      final down = -left.where((x) => x.fy < 0).fold(0.0, (s2, x) => s2 + x.fy);
-      lines.add(MathLine(tokens,
-          note: t.shearSignNote(Num.isZeroAt(fd(v), 6) ? 0 : v.sign.toInt(), fU(up), fU(down)),
-          highlights: range));
+      final v = piece.start;
+      String note;
+      if (constant) {
+        final forces2 = [for (final x in left) if (x is PointForce) x.fy else if (x is DistributedForce) x.fy];
+        final up = forces2.where((x) => x > 0).fold(0.0, (s2, x) => s2 + x);
+        final down = -forces2.where((x) => x < 0).fold(0.0, (s2, x) => s2 + x);
+        note = t.shearSignNote(Num.isZeroAt(fd(v), 6) ? 0 : v.sign.toInt(), fU(up), fU(down));
+      } else {
+        note = '${t.shearVariesNote}\nV(${l(a)}) = ${fU(piece.start)}   →   V(${l(b)}) = ${fU(piece.end)}';
+      }
+      lines.add(MathLine(tokens, note: note, highlights: range));
       results.add(ResultValue(
         symbol: 'V',
         si: v,
         dimension: Dimension.force,
-        text: 'V = ${readout(v, Dimension.force)}  (${_range(a, b)})',
+        text: constant
+            ? 'V = ${readout(v, Dimension.force)}  (${_range(a, b)})'
+            : 'V: ${readout(piece.start, Dimension.force)} → ${readout(piece.end, Dimension.force)}  (${_range(a, b)})',
         x: (a + b) / 2,
         highlights: [DiagramRangeHighlight(DiagramKind.shear, a, b)],
       ));
@@ -942,6 +1176,20 @@ class _Writer {
       reveal: _allSolved,
       results: results,
     );
+  }
+
+  /// An SI polynomial in x re-expressed in display units: x in the chosen
+  /// length unit, the value in force (V) or force × length (M).
+  Polynomial _displayPoly(Polynomial p, Dimension d) {
+    final lu = units.length.toSi;
+    final scale = d == Dimension.force ? units.force.toSi : _fl;
+    var factor = 1.0;
+    final c = <double>[];
+    for (var i = 0; i < p.c.length; i++) {
+      c.add(p.c[i] * factor / scale);
+      factor *= lu;
+    }
+    return Polynomial(c);
   }
 
   List<MathToken> _signedNumbers(List<double> values) {
@@ -1006,24 +1254,55 @@ class _Writer {
         lines.add(MathLine(tokens,
             note: isEnd ? t.shearClosesNote : null,
             highlights: [DiagramPointHighlight(DiagramKind.shear, x)]));
+      } else if (isEnd && bps.length > 1) {
+        lines.add(MathLine([
+          MathToken('${xAt(x)}:', role: TokenRole.symbol),
+          const MathToken('V:', role: TokenRole.symbol),
+          MathToken('${f(before)} ✓', role: TokenRole.result),
+        ], note: t.shearClosesNote));
       }
       if (!isEnd) {
         final piece = forces.shear.pieces[i];
-        lines.add(MathLine([
-          MathToken('${_range(piece.x0, piece.x1)}:',
-              role: TokenRole.symbol,
-              highlights: [
-                DiagramRangeHighlight(DiagramKind.shear, piece.x0, piece.x1),
-              ]),
-          MathToken(t.noLoadBetween, role: TokenRole.text),
-          const MathToken('⇒', role: TokenRole.operator),
-          MathToken('V = ${fU(piece.start)}',
-              role: TokenRole.result,
-              explanation: t.constantShearMeaning,
-              highlights: [
-                DiagramRangeHighlight(DiagramKind.shear, piece.x0, piece.x1),
-              ]),
-        ]));
+        final range = MathToken('${_range(piece.x0, piece.x1)}:',
+            role: TokenRole.symbol,
+            highlights: [DiagramRangeHighlight(DiagramKind.shear, piece.x0, piece.x1)]);
+        final over = [
+          for (final d in forces.distributed)
+            if (d.x <= piece.x0 + 1e-9 && d.x1 >= piece.x1 - 1e-9) d,
+        ];
+        if (piece.p.degree == 0 && over.isEmpty) {
+          lines.add(MathLine([
+            range,
+            MathToken(t.noLoadBetween, role: TokenRole.text),
+            const MathToken('⇒', role: TokenRole.operator),
+            MathToken('V = ${fU(piece.start)}',
+                role: TokenRole.result,
+                explanation: t.constantShearMeaning,
+                highlights: [DiagramRangeHighlight(DiagramKind.shear, piece.x0, piece.x1)]),
+          ]));
+        } else {
+          final uniform = over.every(_uniform);
+          final intensities = [
+            for (final d in over)
+              _uniform(d)
+                  ? '${arrowY(d.q0)} ${qU(d.q0.abs())}'
+                  : '${arrowY(d.q0 + d.q1)} ${Num.compact(qd(d.intensityAt(piece.x0).abs()))} → ${qU(d.intensityAt(piece.x1).abs())}',
+          ];
+          lines.add(MathLine([
+            range,
+            MathToken(t.distributedOn(intensities.join(' + ')),
+                role: TokenRole.term,
+                explanation: t.sfdUnderDistributed(uniform),
+                highlights: [for (final d in over) LoadHighlight(d.sourceId)]),
+            const MathToken('⇒', role: TokenRole.operator),
+            const MathToken('V:', role: TokenRole.symbol),
+            MathToken(f(piece.start), role: TokenRole.value),
+            const MathToken('→', role: TokenRole.operator),
+            MathToken(f(piece.end),
+                role: TokenRole.result,
+                highlights: [DiagramRangeHighlight(DiagramKind.shear, piece.x0, piece.x1)]),
+          ]));
+        }
       }
     }
     return SolutionStep(
@@ -1037,30 +1316,7 @@ class _Writer {
     );
   }
 
-  /// One part of a sum: "10x" first, "−20(x − 3)" first and negative,
-  /// "+ 10x" or "− 20(x − 3)" after the first.
-  String _signedPart(double value, bool first, String magnitude) {
-    if (first) return value < 0 ? '$minus$magnitude' : magnitude;
-    return '${value < 0 ? minus : '+'} $magnitude';
-  }
-
-  /// Formats a·x + b, as a student would write it: "−10x + 60".
-  String _linear(double a, double b) {
-    final parts = <String>[];
-    if (!Num.isZeroAt(a, 6)) {
-      final coeff = Num.compact(a.abs());
-      parts.add('${a < 0 ? minus : ''}${coeff == '1' ? '' : coeff}x');
-    }
-    if (!Num.isZeroAt(b, 6) || parts.isEmpty) {
-      final value = Num.compact(b.abs());
-      if (parts.isEmpty) {
-        parts.add('${b < 0 ? minus : ''}$value');
-      } else {
-        parts.add('${b < 0 ? minus : '+'} $value');
-      }
-    }
-    return parts.join(' ');
-  }
+  // ---- moment --------------------------------------------------------------
 
   SolutionStep moment(InternalForces forces) {
     final lines = <MathLine>[];
@@ -1068,71 +1324,79 @@ class _Writer {
       final a = piece.x0, b = piece.x1;
       final left = [
         for (final act in _leftOf(forces, a))
-          if ((act is PointForce && act.fy != 0) || act is PointCouple) act,
+          if ((act is PointForce && act.fy != 0) || act is PointCouple || act is DistributedForce)
+            act,
       ];
       final range = [
         DiagramRangeHighlight(DiagramKind.moment, a, b),
         SectionHighlight((a + b) / 2),
       ];
       final tokens = <MathToken>[
-        MathToken('${_range(a, b, closed: true)}:',
-            role: TokenRole.symbol, highlights: range),
+        MathToken('${_range(a, b, closed: true)}:', role: TokenRole.symbol, highlights: range),
         const MathToken('M', role: TokenRole.symbol),
         const MathToken('=', role: TokenRole.equals),
       ];
       if (left.isEmpty) {
         tokens.add(const MathToken('0', role: TokenRole.result));
       } else {
-        final symbolic = <MathToken>[];
         final numeric = <String>[];
-        var slope = 0.0, intercept = 0.0;
-        for (var i = 0; i < left.length; i++) {
-          final act = left[i];
-          final reaction = _isReaction(act);
+        var first = true;
+        void symbol(String text, bool plus, String explanation, List<Highlight> hl) {
+          if (!first || !plus) tokens.add(MathToken(plus ? '+' : minus, role: TokenRole.operator));
+          tokens.add(MathToken(text,
+              role: TokenRole.term,
+              spaceBefore: !first || plus,
+              explanation: explanation,
+              highlights: hl));
+          first = false;
+        }
+
+        for (final act in left) {
+          final name = _actionSymbol(act, vertical: true);
           switch (act) {
             case PointForce(:final fy, :final x):
-              final arm = x == 0 ? 'x' : '(x $minus ${l(x)})';
-              final plus = reaction || fy > 0;
-              final name = _actionSymbol(act, vertical: true);
-              if (i > 0 || !plus) {
-                symbolic.add(MathToken(plus ? '+' : minus, role: TokenRole.operator));
+              symbol('$name·${_from(x)}', _isReaction(act) || fy > 0,
+                  t.momentTermForce(name, fU(fy.abs()), _from(x).replaceAll(RegExp('[()]'), ''), fy > 0),
+                  [..._actionHighlights(act), ArmHighlight(x, (a + b) / 2)]);
+              numeric.add(_signedPart(fy, numeric.isEmpty, _times(fd(fy), _from(x))));
+            case PointCouple(moment: final c):
+              final reaction = _isReaction(act);
+              symbol(name, reaction ? false : c < 0,
+                  reaction
+                      ? t.momentTermCouple(name, mDerived(c.abs()), c > 0)
+                      : t.momentTermAppliedCouple(name, mDerived(c.abs()), c > 0),
+                  _actionHighlights(act));
+              numeric.add(_signedPart(-c, numeric.isEmpty, Num.compact(fld(c).abs())));
+            case DistributedForce():
+              if (!_covers(act, a)) {
+                final arm = _from(act.centroid);
+                symbol('$name·$arm', act.fy > 0,
+                    t.momentTermDistributedFull(name, fU(act.fy.abs()),
+                        arm.replaceAll(RegExp('[()]'), ''), act.fy > 0),
+                    [..._actionHighlights(act), ResultantHighlight(act.sourceId)]);
+                numeric.add(_signedPart(act.fy, numeric.isEmpty, _times(fd(act.fy), arm)));
+              } else {
+                symbol(
+                    _uniform(act) ? '${_w(act)}·${_from(act.x, 2)}/2' : '$name(x)',
+                    act.q0 + act.q1 > 0,
+                    t.momentTermDistributedPart(name, l(act.x)),
+                    _actionHighlights(act));
+                final q0 = qd(act.q0), k = _kd(act);
+                if (!Num.isZeroAt(q0, 9)) {
+                  numeric.add(_signedPart(q0, numeric.isEmpty, _times(q0 / 2, _from(act.x, 2))));
+                }
+                if (!Num.isZeroAt(k, 9)) {
+                  numeric.add(_signedPart(k, numeric.isEmpty, _times(k / 6, _from(act.x, 3))));
+                }
               }
-              symbolic.add(MathToken('$name·$arm',
-                  role: TokenRole.term,
-                  spaceBefore: i > 0 || plus,
-                  explanation: t.momentTermForce(
-                      name, fU(fy.abs()), x == 0 ? 'x' : 'x $minus ${l(x)}',
-                      fy > 0),
-                  highlights: [
-                    ..._actionHighlights(act),
-                    ArmHighlight(x, (a + b) / 2),
-                  ]));
-              final coeff = fd(fy);
-              final size = Num.compact(coeff.abs());
-              numeric.add(_signedPart(coeff, numeric.isEmpty,
-                  '${size == '1' ? '' : size}${x == 0 ? 'x' : '(x $minus ${l(x)})'}'));
-              slope += coeff;
-              intercept -= coeff * ld(x);
-            case PointCouple(moment: final cpl):
-              final name = _actionSymbol(act, vertical: true);
-              // The left part's couple enters with a minus (sagging +).
-              symbolic.add(MathToken(minus, role: TokenRole.operator));
-              symbolic.add(MathToken(name,
-                  role: TokenRole.term,
-                  spaceBefore: i > 0,
-                  explanation: t.momentTermCouple(name, mDerived(cpl.abs()), cpl > 0),
-                  highlights: _actionHighlights(act)));
-              final v = -fld(cpl);
-              numeric.add(_signedPart(v, numeric.isEmpty, Num.compact(v.abs())));
-              intercept += v;
           }
         }
-        tokens.addAll(symbolic);
+        final numericText = numeric.join(' ');
         tokens
           ..add(const MathToken('=', role: TokenRole.equals))
-          ..add(MathToken(numeric.join(' '), role: TokenRole.value));
-        final simplified = _linear(slope, intercept);
-        if (left.length > 1 && simplified != numeric.join(' ')) {
+          ..add(MathToken(numericText, role: TokenRole.value));
+        final simplified = _poly(_displayPoly(piece.p, Dimension.moment));
+        if (simplified != numericText) {
           tokens
             ..add(const MathToken('=', role: TokenRole.equals))
             ..add(MathToken(simplified,
@@ -1143,9 +1407,15 @@ class _Writer {
       lines.add(MathLine(tokens, highlights: range));
     }
 
-    // The values the BMD is drawn through.
+    // The values the BMD is drawn through, including its peaks inside
+    // distributed loads (where V = 0).
     final values = <MathToken>[];
-    for (final x in forces.breakpoints) {
+    final stations = <double>{
+      ...forces.breakpoints,
+      ...forces.shear.signChanges(),
+    }.toList()
+      ..sort();
+    for (final x in stations) {
       final leftV = forces.moment.leftLimit(x);
       final rightV = forces.moment.rightLimit(x);
       final atStart = (x - forces.breakpoints.first).abs() < 1e-9;
@@ -1191,20 +1461,51 @@ class _Writer {
       const MathToken('=', role: TokenRole.equals),
       MathToken(fl(m0),
           role: TokenRole.result,
-          explanation: c0.isEmpty ? t.momentStartsAtZero : t.momentStartsWithCouple(
-              _actionSymbol(c0.first, vertical: false)),
+          explanation: c0.isEmpty
+              ? t.momentStartsAtZero
+              : _isReaction(c0.first)
+                  ? t.momentStartsWithCouple(_actionSymbol(c0.first, vertical: false))
+                  : t.coupleJumpMeaning(
+                      _actionSymbol(c0.first, vertical: false), c0.first.moment > 0),
           highlights: [DiagramPointHighlight(DiagramKind.moment, bps.first, Side.right)]),
     ]));
     var current = m0;
-    for (var i = 0; i < forces.shear.pieces.length; i++) {
-      final v = forces.shear.pieces[i];
+    // Each piece is split where V crosses zero inside it, so the area method
+    // stops exactly at the peak of the BMD.
+    final pieces = <Piece>[];
+    for (final v in forces.shear.pieces) {
+      final cuts = [
+        v.x0,
+        for (final r in v.p.rootsIn(v.x0, v.x1))
+          if (r > v.x0 + 1e-6 && r < v.x1 - 1e-6) r,
+        v.x1,
+      ];
+      for (var k = 0; k < cuts.length - 1; k++) {
+        pieces.add(Piece(cuts[k], cuts[k + 1], v.p));
+      }
+    }
+    for (var i = 0; i < pieces.length; i++) {
+      final v = pieces[i];
       final area = v.p.integrate(v.x0, v.x1);
       final next = current + area;
       final dx = v.x1 - v.x0;
-      final isLast = i == forces.shear.pieces.length - 1;
-      final areaText = v.p.degree == 0
-          ? '(${f(v.start)} × ${l(dx)})'
-          : '(∫V dx = ${fl(area)})';
+      final isLast = i == pieces.length - 1;
+      final String areaText;
+      if (v.p.degree == 0) {
+        areaText = '(${f(v.start)} × ${l(dx)})';
+      } else if (v.p.degree == 1) {
+        // A trapezoid: the average height times the width.
+        areaText = '((${f(v.start)} ${v.end < 0 ? minus : '+'} ${Num.compact(fd(v.end).abs())})/2 × ${l(dx)})';
+      } else {
+        areaText = '(∫V dx = ${fl(area)})';
+      }
+      final note = isLast
+          ? null
+          : switch (v.p.degree) {
+              0 => _slopeNote(v.start),
+              1 => t.bmdParabolaNote,
+              _ => t.bmdCubicNote,
+            };
       lines.add(MathLine([
         MathToken('M(${l(v.x1)})', role: TokenRole.symbol),
         const MathToken('=', role: TokenRole.equals),
@@ -1222,17 +1523,27 @@ class _Writer {
         MathToken(isLast && Num.isZeroAt(fld(next), 6) ? '${fl(next)} ✓' : fl(next),
             role: TokenRole.result,
             highlights: [DiagramPointHighlight(DiagramKind.moment, v.x1, Side.left)]),
-      ], note: isLast ? null : _slopeNote(v.start)));
+      ], note: note));
       current = next;
       // A couple applied at the end of this piece makes M jump.
       if (!isLast) {
         final couples = forces.actionsAt(v.x1).whereType<PointCouple>().toList();
         for (final cpl in couples) {
           current -= cpl.moment;
+          final name = _actionSymbol(cpl, vertical: false);
           lines.add(MathLine([
             MathToken(xAt(v.x1), role: TokenRole.symbol),
-            MathToken('${_actionSymbol(cpl, vertical: false)} ⇒ ΔM = ${fl(-cpl.moment)}',
-                role: TokenRole.term, highlights: _actionHighlights(cpl)),
+            MathToken('$name ${arrowM(cpl.moment)} ⇒ ΔM = ${fl(-cpl.moment)}',
+                role: TokenRole.term,
+                explanation: t.coupleJumpMeaning(name, cpl.moment > 0),
+                highlights: [
+                  ..._actionHighlights(cpl),
+                  DiagramPointHighlight(DiagramKind.moment, v.x1),
+                ]),
+            const MathToken('⇒', role: TokenRole.operator),
+            MathToken('M = ${fl(current)}',
+                role: TokenRole.result,
+                highlights: [DiagramPointHighlight(DiagramKind.moment, v.x1, Side.right)]),
           ]));
         }
       }
@@ -1288,7 +1599,7 @@ class _Writer {
         MathToken('@ ${xAt(negative.x)}', role: TokenRole.value),
       ]));
     }
-    final peakAtCrossing = crossings.any((x) => (x - absMax.x).abs() < 1e-9);
+    final peakAtCrossing = crossings.any((x) => (x - absMax.x).abs() < 1e-6);
     final result = keyResults(forces).maxMoment;
     return SolutionStep(
       kind: StepKind.maxMoment,

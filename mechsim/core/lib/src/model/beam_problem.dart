@@ -56,6 +56,13 @@ sealed class Load {
   /// Where the load sits (for a distributed load, where it starts).
   double get x;
 
+  /// Where the load ends; the same as [x] for a concentrated one.
+  double get end => x;
+
+  /// The positions worth labelling and dimensioning.
+  List<double> get positions => end == x ? [x] : [x, end];
+
+  /// The same load with its start at [x]; a distributed load keeps its span.
   Load movedTo(double x);
 
   Map<String, Object?> toJson();
@@ -64,6 +71,8 @@ sealed class Load {
     final kind = json['kind'] as String? ?? 'point';
     return switch (kind) {
       'point' => PointLoad.fromJson(json),
+      'distributed' => DistributedLoad.fromJson(json),
+      'moment' => PointMoment.fromJson(json),
       _ => throw FormatException('Unknown load kind "$kind"'),
     };
   }
@@ -136,6 +145,166 @@ final class PointLoad extends Load {
   int get hashCode => Object.hash(id, x, magnitude, angleDeg);
 }
 
+/// A load spread over part of the beam, perpendicular to it. Its intensity
+/// varies linearly from [w1] (N/m) at [x] to [w2] at [x2]: equal values make
+/// a UDL, different ones a UVL (a triangle when one end is zero, otherwise
+/// a trapezoid).
+final class DistributedLoad extends Load {
+  const DistributedLoad({
+    required this.id,
+    required this.x,
+    required this.x2,
+    required this.w1,
+    required this.w2,
+    this.upward = false,
+  });
+
+  @override
+  final String id;
+  @override
+  final double x;
+  final double x2;
+
+  /// Intensities in N/m, never negative; the direction is [upward].
+  final double w1;
+  final double w2;
+  final bool upward;
+
+  @override
+  double get end => x2;
+
+  double get span => x2 - x;
+  bool get isUniform => w1 == w2;
+
+  /// The resultant force: the area of the load diagram.
+  double get resultant => (w1 + w2) / 2 * span;
+
+  /// The resultant as a vertical component (up positive).
+  double get fy => upward ? resultant : -resultant;
+
+  /// Where the resultant acts: the centroid of the load diagram.
+  double get centroid {
+    final sum = w1 + w2;
+    if (sum == 0 || span == 0) return x + span / 2;
+    return x + span * (w1 + 2 * w2) / (3 * sum);
+  }
+
+  /// Intensity (up positive) at the start and the end.
+  double get q1 => upward ? w1 : -w1;
+  double get q2 => upward ? w2 : -w2;
+
+  @override
+  DistributedLoad movedTo(double x) => copyWith(x: x, x2: x + span);
+
+  DistributedLoad copyWith({
+    double? x,
+    double? x2,
+    double? w1,
+    double? w2,
+    bool? upward,
+  }) =>
+      DistributedLoad(
+        id: id,
+        x: x ?? this.x,
+        x2: x2 ?? this.x2,
+        w1: w1 ?? this.w1,
+        w2: w2 ?? this.w2,
+        upward: upward ?? this.upward,
+      );
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': 'distributed',
+        'id': id,
+        'x': x,
+        'x2': x2,
+        'w1': w1,
+        'w2': w2,
+        'up': upward,
+      };
+
+  factory DistributedLoad.fromJson(Map<String, Object?> json) =>
+      DistributedLoad(
+        id: json['id'] as String,
+        x: (json['x'] as num).toDouble(),
+        x2: (json['x2'] as num).toDouble(),
+        w1: (json['w1'] as num).toDouble(),
+        w2: (json['w2'] as num).toDouble(),
+        upward: json['up'] as bool? ?? false,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is DistributedLoad &&
+      other.id == id &&
+      other.x == x &&
+      other.x2 == x2 &&
+      other.w1 == w1 &&
+      other.w2 == w2 &&
+      other.upward == upward;
+
+  @override
+  int get hashCode => Object.hash(id, x, x2, w1, w2, upward);
+}
+
+/// A concentrated couple applied to the beam, in N·m.
+final class PointMoment extends Load {
+  const PointMoment({
+    required this.id,
+    required this.x,
+    required this.magnitude,
+    this.counterClockwise = true,
+  });
+
+  @override
+  final String id;
+  @override
+  final double x;
+  final double magnitude;
+  final bool counterClockwise;
+
+  /// The couple with its sign, counter-clockwise positive.
+  double get moment => counterClockwise ? magnitude : -magnitude;
+
+  @override
+  PointMoment movedTo(double x) => copyWith(x: x);
+
+  PointMoment copyWith({double? x, double? magnitude, bool? counterClockwise}) =>
+      PointMoment(
+        id: id,
+        x: x ?? this.x,
+        magnitude: magnitude ?? this.magnitude,
+        counterClockwise: counterClockwise ?? this.counterClockwise,
+      );
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': 'moment',
+        'id': id,
+        'x': x,
+        'magnitude': magnitude,
+        'ccw': counterClockwise,
+      };
+
+  factory PointMoment.fromJson(Map<String, Object?> json) => PointMoment(
+        id: json['id'] as String,
+        x: (json['x'] as num).toDouble(),
+        magnitude: (json['magnitude'] as num).toDouble(),
+        counterClockwise: json['ccw'] as bool? ?? true,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is PointMoment &&
+      other.id == id &&
+      other.x == x &&
+      other.magnitude == magnitude &&
+      other.counterClockwise == counterClockwise;
+
+  @override
+  int get hashCode => Object.hash(id, x, magnitude, counterClockwise);
+}
+
 /// Cosine of an angle in degrees that is exact on the multiples of 90°, so a
 /// vertical load has a horizontal component of exactly zero and not 6e−17.
 double cosDeg(double degrees) {
@@ -183,6 +352,9 @@ class BeamProblem {
   bool get hasBeam => length > 0;
 
   List<PointLoad> get pointLoads => loads.whereType<PointLoad>().toList();
+  List<DistributedLoad> get distributedLoads =>
+      loads.whereType<DistributedLoad>().toList();
+  List<PointMoment> get moments => loads.whereType<PointMoment>().toList();
 
   BeamProblem copyWith({
     String? title,
@@ -235,6 +407,11 @@ class BeamProblem {
     final support = supportById(id);
     if (support != null) return replaceSupport(support.copyWith(x: clamped));
     final load = loadById(id);
+    if (load is DistributedLoad) {
+      // The whole load slides; it stops when an end reaches the beam's end.
+      final start = x.clamp(0.0, math.max(0.0, length - load.span)).toDouble();
+      return replaceLoad(load.movedTo(start));
+    }
     if (load != null) return replaceLoad(load.movedTo(clamped));
     return this;
   }
@@ -248,10 +425,18 @@ class BeamProblem {
       return math.min(x, newLength);
     }
 
+    Load fit(Load l) {
+      if (l is! DistributedLoad) return l.movedTo(place(l.x));
+      final end = place(l.x2);
+      var start = place(l.x);
+      if (end - start < 1e-9) start = math.max(0, end - l.span);
+      return l.copyWith(x: start, x2: end);
+    }
+
     return copyWith(
       length: newLength,
       supports: [for (final s in supports) s.copyWith(x: place(s.x))],
-      loads: [for (final l in loads) l.movedTo(place(l.x))],
+      loads: [for (final l in loads) fit(l)],
     );
   }
 

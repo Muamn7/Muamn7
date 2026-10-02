@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import '../diagrams/internal_forces.dart';
 import '../explain/lang.dart';
 import '../explain/solution.dart';
+import '../statics/actions.dart';
 import '../statics/equilibrium.dart';
 import '../units/format.dart';
 import '../units/unit.dart';
@@ -199,7 +200,13 @@ class PracticeSession {
         }
         if (r.kind == ReactionKind.vertical) {
           final total = units.toDisplay(
-              -solution.problem.pointLoads.fold(0.0, (s, l) => s + l.fy),
+              -solution.statics.loadActions.fold(
+                  0.0,
+                  (s, a) => s + switch (a) {
+                        PointForce(:final fy) => fy,
+                        DistributedForce(:final fy) => fy,
+                        PointCouple() => 0.0,
+                      }),
               Dimension.force);
           if (near(answerDisplay, total) && solution.statics.reactions
               .where((x) => x.kind == ReactionKind.vertical).length > 1) {

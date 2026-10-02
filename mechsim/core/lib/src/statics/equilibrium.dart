@@ -161,27 +161,32 @@ class EquationBuilder {
   final BeamProblem problem;
   final List<Reaction> reactions;
 
-  List<PointLoad> get _loads =>
-      [...problem.pointLoads]..sort((a, b) => a.x.compareTo(b.x));
+  List<Load> get _loads =>
+      [...problem.loads]..sort((a, b) => a.x.compareTo(b.x));
 
   EquilibriumEquation sumFx() => EquilibriumEquation(EquationKind.sumFx, [
         for (final r in reactions)
           if (r.kind == ReactionKind.horizontal)
             EquationTerm.unknown(r.id, 1),
         for (final l in _loads)
-          if (l.fx != 0) EquationTerm.known(l.id, l.fx, component: l.fx),
+          if (l is PointLoad && l.fx != 0)
+            EquationTerm.known(l.id, l.fx, component: l.fx),
       ]);
 
+  /// ΣFy. A distributed load enters as its resultant; a couple does not
+  /// enter at all (it is a pure moment).
   EquilibriumEquation sumFy() => EquilibriumEquation(EquationKind.sumFy, [
         for (final r in reactions)
           if (r.kind == ReactionKind.vertical) EquationTerm.unknown(r.id, 1),
         for (final l in _loads)
-          if (l.fy != 0) EquationTerm.known(l.id, l.fy, component: l.fy),
+          if (_fy(l) != 0) EquationTerm.known(l.id, _fy(l), component: _fy(l)),
       ]);
 
   /// ΣM about the point (x0, 0), counter-clockwise positive. Forces whose
   /// line of action passes through the point are left out: their moment is
-  /// zero, and the explanation says so.
+  /// zero, and the explanation says so. A distributed load acts through its
+  /// resultant at its centroid; a couple has the same moment about every
+  /// point.
   EquilibriumEquation sumMoment(double x0) =>
       EquilibriumEquation(EquationKind.sumMoment, [
         for (final r in reactions)
@@ -190,10 +195,25 @@ class EquationBuilder {
           else if (r.kind == ReactionKind.vertical && !_same(r.x, x0))
             EquationTerm.unknown(r.id, r.x - x0, arm: r.x - x0),
         for (final l in _loads)
-          if (l.fy != 0 && !_same(l.x, x0))
-            EquationTerm.known(l.id, (l.x - x0) * l.fy,
-                component: l.fy, arm: l.x - x0),
+          if (l is PointMoment && l.magnitude != 0)
+            EquationTerm.known(l.id, l.moment)
+          else if (_fy(l) != 0 && !_same(_at(l), x0))
+            EquationTerm.known(l.id, (_at(l) - x0) * _fy(l),
+                component: _fy(l), arm: _at(l) - x0),
       ], about: x0);
+
+  /// The vertical force a load puts on the beam (its resultant).
+  static double _fy(Load l) => switch (l) {
+        PointLoad() => l.fy,
+        DistributedLoad() => l.fy,
+        PointMoment() => 0,
+      };
+
+  /// Where that force acts.
+  static double _at(Load l) => switch (l) {
+        DistributedLoad() => l.centroid,
+        _ => l.x,
+      };
 
   static bool _same(double a, double b) => (a - b).abs() < 1e-9;
 }
@@ -252,7 +272,12 @@ class StaticsSolution {
   double valueOf(String reactionId) => values[reactionId]!;
 
   List<Action> get loadActions => [
-        for (final l in problem.pointLoads) PointForce(l.id, l.x, fx: l.fx, fy: l.fy),
+        for (final l in problem.loads)
+          switch (l) {
+            PointLoad() => PointForce(l.id, l.x, fx: l.fx, fy: l.fy),
+            DistributedLoad() => DistributedForce(l.id, l.x, l.x2, l.q1, l.q2),
+            PointMoment() => PointCouple(l.id, l.x, l.moment),
+          },
       ];
 
   List<Action> get reactionActions => [
@@ -288,7 +313,7 @@ abstract final class StaticsSolver {
     final tol = 1e-9 * (problem.length > 1 ? problem.length : 1);
     final offBeam = [
       ...problem.supports.map((s) => s.x),
-      ...problem.loads.map((l) => l.x),
+      for (final l in problem.loads) ...l.positions,
     ].any((x) => x < -tol || x > problem.length + tol);
     if (offBeam) {
       return result(StabilityReport(
@@ -334,8 +359,8 @@ abstract final class StaticsSolver {
     final solution = _solveSquare(matrix, rhs);
     // Round-off below a billionth of the applied load is noise: a reaction
     // that should be zero is reported as exactly zero.
-    final scale = problem.pointLoads
-        .fold(0.0, (sum, l) => sum + l.magnitude)
+    final scale = problem.loads
+        .fold(0.0, (sum, l) => sum + _size(l, problem.length))
         .clamp(1.0, double.infinity);
     final momentScale = scale * (problem.length > 1 ? problem.length : 1);
     double clean(int i) {
@@ -350,6 +375,13 @@ abstract final class StaticsSolver {
       {for (var i = 0; i < n; i++) reactions[i].id: clean(i)},
     );
   }
+
+  /// A load's size as a force, to tell round-off from a real value.
+  static double _size(Load l, double length) => switch (l) {
+        PointLoad() => l.magnitude,
+        DistributedLoad() => l.resultant.abs(),
+        PointMoment() => l.magnitude / (length > 1 ? length : 1),
+      };
 
   static StabilityReason _whyUnstable(List<Reaction> reactions, int n) {
     if (!reactions.any((r) => r.kind == ReactionKind.horizontal)) {
