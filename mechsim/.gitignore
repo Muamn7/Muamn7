@@ -1,0 +1,11 @@
+# Dart / Flutter
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+*.iml
+.idea/
+.metadata.local
+coverage/
+# Screenshots rendered by the test suite go to the scratch build folder.
