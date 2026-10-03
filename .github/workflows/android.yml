@@ -8,7 +8,11 @@ on:
   push:
     branches: ['**']
     tags: ['v*']
+    # كذّاب has its own workflow (kazzab.yml); a change to it alone is no
+    # reason to rebuild and re-run ASHEN.
+    paths-ignore: ['kazzab/**', '.github/workflows/kazzab.yml']
   pull_request:
+    paths-ignore: ['kazzab/**', '.github/workflows/kazzab.yml']
   workflow_dispatch:
     inputs:
       publish:

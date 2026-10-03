@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.muamn.kazzab'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.muamn.kazzab'
+        minSdk 24
+        targetSdk 35
+        versionCode Integer.parseInt(project.property('kazzabVersionCode'))
+        versionName project.property('kazzabVersion')
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            // The game itself: the very same files the web version serves.
+            assets.srcDirs = ["$rootDir/../web"]
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Debug-signed so it installs straight from a download, like ASHEN's.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+// No dependencies: the WebView, the speech engine and the share sheet are all
+// part of Android itself.

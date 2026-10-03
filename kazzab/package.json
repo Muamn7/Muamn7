@@ -1,0 +1,16 @@
+{
+  "name": "kazzab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "كذّاب — a bluffing card game for phones, played with friends by room code",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/engine.test.js test/room.test.js",
+    "e2e": "node test/e2e.js",
+    "serve": "node tools/serve.js"
+  },
+  "devDependencies": {
+    "peer": "1.0.2",
+    "playwright": "1.56.1"
+  }
+}

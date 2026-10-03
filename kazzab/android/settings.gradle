@@ -1,0 +1,22 @@
+// The Android shell for كذّاب: a WebView around ../web, nothing more.
+// A separate Gradle build from ASHEN's, so neither can break the other.
+// Built with the repository's wrapper:  ./gradlew -p kazzab/android assembleDebug
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'kazzab'
+include ':app'

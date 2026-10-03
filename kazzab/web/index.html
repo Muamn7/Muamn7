@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1f18">
+<meta name="description" content="كذّاب — لعبة الورق مع أصدقائك بكود غرفة">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>كذّاب</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============================== الرئيسية ============================== -->
+<section id="home" class="screen active">
+  <div class="home-wrap">
+    <div class="logo">
+      <div class="logo-fan" aria-hidden="true">
+        <span class="mini back"></span><span class="mini face red">A<br>♥</span><span class="mini face">K<br>♠</span>
+      </div>
+      <h1>كذّاب</h1>
+      <p class="tag">اكذب بثقة… أو اكشف الكذّاب</p>
+    </div>
+
+    <div class="panel">
+      <label class="field">
+        <span>اسمك</span>
+        <input id="name" maxlength="16" autocomplete="nickname" placeholder="اكتب اسمك">
+      </label>
+      <div class="avatars" id="avatars" role="radiogroup" aria-label="اختر شكلك"></div>
+    </div>
+
+    <button class="btn gold big" id="btn-rejoin" hidden></button>
+
+    <div class="panel">
+      <button class="btn primary big" id="btn-create">🎴 أنشئ غرفة</button>
+      <div class="join-row">
+        <input id="code" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="كود الغرفة" aria-label="كود الغرفة">
+        <button class="btn gold" id="btn-join">انضم</button>
+      </div>
+    </div>
+
+    <div class="panel slim">
+      <div class="solo-row">
+        <button class="btn ghost" id="btn-solo">🤖 العب ضد الكمبيوتر</button>
+        <select id="solo-bots" aria-label="عدد اللاعبين الآليين">
+          <option value="2">٢ آلي</option>
+          <option value="3" selected>٣ آلي</option>
+          <option value="4">٤ آلي</option>
+          <option value="5">٥ آلي</option>
+          <option value="6">٦ آلي</option>
+          <option value="7">٧ آلي</option>
+        </select>
+      </div>
+      <button class="btn link" id="btn-rules">📜 طريقة اللعب</button>
+    </div>
+    <p class="foot" id="foot"></p>
+  </div>
+</section>
+
+<!-- ============================== الاتصال ============================== -->
+<section id="connecting" class="screen">
+  <div class="center-box">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="conn-text">جارٍ الاتصال…</p>
+    <button class="btn ghost" id="btn-conn-cancel">إلغاء</button>
+  </div>
+</section>
+
+<!-- ============================== الغرفة ============================== -->
+<section id="lobby" class="screen">
+  <header class="bar">
+    <button class="icon-btn" id="lobby-leave" aria-label="خروج">✕</button>
+    <span class="bar-title">الغرفة</span>
+    <span class="net-dot" id="lobby-net"></span>
+  </header>
+  <div class="lobby-wrap">
+    <div class="code-card" id="code-card">
+      <span class="code-label">كود الغرفة</span>
+      <span class="code-big" id="lobby-code" dir="ltr">------</span>
+      <div class="code-actions">
+        <button class="btn gold" id="btn-share">📤 أرسل للأصدقاء</button>
+        <button class="btn ghost" id="btn-copy">📋 نسخ</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>اللاعبون <span id="lobby-count"></span></h2>
+        <button class="btn small ghost host-only" id="btn-add-bot">+ كمبيوتر</button>
+      </div>
+      <ul class="members" id="members"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>قواعد الغرفة</h2>
+      <div class="settings" id="settings"></div>
+    </div>
+
+    <div class="lobby-cta">
+      <button class="btn primary big host-only" id="btn-start">ابدأ اللعب</button>
+      <p class="hint guest-only" id="lobby-wait">بانتظار المضيف ليبدأ اللعب…</p>
+      <p class="hint host-only" id="lobby-need"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== اللعب ============================== -->
+<section id="game" class="screen">
+  <header class="bar">
+    <button class="icon-btn" id="game-menu" aria-label="القائمة">☰</button>
+    <span class="bar-title" id="game-title"></span>
+    <button class="icon-btn" id="game-sound" aria-label="الصوت">🔊</button>
+    <span class="net-dot" id="game-net"></span>
+  </header>
+
+  <div class="seats" id="seats"></div>
+
+  <div class="table" id="table">
+    <div class="round-badge" id="round-badge"></div>
+    <div class="pile" id="pile" aria-live="polite">
+      <div class="pile-stack" id="pile-stack"></div>
+      <div class="pile-count" id="pile-count"></div>
+    </div>
+    <div class="claim" id="claim"></div>
+  </div>
+
+  <div class="status">
+    <p id="status-text"></p>
+    <div class="timer"><i id="timer-bar"></i></div>
+  </div>
+
+  <div class="actions" id="actions">
+    <div class="act act-challenge" id="act-challenge">
+      <button class="btn liar" id="btn-call">كذّاب!</button>
+      <button class="btn ghost" id="btn-trust">صدّقت ✓</button>
+    </div>
+    <div class="act act-turn" id="act-turn">
+      <div class="ranks" id="ranks"></div>
+      <div class="turn-row">
+        <button class="btn ghost" id="btn-pass">باص</button>
+        <button class="btn primary" id="btn-play" disabled>اختر أوراقك</button>
+      </div>
+    </div>
+    <div class="act act-react" id="act-react"></div>
+  </div>
+
+  <div class="hand-wrap">
+    <div class="me-line"><span id="me-line"></span></div>
+    <div class="hand" id="hand"></div>
+  </div>
+</section>
+
+<!-- ============================== الكشف ============================== -->
+<div class="overlay" id="reveal" hidden>
+  <div class="reveal-box">
+    <div class="verdict" id="reveal-verdict"></div>
+    <p class="reveal-claim" id="reveal-claim"></p>
+    <div class="reveal-cards" id="reveal-cards"></div>
+    <p class="reveal-result" id="reveal-result"></p>
+  </div>
+</div>
+
+<!-- ============================== النهاية ============================== -->
+<div class="overlay" id="over" hidden>
+  <div class="over-box">
+    <div class="confetti" id="confetti" aria-hidden="true"></div>
+    <div class="over-avatar" id="over-avatar"></div>
+    <h2 id="over-title"></h2>
+    <ol class="standings" id="standings"></ol>
+    <div class="over-actions">
+      <button class="btn primary host-only" id="btn-rematch">جولة جديدة</button>
+      <button class="btn ghost host-only" id="btn-to-lobby">رجوع للغرفة</button>
+      <p class="hint guest-only">بانتظار المضيف…</p>
+      <button class="btn link" id="btn-over-leave">خروج</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== القائمة ============================== -->
+<div class="overlay" id="menu" hidden>
+  <div class="sheet">
+    <h2>القائمة</h2>
+    <label class="toggle"><input type="checkbox" id="opt-sound" checked> <span>المؤثرات الصوتية</span></label>
+    <label class="toggle"><input type="checkbox" id="opt-voice" checked> <span>قراءة الإعلان بالصوت</span></label>
+    <p class="hint" id="voice-hint"></p>
+    <button class="btn ghost" id="menu-rules">📜 طريقة اللعب</button>
+    <button class="btn ghost host-only" id="menu-end">إنهاء الجولة والرجوع للغرفة</button>
+    <button class="btn danger" id="menu-leave">مغادرة اللعبة</button>
+    <button class="btn link" id="menu-close">رجوع</button>
+  </div>
+</div>
+
+<!-- ============================== القواعد ============================== -->
+<div class="overlay" id="rules" hidden>
+  <div class="sheet rules">
+    <h2>طريقة اللعب</h2>
+    <h3>الهدف</h3>
+    <p>تخلّص من كل أوراقك قبل الجميع.</p>
+    <h3>البداية</h3>
+    <p>من ٣ إلى ٨ لاعبين. تُوزَّع الشدّة كاملة بالتساوي، ويبدأ صاحب <b>آس البستوني ♠</b> (أو حسب قواعد الغرفة)، واللعب باتجاه عقارب الساعة.</p>
+    <h3>في دورك</h3>
+    <p>اختر ورقة أو أكثر (حتى ٤ حسب القواعد) وضعها مقلوبة، وأعلن رتبتها: «ثلاث أوراق سبعة». يمكنك أن تصدق… أو تكذب وتضع أي أوراق أخرى.</p>
+    <p><b>جولة على رتبة واحدة</b> (القاعدة الافتراضية): أول لاعب في الجولة يختار الرتبة، ومن بعده يجب أن يعلن نفس الرتبة أو يقول <b>باص</b>. إذا قال الجميع باص تُحرق الكومة ويبدأ آخر من لعب جولة جديدة.</p>
+    <h3>كذّاب!</h3>
+    <p>بعد كل إعلان، أمام البقية ثوانٍ قليلة ليضغطوا <b>كذّاب!</b></p>
+    <ul>
+      <li>إذا كان يكذب: يسحب هو الكومة كلها، ويبدأ من كشفه.</li>
+      <li>إذا كان صادقاً: يسحب المشكّك الكومة كلها، ويبدأ الصادق.</li>
+    </ul>
+    <h3>الفوز</h3>
+    <p>من يضع آخر ورقة ولا يُمسك كاذباً يفوز. إذا كُشف كذبه بآخر ورقة يسحب الكومة ويكمل.</p>
+    <h3>نصيحة</h3>
+    <p>هناك أربع أوراق فقط من كل رتبة. إذا كان معك ورقتا ٧ وأحدهم أعلن ثلاث أوراق ٧… فأنت تعرف الجواب 😏</p>
+    <button class="btn primary" id="rules-close">فهمت</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="vendor/peerjs.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/room.js"></script>
+<script src="js/net.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

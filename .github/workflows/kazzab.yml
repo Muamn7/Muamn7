@@ -1,0 +1,182 @@
+name: Kazzab
+
+# كذّاب — the card game in kazzab/. A workflow of its own, so ASHEN's build and
+# this one never wait on each other or break each other.
+#
+# Every push that touches kazzab/ runs the rules tests, plays a real three-phone
+# game in headless Chromium, and builds an installable APK under the run's
+# Artifacts. From the Actions tab, "Run workflow" can also publish the APK as a
+# release and the web version to GitHub Pages.
+
+on:
+  push:
+    branches: ['**']
+    paths: ['kazzab/**', '.github/workflows/kazzab.yml']
+  pull_request:
+    paths: ['kazzab/**', '.github/workflows/kazzab.yml']
+  workflow_dispatch:
+    inputs:
+      publish_apk:
+        description: 'Publish a downloadable release with the APK'
+        type: boolean
+        default: false
+      publish_web:
+        description: 'Publish the web version to GitHub Pages'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rules, room and three-phone tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kazzab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kazzab/package-lock.json
+
+      - run: npm ci
+
+      - name: Rules and room
+        run: npm test
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # A local PeerJS broker and three browser profiles: create a room, join
+      # it by code, call an honest play and a lie, reload mid-game, close.
+      - name: Three phones, one room code
+        run: npm run e2e
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazzab-screenshots
+          path: kazzab/test/out
+          if-no-files-found: ignore
+
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # kazzab/android is its own Gradle build; the repository's wrapper runs it.
+      - name: Assemble debug and release APKs
+        run: ./gradlew -p kazzab/android assembleDebug assembleRelease --no-daemon
+
+      # The APK is a shell around the web game. One that builds without the
+      # game inside installs fine and shows a blank screen.
+      - name: Check the APKs carry the game
+        run: |
+          set -euo pipefail
+          fail=0
+          for apk in kazzab/android/app/build/outputs/apk/*/*.apk; do
+            echo "== $apk ($(du -h "$apk" | cut -f1))"
+            list=$(unzip -Z1 "$apk")
+            for f in assets/index.html assets/css/style.css assets/js/app.js assets/js/engine.js \
+                     assets/js/bot.js assets/js/room.js assets/js/net.js assets/js/audio.js \
+                     assets/vendor/peerjs.min.js assets/fonts/cairo-arabic.woff2; do
+              if echo "$list" | grep -qx "$f"; then echo "   ok       $f"; else echo "   MISSING  $f"; fail=1; fi
+            done
+          done
+          exit $fail
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazzab-debug-apk
+          path: kazzab/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazzab-release-apk
+          path: kazzab/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish APK release
+    needs: [test, apk]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kazzab-*-apk
+          path: apks
+          merge-multiple: true
+
+      - name: Name them after the version
+        run: |
+          set -euo pipefail
+          version=$(grep '^kazzabVersion=' kazzab/android/gradle.properties | cut -d= -f2)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p out
+          cp apks/app-release.apk "out/kazzab-$version.apk"
+          cp apks/app-debug.apk "out/kazzab-$version-debug.apk"
+          sha256sum out/*.apk | tee out/SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kazzab-v${{ env.VERSION }}
+          name: كذّاب v${{ env.VERSION }}
+          files: |
+            out/*.apk
+            out/SHA256SUMS.txt
+          body: |
+            ## التثبيت
+
+            نزّل `kazzab-${{ env.VERSION }}.apk` على هاتفك (أندرويد 7.0 فأحدث) وثبّته.
+            سيطلب الهاتف السماح بالتثبيت من مصدر غير معروف — هذا طبيعي لأي ملف
+            APK لا يأتي من متجر Play.
+
+            ## اللعب مع الأصدقاء
+
+            واحد ينشئ غرفة ويرسل الكود (٦ أرقام)، والبقية يكتبونه ويدخلون.
+            يلزم اتصال بالإنترنت، ومن ٣ إلى ٨ لاعبين — أو العب ضد الكمبيوتر بلا إنترنت.
+
+  pages:
+    name: Publish web version
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # Needs Settings -> Pages -> Source: "GitHub Actions" set once by hand.
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: kazzab/web
+      - id: deploy
+        uses: actions/deploy-pages@v4

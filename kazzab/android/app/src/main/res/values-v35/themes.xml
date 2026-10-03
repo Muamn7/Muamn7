@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 15 draws apps that target 35 edge to edge, under the status and
+      navigation bars. A WebView does not get those insets as CSS safe areas on
+      every version, so the header and the hand would slide under the bars.
+      Opt out until the page handles insets itself.
+    -->
+    <style name="KazzabTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/table</item>
+        <item name="android:statusBarColor">@color/table</item>
+        <item name="android:navigationBarColor">@color/table</item>
+        <item name="android:colorAccent">@color/gold</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
