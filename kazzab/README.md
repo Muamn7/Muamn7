@@ -25,7 +25,13 @@
 
 ### ١. تطبيق أندرويد (APK)
 
-كل دفعة (push) تغيّر شيئاً في `kazzab/` تبني APK تلقائياً:
+**من الهاتف مباشرة:** افتح
+<https://github.com/Muamn7/Muamn7/releases/download/kazzab-latest/Kazzab.apk>
+فيُنزَّل التطبيق، ثم افتحه وثبّته. الرابط ثابت ويُحدَّث بآخر نسخة مع كل
+تعديل تنجح اختباراته (صفحة الإصدار:
+[kazzab-latest](https://github.com/Muamn7/Muamn7/releases/tag/kazzab-latest)).
+
+أو من صفحة البناء نفسها:
 
 1. افتح تبويب **Actions** في GitHub ← **Kazzab** ← آخر تشغيل ناجح.
 2. نزّل **kazzab-release-apk** من قسم Artifacts (يصل ملف zip، فكّه).

@@ -119,6 +119,37 @@ jobs:
           path: kazzab/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
+  # A fixed download link a phone can open, like MechSim's: the Actions
+  # artifacts arrive as a zip behind a GitHub login. Replaced on every push
+  # once the tests pass, and marked as a pre-release so it never displaces
+  # ASHEN's releases.
+  latest:
+    name: Publish the latest download
+    needs: [test, apk]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kazzab-release-apk
+          path: apk
+
+      - name: Replace kazzab-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp apk/app-release.apk Kazzab.apk
+          gh release delete kazzab-latest --cleanup-tag --yes || true
+          gh release create kazzab-latest Kazzab.apk \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title "كذّاب — آخر نسخة" \
+            --notes "نزّل Kazzab.apk من الأسفل وافتحه على هاتف أندرويد لتثبيته (اسمح بالتثبيت من هذا المصدر إذا سُئلت). بُنيت من ${GITHUB_SHA::7}."
+
   release:
     name: Publish APK release
     needs: [test, apk]
