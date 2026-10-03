@@ -49,7 +49,11 @@ async function main() {
     phones.push(p);
     return p;
   }
-  const shot = (p, name) => p.page.screenshot({ path: path.join(OUT, name + '.png') });
+  // A beat first, so an overlay is photographed after its entrance, not halfway through.
+  const shot = async (p, name) => {
+    await new Promise((r) => setTimeout(r, 450));
+    await p.page.screenshot({ path: path.join(OUT, name + '.png') });
+  };
   const game = (p) => p.page.evaluate(() => window.KazzabApp.app.snap && window.KazzabApp.app.snap.game);
   const step = (msg) => console.log('•', msg);
 

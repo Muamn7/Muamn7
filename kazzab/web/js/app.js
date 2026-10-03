@@ -12,14 +12,17 @@
 
   const K = window.Kazzab;
   const E = K.Engine, Room = K.Room, Net = K.Net, A = K.Audio;
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------ Arabic text
 
   const RANK_WORD = ['آس', 'اثنين', 'ثلاثة', 'أربعة', 'خمسة', 'ستة', 'سبعة', 'ثمانية', 'تسعة', 'عشرة', 'ولد', 'بنت', 'شايب'];
   const COUNT_WORD = ['', 'ورقة واحدة', 'ورقتين', 'ثلاث أوراق', 'أربع أوراق'];
-  const SUIT_SYM = ['♠', '♥', '♦', '♣'];
+  // U+FE0E asks for the text glyph: without it some phones draw the suits as emoji.
+  const SUIT_SYM = ['♠\uFE0E', '♥\uFE0E', '♦\uFE0E', '♣\uFE0E'];
+  /** The metal each seat's monogram is drawn in, by the order players joined. */
+  const TONES = ['#c6a660', '#b8bcc2', '#b77d52', '#d8cba8', '#c08e8a', '#6fa08a', '#8d9fc4', '#a991c4'];
   const FACE_WORD = { 10: 'ولد', 11: 'بنت', 12: 'شايب' };
   const claimText = (count, rank) => COUNT_WORD[count] + ' ' + RANK_WORD[rank];
   const cardsWord = (n) => n === 1 ? 'ورقة واحدة' : n === 2 ? 'ورقتين' : (n >= 3 && n <= 10) ? n + ' أوراق' : n + ' ورقة';
@@ -33,7 +36,7 @@
         sequence: 'الإعلانات بالترتيب: آس ثم ٢ ثم ٣… حتى الشايب ثم من جديد.'
       } },
     { key: 'maxCards', label: 'أقصى عدد أوراق في الدور', options: [[1, '١'], [2, '٢'], [3, '٣'], [4, '٤']] },
-    { key: 'starter', label: 'من يبدأ', options: [['ace', 'صاحب آس ♠'], ['random', 'عشوائي'], ['host', 'المضيف']] },
+    { key: 'starter', label: 'من يبدأ', options: [['ace', 'صاحب آس البستوني'], ['random', 'عشوائي'], ['host', 'المضيف']] },
     { key: 'challengeSeconds', label: 'مهلة «كذّاب!»', options: [[4, '٤ ث'], [6, '٦ ث'], [10, '١٠ ث']] },
     { key: 'turnSeconds', label: 'مهلة الدور', options: [[30, '٣٠ ث'], [60, '٦٠ ث'], [0, 'بلا مهلة']] }
   ];
@@ -138,9 +141,21 @@
     if (seat === s.game.me) return 'أنت';
     return s.game.players[seat] ? s.game.players[seat].name : '؟';
   }
-  function seatAvatar(s, seat) {
-    const m = memberOf(s, s.game.players[seat].id);
-    return m ? m.avatar : '🙂';
+  function initial(name) {
+    const t = String(name || '').trim();
+    return t ? Array.from(t)[0] : '؟';
+  }
+  function toneOf(s, id) {
+    const i = s.members.findIndex((m) => m.id === id);
+    return TONES[(i < 0 ? 0 : i) % TONES.length];
+  }
+  /** A player's mark: the first letter of the name in a fine ring of the seat's metal. */
+  function mono(s, id, name) {
+    return `<span class="mono" style="--tone:${toneOf(s, id)}">${esc(initial(name))}</span>`;
+  }
+  function seatMono(s, seat) {
+    const p = s.game.players[seat];
+    return mono(s, p.id, p.name);
   }
   const isHost = () => !!app.snap && app.snap.host === app.snap.you;
   const holding = () => Date.now() < app.holdEnds;
@@ -178,7 +193,7 @@
   // --------------------------------------------------------------- sessions
 
   function profile() {
-    return { name: Room.cleanName($('name').value) || 'لاعب', avatar: store.get('avatar', Room.AVATARS[0]) };
+    return { name: Room.cleanName($('name').value) || 'لاعب' };
   }
 
   function needName() {
@@ -198,7 +213,7 @@
       onOpen(code) {
         if (app.net !== net) return;
         app.room = new Room({
-          code, hostKey: myKey, hostName: me.name, hostAvatar: me.avatar,
+          code, hostKey: myKey, hostName: me.name,
           settings: store.get('settings', null), send: hostSend
         });
         net.setRoom(app.room);
@@ -227,7 +242,7 @@
     const me = profile();
     const net = new Net.NetClient({
       code,
-      hello: () => ({ t: 'hello', v: Room.PROTOCOL, key: myKey, name: me.name, avatar: me.avatar }),
+      hello: () => ({ t: 'hello', v: Room.PROTOCOL, key: myKey, name: me.name }),
       onMessage: (m) => { if (app.net === net) onMessage(m); },
       onStatus(state, detail) {
         if (app.net !== net) return;
@@ -245,7 +260,7 @@
     resetSession('solo');
     const me = profile();
     app.room = new Room({
-      code: '', hostKey: myKey, hostName: me.name, hostAvatar: me.avatar,
+      code: '', hostKey: myKey, hostName: me.name,
       settings: store.get('settings', null), send: hostSend
     });
     for (let i = 0; i < bots; i++) app.room.addBot();
@@ -363,7 +378,7 @@
         break;
       case 'burn':
         A.play('burn');
-        toast('الكل قال باص 🔥 احترقت ' + cardsWord(e.count) + ' — ' +
+        toast('الكل قال باص، احترقت ' + cardsWord(e.count) + ' — ' +
           (e.starter === g.me ? 'أنت تبدأ جولة جديدة' : 'يبدأ ' + seatName(s, e.starter)));
         break;
       case 'reveal':
@@ -386,11 +401,12 @@
 
     $('members').innerHTML = s.members.map((m) => {
       const tags = [];
-      if (m.id === s.host) tags.push('<span class="tag host">👑 المضيف</span>');
+      if (m.id === s.host) tags.push('<span class="tag host">المضيف</span>');
       if (m.id === s.you) tags.push('<span class="tag you">أنت</span>');
-      if (m.bot) tags.push('<span class="tag">🤖 كمبيوتر</span>');
-      const kick = isHost() && m.id !== s.host ? `<button class="kick" data-kick="${esc(m.id)}" aria-label="إخراج">✕</button>` : '';
-      return `<li><span class="av">${m.avatar}</span><span class="nm">${esc(m.name)}</span>${tags.join('')}${kick}</li>`;
+      if (m.bot) tags.push('<span class="tag">آلي</span>');
+      const kick = isHost() && m.id !== s.host
+        ? `<button class="kick" data-kick="${esc(m.id)}" aria-label="إخراج"><svg><use href="#i-close"/></svg></button>` : '';
+      return `<li>${mono(s, m.id, m.name)}<span class="nm">${esc(m.name)}</span>${tags.join('')}${kick}</li>`;
     }).join('');
 
     const host = isHost();
@@ -413,7 +429,7 @@
     const code = app.snap && app.snap.code;
     if (!code) return;
     const url = shareUrl(code);
-    const text = 'تعال العب «كذّاب» معي 🃏\nكود الغرفة: ' + code + (url ? '\n' + url : '');
+    const text = 'تعال العب «كذّاب» معي\nكود الغرفة: ' + code + (url ? '\n' + url : '');
     if (window.KazzabAndroid && window.KazzabAndroid.share) { window.KazzabAndroid.share(text); return; }
     if (navigator.share) { navigator.share({ title: 'كذّاب', text }).catch(() => {}); return; }
     copyText(text, 'نُسخت الدعوة — الصقها في واتساب');
@@ -457,7 +473,7 @@
     renderHand(s);
     renderOver(s);
     $('me-line').innerHTML = g.me >= 0
-      ? `${seatAvatar(s, g.me)} <b>${esc(g.players[g.me].name)}</b> — معك ${cardsWord(g.hand.length)}`
+      ? `<b>${esc(g.players[g.me].name)}</b> — معك ${cardsWord(g.hand.length)}`
       : 'تتفرّج';
   }
 
@@ -481,18 +497,18 @@
       box.dataset.sig = sig;
       box.classList.toggle('many', order.length > 5);
       box.innerHTML = order.map((i) =>
-        `<div class="seat" data-seat="${i}"><div class="av"><span class="emo"></span><span class="cnt"></span></div><span class="badge"></span><span class="nm"></span></div>`).join('');
+        `<div class="seat" data-seat="${i}">${seatMono(s, i)}<span class="nm"></span><span class="sub"><span class="cnt"></span><span class="note"></span></span></div>`).join('');
     }
     order.forEach((i) => {
       const el = box.querySelector(`[data-seat="${i}"]`);
       const p = g.players[i];
       const m = memberOf(s, p.id);
-      el.querySelector('.emo').textContent = m ? m.avatar : '🙂';
       el.querySelector('.nm').textContent = p.name;
       const cnt = el.querySelector('.cnt');
       cnt.textContent = p.count;
       cnt.classList.toggle('low', p.count <= 2);
-      el.querySelector('.badge').textContent = m && m.bot ? '🤖' : m && !m.connected ? '📵' : m && m.id === s.host ? '👑' : '';
+      el.querySelector('.note').textContent =
+        m && !m.bot && !m.connected ? 'غائب' : m && m.bot ? 'آلي' : m && m.id === s.host ? 'المضيف' : '';
       const active = (g.phase === 'play' && g.turn === i) || (g.phase === 'challenge' && g.challenge.by === i);
       el.classList.toggle('turn', active);
       el.classList.toggle('away', !!(m && !m.bot && !m.connected));
@@ -535,7 +551,7 @@
     if (lp) {
       const playEv = g.events.filter((e) => e.type === 'play').slice(-1)[0];
       const seq = playEv ? playEv.seq : 0;
-      claim.innerHTML = `<span>${seatAvatar(s, lp.by)}</span><span class="who">${esc(seatName(s, lp.by))}:</span><span>«${claimText(lp.count, lp.rank)}»</span>`;
+      claim.innerHTML = `<span class="who">${esc(seatName(s, lp.by))}</span><span>«${claimText(lp.count, lp.rank)}»</span>`;
       if (seq !== app.claimSeq) {
         app.claimSeq = seq;
         claim.classList.remove('fresh');
@@ -554,7 +570,7 @@
     let mine = false;
     if (g.phase === 'challenge') {
       const by = g.challenge.by;
-      if (by === g.me) { text = 'هل سيكشفك أحد؟ 🤞'; mine = true; }
+      if (by === g.me) { text = 'هل سيكشفك أحد؟'; mine = true; }
       else if (g.challenge.declined.includes(g.me)) text = 'صدّقته… ننتظر البقية';
       else { text = 'هل تصدّق ' + seatName(s, by) + '؟'; mine = true; }
     } else if (g.phase === 'play') {
@@ -599,10 +615,12 @@
     const btn = $('btn-play');
     const n = app.sel.size;
     const rank = g.required !== null ? g.required : app.rank;
+    btn.classList.remove('lie');
     if (!n) { btn.textContent = 'اختر أوراقك'; btn.disabled = true; return; }
     if (rank === null) { btn.textContent = 'اختر الرتبة التي ستعلنها'; btn.disabled = true; return; }
     const honest = Array.from(app.sel).every((c) => E.rankOf(c) === rank);
-    btn.textContent = (honest ? 'ضعها: ' : '🤫 اكذب: ') + '«' + claimText(n, rank) + '»';
+    btn.textContent = (honest ? 'ضعها: ' : 'اكذب: ') + '«' + claimText(n, rank) + '»';
+    btn.classList.toggle('lie', !honest);
     btn.disabled = holding();
   }
 
@@ -669,22 +687,11 @@
     if (app.overSeq === g.seq && !box.hidden) return;
     app.overSeq = g.seq;
     const w = g.winner;
-    $('over-avatar').textContent = seatAvatar(s, w);
-    $('over-title').textContent = w === g.me ? 'فزت! 🎉' : 'فاز ' + g.players[w].name + '!';
+    $('over-avatar').innerHTML = seatMono(s, w);
+    $('over-title').textContent = w === g.me ? 'فزت' : 'فاز ' + g.players[w].name;
     const ranked = g.players.map((p, i) => ({ p, i })).sort((a, b) => a.p.count - b.p.count);
     $('standings').innerHTML = ranked.map(({ p, i }) =>
-      `<li><b>${esc(i === g.me ? 'أنت' : p.name)}</b> — ${p.count ? cardsWord(p.count) : i === g.me ? 'خلّصت أوراقك' : 'خلّص أوراقه'}</li>`).join('');
-    const conf = $('confetti');
-    conf.innerHTML = '';
-    const colors = ['#e9c46a', '#e63946', '#52b788', '#f4f1e8', '#4cc9f0'];
-    for (let i = 0; i < 40; i++) {
-      const c = document.createElement('i');
-      c.style.left = (Math.random() * 100) + '%';
-      c.style.background = colors[i % colors.length];
-      c.style.animationDuration = (1.6 + Math.random() * 1.8) + 's';
-      c.style.animationDelay = (Math.random() * 0.6) + 's';
-      conf.appendChild(c);
-    }
+      `<li><b>${esc(i === g.me ? 'أنت' : p.name)}</b><span>${p.count ? cardsWord(p.count) : i === g.me ? 'خلّصت أوراقك' : 'خلّص أوراقه'}</span></li>`).join('');
     $('reveal').hidden = true;
     box.hidden = false;
   }
@@ -692,7 +699,7 @@
   function showReveal(e, s) {
     const g = s.game;
     const v = $('reveal-verdict');
-    v.textContent = e.truthful ? 'صادق! ✅' : 'كذّاب! 🤥';
+    v.textContent = e.truthful ? 'صادق' : 'كذّاب';
     v.className = 'verdict ' + (e.truthful ? 'truth' : 'lie');
     const said = '«' + claimText(e.count, e.rank) + '»';
     $('reveal-claim').textContent =
@@ -708,7 +715,7 @@
       cards.appendChild(el);
     });
     const loser = e.loser === g.me ? 'أنت تسحب' : seatName(s, e.loser) + ' يسحب';
-    $('reveal-result').textContent = loser + ' الكومة (' + cardsWord(e.taken) + ')' + (e.loser === g.me ? ' 😬' : '');
+    $('reveal-result').textContent = loser + ' الكومة، ' + cardsWord(e.taken);
     $('reveal').hidden = false;
     A.play('call');
     setTimeout(() => A.play(e.truthful ? 'truth' : 'liar'), 260);
@@ -718,7 +725,7 @@
     app.revealTimer = setTimeout(() => { $('reveal').hidden = true; }, Math.max(1800, s.hold));
   }
 
-  function bubble(seat, text, emoji) {
+  function bubble(seat, text, said) {
     const s = app.snap;
     if (!s || !s.game) return;
     let host;
@@ -727,7 +734,7 @@
     if (!host) return;
     host.querySelectorAll('.bubble').forEach((b) => b.remove());
     const b = document.createElement('span');
-    b.className = 'bubble' + (emoji ? ' emoji' : '');
+    b.className = 'bubble' + (said ? ' say' : '');
     b.textContent = text;
     if (seat === s.game.me) { b.style.top = '-30px'; host.style.position = 'relative'; }
     host.appendChild(b);
@@ -743,7 +750,7 @@
       if (seat >= 0) bubble(seat, e, true);
     } else {
       const m = memberOf(s, id);
-      if (m) toast(m.avatar + ' ' + m.name + ' ' + e, 1500);
+      if (m) toast(m.name + ': ' + e, 1500);
     }
   }
 
@@ -787,19 +794,6 @@
   // ------------------------------------------------------------------ input
 
   function wire() {
-    // Avatars
-    const avBox = $('avatars');
-    const current = store.get('avatar', Room.AVATARS[Math.floor(Math.random() * 8)]);
-    store.set('avatar', current);
-    avBox.innerHTML = Room.AVATARS.slice(0, 12).map((a) =>
-      `<button role="radio" aria-checked="${a === current}" data-av="${a}">${a}</button>`).join('');
-    avBox.addEventListener('click', (ev) => {
-      const b = ev.target.closest('[data-av]');
-      if (!b) return;
-      store.set('avatar', b.dataset.av);
-      avBox.querySelectorAll('button').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-    });
-
     const nameInput = $('name');
     nameInput.value = store.get('name', '');
     nameInput.addEventListener('input', () => store.set('name', nameInput.value));
@@ -900,10 +894,11 @@
     A.set('sound', soundOn); A.set('voice', voiceOn);
     $('opt-sound').checked = soundOn;
     $('opt-voice').checked = voiceOn;
-    $('game-sound').textContent = soundOn ? '🔊' : '🔇';
+    const soundIcon = (on) => { $('game-sound').innerHTML = `<svg><use href="#i-${on ? 'sound' : 'mute'}"/></svg>`; };
+    soundIcon(soundOn);
     $('opt-sound').onchange = (e) => {
       A.set('sound', e.target.checked); store.set('sound', e.target.checked);
-      $('game-sound').textContent = e.target.checked ? '🔊' : '🔇';
+      soundIcon(e.target.checked);
     };
     $('opt-voice').onchange = (e) => { A.set('voice', e.target.checked); store.set('voice', e.target.checked); };
     $('game-sound').onclick = () => { const on = !A.get('sound'); $('opt-sound').checked = on; $('opt-sound').onchange({ target: $('opt-sound') }); };

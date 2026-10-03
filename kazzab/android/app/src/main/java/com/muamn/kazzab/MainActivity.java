@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
         }
 
         web = new WebView(this);
-        web.setBackgroundColor(0xFF0B1F18);
+        web.setBackgroundColor(0xFF0B1311);
         web.setFitsSystemWindows(true);
 
         WebSettings s = web.getSettings();

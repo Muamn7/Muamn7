@@ -6,11 +6,13 @@
  * load rather than whenever a cache decides to let go. The cache exists so the
  * game against the computer still opens with no connection at all.
  */
-const CACHE = 'kazzab-0.1.0';
+const CACHE = 'kazzab-0.2.0';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/engine.js', 'js/bot.js', 'js/room.js', 'js/net.js', 'js/audio.js', 'js/app.js',
-  'vendor/peerjs.min.js', 'fonts/cairo-arabic.woff2', 'fonts/cairo-latin.woff2',
+  'vendor/peerjs.min.js', 'fonts/ruqaa-700-arabic.woff2', 'fonts/amiri-400-arabic.woff2',
+  'fonts/amiri-700-arabic.woff2', 'fonts/plex-400-arabic.woff2', 'fonts/plex-400-latin.woff2',
+  'fonts/plex-600-arabic.woff2', 'fonts/plex-600-latin.woff2', 'fonts/playfair-latin.woff2',
   'icons/icon-192.png', 'icons/icon-512.png'
 ];
 

@@ -23,7 +23,7 @@
   'use strict';
 
   /** Bumped whenever a message changes shape. Mismatched phones are refused. */
-  var PROTOCOL = 1;
+  var PROTOCOL = 2;
   /** How long the reveal stays up before anyone can act again. */
   var REVEAL_MS = 2800;
   /** Dealing animation before the first turn's clock starts. */
@@ -31,8 +31,8 @@
   /** A dropped player's turn is played for them after this grace period. */
   var ABSENT_MS = 2500;
   var REACT_GAP_MS = 1200;
-  var AVATARS = ['🦊', '🐯', '🐼', '🦁', '🐸', '🐵', '🐙', '🦉', '🐺', '🐨', '🦄', '🐲', '🐧', '🐻', '🐰', '🐮'];
-  var REACTIONS = ['😂', '🤥', '😏', '😱', '👀', '🔥', '🤫', '👏'];
+  /** Words a player can throw across the table. Text, from a fixed list, so nothing else gets through. */
+  var REACTIONS = ['واثق؟', 'مستحيل', 'أحسنت', 'أسرع'];
 
   var realClock = {
     now: function () { return Date.now(); },
@@ -44,7 +44,6 @@
     s = String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim();
     return s.slice(0, 16);
   }
-  function cleanAvatar(a) { return AVATARS.indexOf(a) >= 0 ? a : AVATARS[0]; }
 
   function Room(opts) {
     this.code = opts.code;
@@ -64,12 +63,11 @@
     this.lastReact = {};
     this.closed = false;
     this.idSeq = 0;
-    this.addMember(opts.hostKey, { name: opts.hostName, avatar: opts.hostAvatar });
+    this.addMember(opts.hostKey, { name: opts.hostName });
   }
 
   Room.PROTOCOL = PROTOCOL;
   Room.REVEAL_MS = REVEAL_MS;
-  Room.AVATARS = AVATARS;
   Room.REACTIONS = REACTIONS;
   Room.cleanName = cleanName;
 
@@ -104,7 +102,6 @@
       key: key,
       id: 'm' + (++this.idSeq),
       name: this.uniqueName(cleanName(info.name) || 'لاعب', key),
-      avatar: cleanAvatar(info.avatar),
       bot: !!bot,
       connected: true,
       left: false
@@ -128,7 +125,6 @@
       m.left = false;
       var name = cleanName(hello.name);
       if (name && !this.game) m.name = this.uniqueName(name, key);
-      m.avatar = cleanAvatar(hello.avatar);
       return null;
     }
     if (this.game) return 'started';
@@ -241,12 +237,11 @@
   P.addBot = function () {
     if (this.game || this.members.length >= E.MAX_PLAYERS) return;
     var used = {};
-    this.members.forEach(function (m) { used[m.name] = true; used[m.avatar] = true; });
+    this.members.forEach(function (m) { used[m.name] = true; });
     var name = B.NAMES.filter(function (n) { return !used[n]; })[0] || 'كمبيوتر';
-    var avatar = AVATARS.filter(function (a) { return !used[a]; })[0];
     var n = 1;
     while (this.member('bot-' + n)) n++;
-    this.addMember('bot-' + n, { name: name, avatar: avatar }, true);
+    this.addMember('bot-' + n, { name: name }, true);
     this.update();
   };
 
@@ -412,7 +407,7 @@
       you: me ? me.id : null,
       host: host ? host.id : null,
       members: this.members.map(function (m) {
-        return { id: m.id, name: m.name, avatar: m.avatar, bot: m.bot, connected: m.connected, left: m.left };
+        return { id: m.id, name: m.name, bot: m.bot, connected: m.connected, left: m.left };
       }),
       settings: this.settings,
       game: g ? E.viewFor(g, this.seatOf(key)) : null,

@@ -6,6 +6,6 @@
         <item name="android:navigationBarColor">@color/table</item>
         <item name="android:colorAccent">@color/gold</item>
     </style>
-    <color name="table">#0B1F18</color>
-    <color name="gold">#E9C46A</color>
+    <color name="table">#0B1311</color>
+    <color name="gold">#C6A660</color>
 </resources>

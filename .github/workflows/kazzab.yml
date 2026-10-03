@@ -99,7 +99,8 @@ jobs:
             list=$(unzip -Z1 "$apk")
             for f in assets/index.html assets/css/style.css assets/js/app.js assets/js/engine.js \
                      assets/js/bot.js assets/js/room.js assets/js/net.js assets/js/audio.js \
-                     assets/vendor/peerjs.min.js assets/fonts/cairo-arabic.woff2; do
+                     assets/vendor/peerjs.min.js assets/fonts/ruqaa-700-arabic.woff2 \
+                     assets/fonts/amiri-700-arabic.woff2 assets/fonts/plex-400-arabic.woff2; do
               if echo "$list" | grep -qx "$f"; then echo "   ok       $f"; else echo "   MISSING  $f"; fail=1; fi
             done
           done

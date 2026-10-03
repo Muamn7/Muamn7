@@ -47,7 +47,7 @@ function makeRoom(seed, settings, hostKey = 'host') {
   const clock = fakeClock();
   const inbox = {};
   const room = new Room({
-    code: '123456', hostKey, hostName: 'المضيف', hostAvatar: '🦊',
+    code: '123456', hostKey, hostName: 'المضيف',
     rng: rngFrom(seed), clock, settings,
     send: (key, msg) => { (inbox[key] = inbox[key] || []).push(msg); }
   });
@@ -55,7 +55,7 @@ function makeRoom(seed, settings, hostKey = 'host') {
   return { room, clock, inbox, last };
 }
 
-const hello = (name) => ({ t: 'hello', v: Room.PROTOCOL, name, avatar: '🐼' });
+const hello = (name) => ({ t: 'hello', v: Room.PROTOCOL, name });
 /** The secret key of whoever sits in a seat - what their phone would send as. */
 const keyAt = (room, seat) => room.memberAt(seat).key;
 
@@ -222,22 +222,22 @@ test('leaving the lobby frees the seat; going back to the lobby drops absentees'
 test('reactions are limited to the list and to one every so often', () => {
   const { room, inbox, clock } = makeRoom(8);
   room.join('k1', hello('a'));
-  room.handle('k1', { t: 'react', e: '😂' });
-  room.handle('k1', { t: 'react', e: '😂' });
+  const [a, b] = Room.REACTIONS;
+  room.handle('k1', { t: 'react', e: a });
+  room.handle('k1', { t: 'react', e: a });
   room.handle('k1', { t: 'react', e: '<script>' });
   clock.advance(2000);
-  room.handle('k1', { t: 'react', e: '🔥' });
+  room.handle('k1', { t: 'react', e: b });
   const got = (inbox.host || []).filter((m) => m.t === 'react').map((m) => m.e);
-  assert.deepEqual(got, ['😂', '🔥']);
+  assert.deepEqual(got, [a, b]);
 });
 
 test('names are trimmed, stripped of markup and capped', () => {
   const { room } = makeRoom(9);
-  room.join('k1', { v: Room.PROTOCOL, name: '  <b>محمد</b>\n   الطويل جدا جدا جدا ', avatar: 'nope' });
+  room.join('k1', { v: Room.PROTOCOL, name: '  <b>محمد</b>\n   الطويل جدا جدا جدا ' });
   const m = room.member('k1');
   assert.ok(!/[<>\n]/.test(m.name));
   assert.ok(m.name.length <= 16);
-  assert.ok(Room.AVATARS.includes(m.avatar));
 });
 
 test('no snapshot or reaction ever carries another phone\'s secret key', () => {
@@ -245,7 +245,7 @@ test('no snapshot or reaction ever carries another phone\'s secret key', () => {
   room.join('secret-one', hello('a')); room.join('secret-two', hello('b'));
   room.start();
   clock.advance(1500);
-  room.handle('secret-one', { t: 'react', e: '😂' });
+  room.handle('secret-one', { t: 'react', e: Room.REACTIONS[0] });
   // A seat is claimed with its key, so a leaked key is a stolen hand.
   for (const [to, msgs] of Object.entries(inbox)) {
     const text = JSON.stringify(msgs);
