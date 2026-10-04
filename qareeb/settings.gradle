@@ -1,0 +1,36 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+    // Declared here rather than in build.gradle so the plugin is only fetched
+    // when :app is actually included (Google's repository is not always reachable).
+    plugins {
+        id 'com.android.application' version '8.9.1'
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'qareeb'
+
+// The networking lives in :core, plain Java with no Android in it, so it can be
+// tested anywhere. :app needs the Android SDK and is included only when one is
+// present - the same arrangement as the game at the repository root.
+include ':core'
+
+def hasSdk = System.getenv('ANDROID_HOME') || System.getenv('ANDROID_SDK_ROOT') ||
+        file('local.properties').exists()
+if (hasSdk) {
+    include ':app'
+} else {
+    logger.lifecycle('[qareeb] Android SDK not found - skipping :app. ' +
+            'Set ANDROID_HOME or create local.properties with sdk.dir to build the APK.')
+}

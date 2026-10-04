@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#00796B</color>
+    <color name="primary_dark">#004D40</color>
+    <color name="accent">#FF7043</color>
+    <color name="background">#EFEAE2</color>
+    <color name="bubble_mine">#D9FDD3</color>
+    <color name="bubble_theirs">#FFFFFF</color>
+    <color name="text_secondary">#667781</color>
+    <color name="online">#25D366</color>
+    <color name="offline">#B0BEC5</color>
+    <color name="icon_bg">#00796B</color>
+</resources>

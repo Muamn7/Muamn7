@@ -1,0 +1,37 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.muamn.qareeb'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.muamn.qareeb'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName project.property('appVersion')
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Debug-signed so the release APK installs without a keystore.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation project(':core')
+}

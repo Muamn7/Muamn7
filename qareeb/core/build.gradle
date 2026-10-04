@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    // Android's desugaring covers Java 11 APIs comfortably on minSdk 26.
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+// The app runs this on Android 8, so the main code must not reach past Java 11
+// APIs. Enforced only on main: the tests run on the build machine's JDK.
+tasks.named('compileJava') {
+    options.release = 11
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

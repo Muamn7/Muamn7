@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">قريب</string>
+    <string name="group">المجموعة</string>
+    <string name="group_sub">كل الأصدقاء القريبين</string>
+    <string name="friend">صديق</string>
+    <string name="you">أنت: %1$s</string>
+    <string name="your_address">عنوانك: %1$s</string>
+    <string name="no_address">غير متصل بأي شبكة Wi-Fi أو نقطة اتصال</string>
+    <string name="searching">يبحث عن أصدقاء قريبين…</string>
+    <string name="connected_n">متصل بـ %1$d من الأصدقاء</string>
+    <string name="stopped">متوقف</string>
+    <string name="online">متصل الآن</string>
+    <string name="offline">غير متصل — ستصله الرسائل عندما يقترب</string>
+    <string name="help">بدون إنترنت:\n١. شخص واحد يفتح «نقطة الاتصال» (Hotspot) في هاتفه — لا يحتاج رصيد بيانات.\n٢. الباقون يتصلون بشبكته من إعدادات Wi-Fi.\n٣. افتحوا «قريب» وسيظهر الأصدقاء هنا تلقائيًا.\n\nأو اتصلوا جميعًا بنفس الراوتر حتى لو لم يكن فيه إنترنت.</string>
+    <string name="your_name">اسمك</string>
+    <string name="name_hint">الاسم الذي يراه أصدقاؤك</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="change_name">تغيير الاسم</string>
+    <string name="connect_manual">اتصال يدوي بعنوان</string>
+    <string name="connect_manual_hint">مثل 192.168.43.1</string>
+    <string name="connect_manual_help">إذا لم يظهر صديقك تلقائيًا، اكتب «عنوانك» الظاهر في هاتفه.</string>
+    <string name="connect">اتصال</string>
+    <string name="quit">إيقاف وإغلاق</string>
+    <string name="clear_chat">مسح المحادثة</string>
+    <string name="message_hint">اكتب رسالة…</string>
+    <string name="send">إرسال</string>
+    <string name="copied">نُسخت الرسالة</string>
+    <string name="channel_status">حالة الاتصال</string>
+    <string name="channel_messages">الرسائل</string>
+    <string name="running">يعمل في الخلفية لاستقبال الرسائل</string>
+    <string name="you_prefix">"أنت: "</string>
+    <string name="group_online_n">%1$d متصلين</string>
+</resources>

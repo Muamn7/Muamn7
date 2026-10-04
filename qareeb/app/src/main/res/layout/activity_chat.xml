@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layoutDirection="rtl"
+    android:orientation="vertical">
+
+    <ListView
+        android:id="@+id/messages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:divider="@null"
+        android:paddingVertical="8dp"
+        android:stackFromBottom="true"
+        android:transcriptMode="normal" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:orientation="horizontal"
+        android:padding="6dp">
+
+        <EditText
+            android:id="@+id/input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/input_bg"
+            android:hint="@string/message_hint"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="5"
+            android:minHeight="48dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:textSize="16sp" />
+
+        <ImageButton
+            android:id="@+id/send"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/send_bg"
+            android:contentDescription="@string/send"
+            android:src="@drawable/ic_send" />
+    </LinearLayout>
+</LinearLayout>
