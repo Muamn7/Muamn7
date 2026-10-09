@@ -62,8 +62,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # The action installs the legacy 'tools' package by default, and the SDK
+      # repository no longer carries it, so sdkmanager fails before anything is
+      # built. Name the packages instead; AGP fetches its build-tools itself.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
