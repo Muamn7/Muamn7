@@ -659,7 +659,12 @@ public class GameScreen extends ScreenAdapter {
             if (Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) upgradeWeapon(1);
             if (Gdx.input.isKeyJustPressed(Input.Keys.MINUS)) upgradeWeapon(-1);
         }
-        if (touchControls != null) touchControls.update(controls, dt);
+        if (touchControls != null) {
+            touchControls.update(controls, dt);
+            // The pad's D-pad and Select stand in for Tab and F2.
+            if (controls.weaponStep != 0) cycleWeapon(controls.weaponStep);
+            if (controls.languagePressed) toggleLanguage();
+        }
     }
 
     private void cycleWeapon(int direction) {

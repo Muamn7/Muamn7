@@ -28,6 +28,9 @@ public class ControlState {
     public boolean cycleItemPressed;
     public boolean interactPressed;
     public boolean pausePressed;
+    /** -1 or +1 on the frame the previous or next weapon is asked for, else 0. */
+    public int weaponStep;
+    public boolean languagePressed;
 
     /** True while the roll button is held, used to tell a roll from a backstep. */
     public boolean rollHeld;
@@ -45,6 +48,8 @@ public class ControlState {
         cycleItemPressed = false;
         interactPressed = false;
         pausePressed = false;
+        weaponStep = 0;
+        languagePressed = false;
         look.setZero();
     }
 
