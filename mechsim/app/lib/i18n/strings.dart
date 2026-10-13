@@ -122,6 +122,28 @@ abstract class S {
   String get tourNext;
   String get tourPrev;
   String get tourLeftPart;
+
+  // trusses
+  String get trusses;
+  String get trussesSub;
+  String get trussEditor;
+  String get trussAnalysis;
+  String get toolJoint => 'Joint';
+  String get toolMember => 'Member';
+  String get toolLoad => 'Load';
+  String get templates;
+  String get templateNames;
+  String trussHint(String tool);
+  String get jointProps;
+  String get memberProps;
+  String get trussLoadProps;
+  String get methodJoints;
+  String get methodSections;
+  String get sectionHelp;
+  String get otherSide;
+  String get clearCut;
+  String get memberLength;
+  String get memberForces;
   String get length => 'Length';
   String get position => 'Position';
   String get magnitude => 'Magnitude';
@@ -370,6 +392,51 @@ class _Ar extends S {
   String get knownLabel => 'معلوم';
   @override
   String get unknownOnlyStraight => 'المجهول للأحمال الرأسية أو الأفقية فقط';
+  @override
+  String get trusses => 'الجملونات (Trusses)';
+  @override
+  String get trussesSub => 'ارسم جملونًا وحلّه بطريقة الوصلات والمقاطع';
+  @override
+  String get trussEditor => 'جملون جديد';
+  @override
+  String get trussAnalysis => 'تحليل الجملون';
+  @override
+  String get templates => 'قوالب';
+  @override
+  String get templateNames => 'مثلث|Warren|Pratt|Howe';
+  @override
+  String trussHint(String tool) => switch (tool) {
+    'joint' => 'اضغط على الورقة لإضافة وصلة (Joint)، أو اسحب وصلة لتحريكها',
+    'member' =>
+      'اسحب من وصلة إلى أخرى لرسم عضو، أو اضغط وصلة ثم وصلة. الضغط على مكان فارغ يضيف وصلة وعضوًا إليها',
+    'pin' => 'اضغط على وصلة لوضع Pin (رد فعل أفقي ورأسي)',
+    'roller' => 'اضغط على وصلة لوضع Roller (رد فعل رأسي)',
+    'load' => 'اضغط على وصلة لوضع حمل عليها',
+    'delete' => 'اضغط على عنصر لحذفه',
+    _ => 'اضغط على عنصر لتعديله، واسحب الوصلات لتحريكها',
+  };
+  @override
+  String get jointProps => 'الوصلة';
+  @override
+  String get memberProps => 'العضو';
+  @override
+  String get trussLoadProps => 'الحمل';
+  @override
+  String get methodJoints => 'طريقة الوصلات';
+  @override
+  String get methodSections => 'طريقة المقاطع';
+  @override
+  String get sectionHelp =>
+      'اضغط على الأعضاء التي يقطعها المقطع (حتى 3) في الرسم أعلاه. يبقى الجزء الأيسر، ويمكنك أخذ الجزء الآخر.';
+  @override
+  String get otherSide => 'الجزء الآخر';
+  @override
+  String get clearCut => 'مسح المقطع';
+  @override
+  String get memberLength => 'الطول';
+
+  @override
+  String get memberForces => 'قوى الأعضاء';
   @override
   String get tourTitle => 'كيف نرسم SFD و BMD';
   @override
@@ -732,6 +799,52 @@ class _En extends S {
   @override
   String get unknownOnlyStraight =>
       'Only a vertical or horizontal load can be unknown';
+  @override
+  String get trusses => 'Trusses';
+  @override
+  String get trussesSub => 'Draw a truss, solve it by joints and by sections';
+  @override
+  String get trussEditor => 'New truss';
+  @override
+  String get trussAnalysis => 'Truss analysis';
+  @override
+  String get templates => 'Templates';
+  @override
+  String get templateNames => 'Triangle|Warren|Pratt|Howe';
+  @override
+  String trussHint(String tool) => switch (tool) {
+    'joint' => 'Tap the sheet to add a joint, or drag a joint to move it',
+    'member' =>
+      'Drag from one joint to another to draw a member, or tap two joints. Tapping empty space adds a joint and a member to it',
+    'pin' =>
+      'Tap a joint to put a pin there (horizontal and vertical reaction)',
+    'roller' => 'Tap a joint to put a roller there (vertical reaction)',
+    'load' => 'Tap a joint to put a load on it',
+    'delete' => 'Tap anything to delete it',
+    _ => 'Tap anything to edit it; drag joints to move them',
+  };
+  @override
+  String get jointProps => 'Joint';
+  @override
+  String get memberProps => 'Member';
+  @override
+  String get trussLoadProps => 'Load';
+  @override
+  String get methodJoints => 'Method of joints';
+  @override
+  String get methodSections => 'Method of sections';
+  @override
+  String get sectionHelp =>
+      'Tap the members the section cuts (up to 3) in the drawing above. The left part is kept; you can take the other one.';
+  @override
+  String get otherSide => 'Other part';
+  @override
+  String get clearCut => 'Clear the cut';
+  @override
+  String get memberLength => 'Length';
+
+  @override
+  String get memberForces => 'Member forces';
   @override
   String get tourTitle => 'How to draw the SFD and BMD';
   @override

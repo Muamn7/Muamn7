@@ -15,6 +15,9 @@ import 'package:mechsim/ui/analysis/analysis_screen.dart';
 import 'package:mechsim/ui/editor/editor_screen.dart';
 import 'package:mechsim/ui/player/player_screen.dart';
 import 'package:mechsim/ui/tour/tour_screen.dart';
+import 'package:mechsim/drawing/truss_scene.dart';
+import 'package:mechsim/ui/truss/truss_analysis_screen.dart';
+import 'package:mechsim/ui/truss/truss_editor_screen.dart';
 import 'package:mechsim_core/mechsim_core.dart';
 
 import 'support/harness.dart';
@@ -440,5 +443,89 @@ void main() {
     await frames(tester, 400);
     await tapCanvasAt(tester, 0.55);
     await shoot(tester, dir!, '51_tour_land_dark');
+  });
+
+  // ---- trusses -------------------------------------------------------------
+
+  final pratt = TrussTemplates.build('pratt');
+
+  Future<void> tapTruss(WidgetTester tester, double x, double y) async {
+    final rect = tester.getRect(find.byKey(const ValueKey('truss-result')));
+    await tester.tapAt(
+      rect.topLeft + fitTruss(pratt, rect.size, margin: 64).toScreen(x, y),
+    );
+    await settle(tester);
+  }
+
+  shot('truss: editor', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: TrussEditorScreen(problem: pratt)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '52_truss_editor');
+    await tester.tap(find.byKey(const ValueKey('truss-tool-load')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('truss-tool-select')));
+    await settle(tester);
+    final rect = tester.getRect(find.byKey(const ValueKey('truss-canvas')));
+    await tester.tapAt(rect.center);
+    await settle(tester);
+    await shoot(tester, dir, '53_truss_editor_selected');
+  });
+
+  shot('truss: method of joints', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: TrussAnalysisScreen(problem: pratt)),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '54_truss_forces');
+    await tapTruss(tester, 3, 0); // joint B
+    await shoot(tester, dir, '55_truss_joint_b');
+  });
+
+  shot('truss: method of sections', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(
+      await app(testState(), home: TrussAnalysisScreen(problem: pratt)),
+    );
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('tab-sections')));
+    await settle(tester);
+    for (final (x, y) in [(4.5, 0.0), (4.5, 3.0), (4.5, 1.5)]) {
+      await tapTruss(tester, x, y);
+    }
+    await shoot(tester, dir!, '56_truss_section');
+    await scrollTo(tester, find.textContaining('ΣM', findRichText: true));
+    await shoot(tester, dir, '57_truss_section_moment');
+  });
+
+  shot('truss: sideways, dark, English', (tester) async {
+    phoneSize(tester, logical: const Size(800, 360));
+    await tester.pumpWidget(
+      await app(
+        testState(
+          settings: const AppSettings(theme: ThemePref.dark, lang: Lang.en),
+        ),
+        home: TrussEditorScreen(problem: TrussTemplates.build('warren')),
+      ),
+    );
+    await settle(tester);
+    await shoot(tester, dir!, '58_truss_land_editor');
+    await tester.tap(find.byKey(const ValueKey('truss-analyze')));
+    await settle(tester);
+    await shoot(tester, dir, '59_truss_land_analysis');
+    await tester.tap(find.byKey(const ValueKey('tab-sections')));
+    await settle(tester);
+    final rect = tester.getRect(find.byKey(const ValueKey('truss-result')));
+    final w = TrussTemplates.build('warren');
+    final view = fitTruss(w, rect.size, margin: 64);
+    // Through the second panel: top chord, diagonal, bottom chord.
+    for (final (x, y) in [(5.25, 3.0), (5.25, 1.5), (5.25, 0.0)]) {
+      await tester.tapAt(rect.topLeft + view.toScreen(x, y));
+      await settle(tester);
+    }
+    await shoot(tester, dir, '60_truss_land_section');
   });
 }

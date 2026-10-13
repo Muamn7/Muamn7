@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import '../editor/editor_screen.dart';
 import '../learn/learn_tab.dart';
 import '../som/som_screen.dart';
+import '../truss/truss_editor_screen.dart';
 import '../widgets/layout.dart';
 
 class HomeTab extends StatelessWidget {
@@ -34,6 +35,13 @@ class HomeTab extends StatelessWidget {
         s.newProblemSub,
         colors.shear,
         () => push(const EditorScreen()),
+      ),
+      _HomeCard(
+        Icons.change_history,
+        s.trusses,
+        s.trussesSub,
+        colors.load,
+        () => push(const TrussEditorScreen()),
       ),
       _HomeCard(
         Icons.quiz_outlined,

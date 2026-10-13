@@ -45,6 +45,58 @@ class MathText extends StatelessWidget {
   }
 }
 
+/// Prose in either language with symbols such as "F_BC" written with their
+/// subscripts. Each symbol is isolated left to right, so it reads the same
+/// inside an Arabic sentence.
+class ProseText extends StatelessWidget {
+  const ProseText(this.text, {super.key, this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  static final _symbol = RegExp(r'([A-Za-zΣ]+)_([A-Za-z0-9]+)');
+  static final _arabic = RegExp('[\u0600-\u06FF]');
+
+  @override
+  Widget build(BuildContext context) {
+    if (!text.contains('_')) return Text(text, style: style);
+    final base = DefaultTextStyle.of(context).style.merge(style);
+    final children = <InlineSpan>[];
+    var last = 0;
+    for (final m in _symbol.allMatches(text)) {
+      if (m.start > last) {
+        children.add(TextSpan(text: text.substring(last, m.start)));
+      }
+      children
+        ..add(TextSpan(text: '\u2066${m.group(1)}'))
+        ..add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Transform.translate(
+              offset: Offset(0, (base.fontSize ?? 14) * 0.28),
+              child: Text(
+                m.group(2)!,
+                textDirection: TextDirection.ltr,
+                style: base.copyWith(fontSize: (base.fontSize ?? 14) * 0.72),
+              ),
+            ),
+          ),
+        )
+        ..add(const TextSpan(text: '\u2069'));
+      last = m.end;
+    }
+    if (last < text.length) children.add(TextSpan(text: text.substring(last)));
+    // Only math (no Arabic letters): left to right, so "ΣM_F = 0" is not
+    // turned around in an Arabic screen.
+    return Text.rich(
+      TextSpan(children: children),
+      style: style,
+      textDirection: _arabic.hasMatch(text) ? null : TextDirection.ltr,
+    );
+  }
+}
+
 /// One line of an equation, laid out left to right whatever the language,
 /// with every meaningful term tappable.
 class MathLineView extends StatelessWidget {

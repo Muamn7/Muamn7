@@ -56,6 +56,44 @@ final class SupportHighlight extends Highlight {
   int get hashCode => supportId.hashCode;
 }
 
+/// A joint of a truss.
+final class JointHighlight extends Highlight {
+  const JointHighlight(this.nodeId);
+  final String nodeId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is JointHighlight && other.nodeId == nodeId;
+  @override
+  int get hashCode => Object.hash('joint', nodeId);
+}
+
+/// A member of a truss.
+final class MemberHighlight extends Highlight {
+  const MemberHighlight(this.memberId);
+  final String memberId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MemberHighlight && other.memberId == memberId;
+  @override
+  int get hashCode => Object.hash('member', memberId);
+}
+
+/// A point in the plane of a truss: where moments are taken about, which
+/// may be off the truss (where two members' lines meet).
+final class PlanePointHighlight extends Highlight {
+  const PlanePointHighlight(this.x, this.y);
+  final double x;
+  final double y;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanePointHighlight && other.x == x && other.y == y;
+  @override
+  int get hashCode => Object.hash('point', x, y);
+}
+
 /// The point moments are taken about.
 final class MomentCentreHighlight extends Highlight {
   const MomentCentreHighlight(this.x);

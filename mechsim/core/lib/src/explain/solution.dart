@@ -26,6 +26,14 @@ enum StepKind {
   maxMoment,
   axial,
   unsolvable,
+
+  // trusses
+  trussDeterminacy,
+  trussReactions,
+  trussJoint,
+  trussCheck,
+  trussMembers,
+  trussSection,
 }
 
 enum TokenRole {

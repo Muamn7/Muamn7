@@ -60,7 +60,7 @@ class _StepCardState extends State<StepCard> {
     final scheme = theme.colorScheme;
     final unsolvable = step.kind == StepKind.unsolvable;
 
-    Widget prose(String text, {TextStyle? style}) => Text(
+    Widget prose(String text, {TextStyle? style}) => ProseText(
       text,
       style: style ?? theme.textTheme.bodyMedium?.copyWith(height: 1.45),
     );
@@ -122,7 +122,7 @@ class _StepCardState extends State<StepCard> {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        Text(
+                        ProseText(
                           step.goal,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
@@ -154,7 +154,7 @@ class _StepCardState extends State<StepCard> {
                     start: 8,
                     bottom: 4,
                   ),
-                  child: Text(
+                  child: ProseText(
                     '↳ ${line.note!}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
@@ -243,7 +243,9 @@ class _Bubble extends StatelessWidget {
         children: [
           Icon(Icons.info_outline, size: 18, color: colors.highlight),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(height: 1.45))),
+          Expanded(
+            child: ProseText(text, style: const TextStyle(height: 1.45)),
+          ),
         ],
       ),
     );
@@ -279,9 +281,9 @@ class ResultChip extends StatelessWidget {
           ),
           backgroundColor:
               active ? colors.highlight.withValues(alpha: 0.15) : null,
-          label: Text(
+          // "F_AB = 15.00 kN (T)" with AB as a subscript.
+          label: MathText(
             result.text,
-            textDirection: TextDirection.ltr,
             style: const TextStyle(
               fontWeight: FontWeight.w700,
               fontFeatures: [FontFeature.tabularFigures()],
