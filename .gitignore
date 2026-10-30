@@ -31,3 +31,4 @@ assets/ashen-save.json*
 # The sound bank is synthesised on first launch into the same local directory.
 audio-cache/
 assets/audio-cache/
+*.blend1
