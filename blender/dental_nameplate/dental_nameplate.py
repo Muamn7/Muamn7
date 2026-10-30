@@ -1,10 +1,10 @@
 """
-Dental desk nameplate - procedural Blender scene.
+Dental desk nameplate - procedural Blender model.
 
 A white-enamel tooth framed in polished gold, black-faced gold letters
 ("Dr" / "Rahma Ali"), a heartbeat line ending in a heart, a gold holder with a
-dental mirror and explorer, all on a white Carrara marble base, on a walnut
-desk in a softly blurred clinic office.
+dental mirror and explorer, all on a white Carrara marble base. Only the
+model is built, with studio lights and a camera for rendering it.
 
 Usage
 -----
@@ -21,7 +21,6 @@ Options after "--":
     --save PATH       save the .blend to PATH
     --samples N       Cycles samples                   (default 256)
     --percent P       resolution percentage            (default 100)
-    --no-env          only the nameplate, no office around it
 
 Works with Blender 4.2 and newer (tested on 5.0). Units are metres; the scene
 is displayed in centimetres.
@@ -29,7 +28,6 @@ is displayed in centimetres.
 
 import math
 import os
-import random
 import sys
 
 import bmesh
@@ -61,7 +59,6 @@ FONT_CANDIDATES = [
 
 SAMPLES = 256
 RESOLUTION = (1920, 1600)
-ADD_ENVIRONMENT = True
 
 # Physical sizes (metres).
 TOOTH_HEIGHT = 0.175
@@ -334,40 +331,6 @@ def marble_material():
     col = mix_rgb(nt, main, col, (0.12, 0.12, 0.12))
     nt.links.new(col, bsdf.inputs["Base Color"])
     m.diffuse_color = (0.9, 0.9, 0.9, 1)
-    return m
-
-
-def wood_material(name, dark, light, rough=0.3, coat=0.7, grain_scale=1.0):
-    m, nt, bsdf = new_material(name)
-    set_input(bsdf, "Roughness", rough)
-    set_input(bsdf, ("Coat Weight", "Clearcoat"), coat)
-    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.12)
-    tc = nt.nodes.new("ShaderNodeTexCoord")
-    mp = nt.nodes.new("ShaderNodeMapping")
-    mp.inputs["Scale"].default_value = (0.35 * grain_scale, 14.0 * grain_scale, 14.0 * grain_scale)
-    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
-    noise = nt.nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = 3.0
-    noise.inputs["Detail"].default_value = 12.0
-    noise.inputs["Distortion"].default_value = 0.6
-    nt.links.new(mp.outputs[0], noise.inputs["Vector"])
-    wave = nt.nodes.new("ShaderNodeTexWave")
-    wave.wave_type = "RINGS"
-    wave.inputs["Scale"].default_value = 1.4
-    wave.inputs["Distortion"].default_value = 6.0
-    wave.inputs["Detail"].default_value = 4.0
-    nt.links.new(mp.outputs[0], wave.inputs["Vector"])
-    grain = mix_rgb(nt, 0.35, noise.outputs["Color"], wave.outputs["Color"])
-    ramp = nt.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.3
-    ramp.color_ramp.elements[0].color = (*dark, 1)
-    ramp.color_ramp.elements[1].position = 0.75
-    ramp.color_ramp.elements[1].color = (*light, 1)
-    bw = nt.nodes.new("ShaderNodeRGBToBW")
-    nt.links.new(grain, bw.inputs[0])
-    nt.links.new(bw.outputs[0], ramp.inputs["Fac"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
-    m.diffuse_color = (*light, 1)
     return m
 
 
@@ -660,87 +623,6 @@ def build_instruments(mats, coll, cx, base_top):
 
 
 # ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
-
-def box(name, size, loc, coll, mat, bevel_w=0.0, rot_z=0.0):
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    bmesh.ops.scale(bm, vec=size, verts=bm.verts)
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    obj = add_object(name, me, coll)
-    obj.location = loc
-    obj.rotation_euler.z = rot_z
-    if bevel_w:
-        bevel(obj, bevel_w, segments=3)
-    assign(obj, mat)
-    smooth(obj, 40)
-    return obj
-
-
-def build_environment(mats, coll, cx):
-    desk_mat = wood_material("Walnut Desk", (0.035, 0.027, 0.022), (0.085, 0.066, 0.052), rough=0.35, coat=0.5)
-    slat_mat = wood_material("Oak Slats", (0.16, 0.09, 0.045), (0.42, 0.27, 0.14), rough=0.5, coat=0.1,
-                             grain_scale=3.0)
-    wall = principled("Wall Plaster", (0.62, 0.56, 0.49), rough=0.9)
-    canvas = principled("Frame Canvas", (0.80, 0.77, 0.72), rough=0.8)
-    leather = principled("Black Leather", (0.015, 0.015, 0.016), rough=0.45, coat=0.2)
-    paper = principled("Paper", (0.9, 0.9, 0.88), rough=0.7)
-    alu = principled("Aluminium", (0.75, 0.75, 0.76), metallic=1.0, rough=0.3)
-    leaf = principled("Leaf", (0.06, 0.16, 0.05), rough=0.5)
-    petal = principled("Petal", (0.92, 0.92, 0.88), rough=0.6)
-    pot = principled("Pot", (0.10, 0.10, 0.10), rough=0.4)
-
-    box("Desk", (2.6, 1.6, 0.04), (cx, 0.35, -0.02), coll, desk_mat, bevel_w=0.004)
-    box("Back Wall", (4.0, 0.05, 2.0), (cx, 1.45, 0.6), coll, wall)
-    for i in range(14):
-        box(f"Wall Slat {i:02d}", (0.035, 0.04, 1.6), (cx + 0.30 + i * 0.055, 1.40, 0.55), coll,
-            slat_mat, bevel_w=0.003)
-    box("Picture Frame", (0.62, 0.03, 0.42), (cx - 0.48, 1.40, 0.78), coll, mats["gold"], bevel_w=0.004)
-    box("Picture Canvas", (0.56, 0.032, 0.36), (cx - 0.48, 1.395, 0.78), coll, canvas)
-    box("Chair Back", (0.55, 0.12, 0.62), (cx - 0.62, 0.75, 0.36), coll, leather, bevel_w=0.05, rot_z=0.25)
-    box("Laptop", (0.34, 0.24, 0.014), (cx - 0.52, -0.33, 0.007), coll, alu, bevel_w=0.004, rot_z=0.35)
-    box("Notebook", (0.22, 0.30, 0.016), (cx + 0.24, -0.36, 0.008), coll, paper, bevel_w=0.003, rot_z=-0.18)
-    pen = cylinder("Pen", 0.0055, 0.15, coll, mats["black"])
-    pen.matrix_world = Matrix.Translation((cx + 0.18, -0.31, 0.0225)) @ Matrix.Rotation(math.radians(70), 4, "Z") \
-        @ Matrix.Rotation(math.radians(90), 4, "Y") @ Matrix.Translation((0, 0, -0.075))
-    band = cylinder("Pen Band", 0.0058, 0.008, coll, mats["gold"])
-    band.matrix_world = pen.matrix_world @ Matrix.Translation((0, 0, 0.09))
-
-    # Plant: dark pot, leafy stems and a cloud of small white flowers - it sits in the blur.
-    rng = random.Random(7)
-    pot_obj = cylinder("Plant Pot", 0.07, 0.16, coll, pot)
-    pot_obj.location = (cx + 0.48, 0.55, 0.0)
-    bm = bmesh.new()
-    for _ in range(170):
-        centre = Vector((rng.gauss(0, 0.09), rng.gauss(0, 0.06), 0.30 + abs(rng.gauss(0, 0.11))))
-        bmesh.ops.create_icosphere(bm, subdivisions=1, radius=rng.uniform(0.006, 0.011),
-                                   matrix=Matrix.Translation(centre))
-    me = bpy.data.meshes.new("Flowers")
-    bm.to_mesh(me)
-    bm.free()
-    flowers = add_object("Plant Flowers", me, coll)
-    flowers.location = pot_obj.location
-    assign(flowers, petal)
-    smooth(flowers, 80)
-    bm = bmesh.new()
-    for _ in range(90):
-        centre = Vector((rng.gauss(0, 0.08), rng.gauss(0, 0.06), 0.18 + abs(rng.gauss(0, 0.10))))
-        rot = Matrix.Rotation(rng.uniform(0, math.pi), 4, "Z") @ Matrix.Rotation(rng.uniform(-1, 1), 4, "X")
-        bmesh.ops.create_uvsphere(bm, u_segments=10, v_segments=6, radius=1.0,
-                                  matrix=Matrix.Translation(centre) @ rot @ Matrix.Diagonal((0.012, 0.03, 0.003, 1)))
-    me = bpy.data.meshes.new("Leaves")
-    bm.to_mesh(me)
-    bm.free()
-    leaves = add_object("Plant Leaves", me, coll)
-    leaves.location = pot_obj.location
-    assign(leaves, leaf)
-    smooth(leaves, 80)
-
-
-# ---------------------------------------------------------------------------
 # Camera, lights, render
 # ---------------------------------------------------------------------------
 
@@ -767,8 +649,6 @@ def build_lighting(coll, target):
     area_light("Rim", coll, t + Vector((0.25, 0.65, 0.45)), t, 22, 0.5, (1.0, 0.88, 0.7))
     area_light("Ceiling Panel", coll, t + Vector((0.0, 0.05, 1.3)), t + Vector((0.0, -0.1, 0.0)), 25, 1.6,
                (1.0, 0.95, 0.88))
-    area_light("Wall Wash", coll, t + Vector((0.0, 0.9, 1.2)), t + Vector((0.0, 1.45, 0.4)), 9, 1.2,
-               (1.0, 0.85, 0.65))
 
     world = bpy.context.scene.world or bpy.data.worlds.new("World")
     bpy.context.scene.world = world
@@ -777,8 +657,8 @@ def build_lighting(coll, target):
     except AttributeError:
         pass
     bg = next(n for n in world.node_tree.nodes if n.type == "BACKGROUND")
-    bg.inputs["Color"].default_value = (0.42, 0.38, 0.33, 1)
-    bg.inputs["Strength"].default_value = 0.08
+    bg.inputs["Color"].default_value = (0.82, 0.8, 0.77, 1)
+    bg.inputs["Strength"].default_value = 0.4
 
 
 def build_camera(coll, target, focus):
@@ -847,7 +727,7 @@ def setup_render(samples, percent):
 # Main
 # ---------------------------------------------------------------------------
 
-def build(title=TITLE, name=NAME, font_path=None, env=ADD_ENVIRONMENT):
+def build(title=TITLE, name=NAME, font_path=None):
     global FONT_PATH
     if font_path:
         FONT_PATH = font_path
@@ -889,8 +769,6 @@ def build(title=TITLE, name=NAME, font_path=None, env=ADD_ENVIRONMENT):
     build_base(mats, plate, x_min, x_max)
     cx = (x_min + x_max) / 2
 
-    if env:
-        build_environment(mats, collection("Office"), cx)
     rig = collection("Camera & Lights")
     target = (cx, 0.0, 0.085)
     build_lighting(rig, target)
@@ -900,14 +778,10 @@ def build(title=TITLE, name=NAME, font_path=None, env=ADD_ENVIRONMENT):
 
 def parse_args():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    opts = {"samples": SAMPLES, "percent": 100, "env": ADD_ENVIRONMENT}
+    opts = {"samples": SAMPLES, "percent": 100}
     i = 0
     while i < len(argv):
         key = argv[i]
-        if key == "--no-env":
-            opts["env"] = False
-            i += 1
-            continue
         val = argv[i + 1]
         if key in ("--samples", "--percent"):
             opts[key[2:]] = int(val)
@@ -919,7 +793,7 @@ def parse_args():
 
 def main():
     opts = parse_args()
-    build(opts.get("title", TITLE), opts.get("name", NAME), opts.get("font"), opts["env"])
+    build(opts.get("title", TITLE), opts.get("name", NAME), opts.get("font"))
     device = setup_render(opts["samples"], opts["percent"])
     print(f"[nameplate] scene built, Cycles device: {device}")
     if "save" in opts:
