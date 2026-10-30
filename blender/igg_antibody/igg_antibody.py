@@ -30,6 +30,8 @@ QUALITY = 1.0            # 1.0 = high. Lower (e.g. 0.6) for a faster, lighter bu
 VOXEL = 0.018 / QUALITY  # remesh voxel size (smaller = more polygons / detail)
 MB_RES = 0.03 / QUALITY  # metaball polygonisation resolution
 SEED = 7
+BASE_TOP = 0.45         # height of the pedestal
+MIN_ROD = 0.0           # minimum tube radius (raised by the 3D-print script)
 
 COLORS = {               # sRGB hex, matched to the reference picture
     "heavy":  "#2F86E8",  # blue  - heavy chain
@@ -290,10 +292,6 @@ def mesh_to_domain(mesh, name, mat, coll):
     rem.mode = "VOXEL"
     rem.voxel_size = VOXEL
     rem.adaptivity = 0.0
-    sm = obj.modifiers.new("Smooth", "CORRECTIVE_SMOOTH")  # soft fillets between atoms
-    sm.iterations = 6
-    sm.factor = 0.5
-    sm.scale = 1.0
     d = obj.modifiers.new("MicroDetail", "DISPLACE")
     d.texture = noise_texture()
     d.texture_coords = "GLOBAL"
@@ -310,6 +308,7 @@ def rod_network(name, segments, radius, mat, coll, joint_scale=1.15):
     mb = obj.data
     mb.resolution = min(MB_RES, radius * 0.35)
     # visible radius of a capsule of radius R and stiffness 2 at threshold .6 ~ 0.58R
+    radius = max(radius, MIN_ROD)
     R = radius / 0.58
     joints = set()
     for p0, p1 in segments:
@@ -362,7 +361,6 @@ def build():
     M["studio"] = make_plastic("MAT_studio", COLORS["studio"], roughness=0.85, coat=0.0, specular=0.3)
 
     parts = []
-    BASE_TOP = 0.45
 
     # ---------------- Fc region: two columns of 2 domains (CH2, CH3) -------------
     fc_x = 0.5
