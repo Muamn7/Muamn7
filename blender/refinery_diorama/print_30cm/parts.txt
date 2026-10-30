@@ -1,0 +1,12 @@
+Refinery diorama - printable parts
+board 300 x 300 mm, scale 1 unit = 21.246 mm, min feature 0.80 mm
+
+file                               triangles  size X x Y x Z (mm)        open edges
+00_Full_model_300mm.stl               231780    300.1 x  300.0 x  196.7   0  one piece, needs a 300 mm bed
+01_Tile_back_left.stl                  51140    170.9 x  103.3 x  178.1   0  
+01_Tile_back_right.stl                 78100    129.2 x  113.9 x  196.7   0  
+01_Tile_front_left.stl                 49072    170.9 x  196.7 x  112.0   0  
+01_Tile_front_right.stl                54304    129.2 x  186.1 x   57.0   0  
+02_Flame.stl                            1440      7.3 x    7.3 x   30.8   0  glue onto the flare tip; print in translucent orange
+02_TankerTruck.stl                      9560     16.5 x   44.5 x   20.5   0  stands on the road under the gantry
+02_Trees.stl                           23940    297.4 x  298.0 x   30.0   0  glue onto the grass

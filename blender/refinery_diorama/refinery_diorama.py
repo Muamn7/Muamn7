@@ -42,6 +42,23 @@ CAM_TARGET = V((0.35, 0.8, 2.45))
 
 BOARD_X, BOARD_Y = 6.9, 5.2      # half extents of the diorama board
 
+# 3D-print mode (set by export_print.py): square board, closed meshes and a
+# minimum feature size so railings, ladders and lattices survive printing.
+PRINT = False
+PRINT_SIZE_MM = 300.0            # outer size of the square board incl. frame
+MIN_FEATURE_MM = 0.8             # thinnest wall / rod the printer can make
+FRAME_T = 0.16
+MIN_T = 0.0                      # MIN_FEATURE_MM in scene units (set in build)
+
+
+def print_scale():
+    """Millimetres per scene unit when printing."""
+    return PRINT_SIZE_MM / (2 * (BOARD_X + FRAME_T))
+
+
+def T(x):
+    return max(x, MIN_T)
+
 
 def linspace(a, b, n):
     if n == 1:
@@ -342,6 +359,10 @@ class MB:
         L = d.length
         if L < 1e-6:
             return
+        r = max(r, MIN_T / 2)
+        if r2 is not None:
+            r2 = max(r2, MIN_T / 2)
+        caps = caps or PRINT
         M = Matrix.Translation((p1 + p2) / 2) @ d.to_track_quat('Z', 'Y').to_matrix().to_4x4()
         res = bmesh.ops.create_cone(self.bm, cap_ends=caps, cap_tris=False, segments=segs,
                                     radius1=r, radius2=r if r2 is None else r2, depth=L, matrix=M)
@@ -355,6 +376,7 @@ class MB:
 
     def box(self, c, s, mat, rot=(0, 0, 0), R=None):
         R3 = R if R is not None else Euler(rot).to_matrix()
+        s = [T(v) for v in s]
         M = Matrix.Translation(V(c)) @ R3.to_4x4() @ Matrix.Diagonal((s[0], s[1], s[2], 1.0))
         res = bmesh.ops.create_cube(self.bm, size=1.0, matrix=M)
         self._flat(res['verts'], mat)
@@ -365,6 +387,7 @@ class MB:
         L = d.length
         if L < 1e-6:
             return
+        w, h = T(w), T(h)
         M = (Matrix.Translation((p1 + p2) / 2) @ d.to_track_quat('Z', 'Y').to_matrix().to_4x4()
              @ Matrix.Diagonal((w, h, L, 1.0)))
         res = bmesh.ops.create_cube(self.bm, size=1.0, matrix=M)
@@ -420,6 +443,14 @@ class MB:
                     f.smooth = True
                 except ValueError:
                     pass
+        if PRINT and not full and closed:
+            # close the open ends of a partial sweep (e.g. a pipe bend)
+            for k in (0, n - 1):
+                f = bm.faces.new([ring[k] for ring in rings if len(ring) > 1])
+                f.material_index = i
+        if PRINT and not closed:
+            close_bot = close_bot or len(rings[0]) > 1
+            close_top = close_top or len(rings[-1]) > 1
         # sharp creases at profile corners
         np_ = len(prof)
         for j in range(np_):
@@ -446,6 +477,7 @@ class MB:
                     e.smooth = False
 
     def torus(self, R, r, mat, M=None, segs=48, tsegs=8, a0=0.0, a1=None):
+        r = max(r, MIN_T / 2)
         prof = [(R + r * math.cos(t), r * math.sin(t)) for t in
                 [2 * pi * k / tsegs for k in range(tsegs)]]
         self.lathe(prof, mat, segs=segs, M=M, closed=True, sharp_deg=180, a0=a0, a1=a1)
@@ -456,6 +488,7 @@ class MB:
         n = len(pts)
         if n < 2:
             return
+        r = max(r, MIN_T / 2)
         T = []
         for k in range(n):
             if closed:
@@ -526,7 +559,36 @@ class MB:
             f.material_index = i
             f.smooth = False
 
+    def _separate_touching_shells(self):
+        """Grow each closed shell very slightly about its centre, by a slightly
+        different amount, so neighbours that share a face or edge overlap
+        instead of touching exactly (which slicers flag as non-manifold)."""
+        rnd = random.Random(len(self.bm.verts))
+        seen = set()
+        for v0 in self.bm.verts:
+            if v0 in seen:
+                continue
+            shell, stack = [], [v0]
+            seen.add(v0)
+            while stack:
+                v = stack.pop()
+                shell.append(v)
+                for e in v.link_edges:
+                    w = e.other_vert(v)
+                    if w not in seen:
+                        seen.add(w)
+                        stack.append(w)
+            c = sum((v.co for v in shell), V()) / len(shell)
+            k = 1.0 + rnd.uniform(3e-4, 9e-4)
+            for v in shell:
+                v.co = c + (v.co - c) * k
+
     def finish(self, coll, bevel=0.0, bevel_segs=2):
+        if PRINT:
+            # every primitive is a closed shell: make all normals point outwards
+            bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces[:])
+            self._separate_touching_shells()
+            bevel = 0.0
         me = bpy.data.meshes.new(self.name)
         self.bm.to_mesh(me)
         self.bm.free()
@@ -567,7 +629,7 @@ def ladder(mb, foot, nrm, z0, z1, cage=True, mat='rail_yellow'):
     for s in (-1, 1):
         p = c + t * s * 0.065
         mb.cyl((p.x, p.y, z0), (p.x, p.y, z1), 0.0075, mat, segs=6)
-    for z in arange(z0 + 0.08, z1 - 0.02, 0.07):
+    for z in arange(z0 + 0.08, z1 - 0.02, max(0.07, 2.6 * MIN_T)):
         mb.cyl(c - t * 0.065 + V((0, 0, z)), c + t * 0.065 + V((0, 0, z)), 0.0045, mat, segs=5, caps=False)
     if cage and z1 - z0 > 0.8:
         cc = c + n * 0.11
@@ -587,7 +649,7 @@ def railing(mb, pts, h=0.22, closed=True, spacing=0.28, mat='rail_yellow', toe=T
     up = V((0, 0, 1))
     mb.sweep([p + up * h for p in pts], 0.008, mat, segs=6, closed=closed)
     mb.sweep([p + up * h * 0.5 for p in pts], 0.006, mat, segs=6, closed=closed)
-    if toe:
+    if toe and not PRINT:
         mb.sweep([p + up * 0.02 for p in pts], 0.004, mat, segs=4, closed=closed)
     segs = list(zip(pts, pts[1:] + ([pts[0]] if closed else [])))
     acc = spacing
@@ -608,6 +670,7 @@ def railing(mb, pts, h=0.22, closed=True, spacing=0.28, mat='rail_yellow', toe=T
 
 def flange(mb, p, d, r, mat='steel', thick=0.022, bolts=0):
     d = V(d).normalized()
+    thick = T(thick)
     p = V(p)
     mb.cyl(p - d * thick / 2, p + d * thick / 2, r, mat, segs=24)
     if bolts:
@@ -707,9 +770,10 @@ def pipe(name, pts, r=0.035, mat='steel', flanges=True, supports=True, valve=Fal
     ob.data.materials.append(MAT[mat])
     PIPE_COLL.objects.link(ob)
     P = [V(p) for p in pts]
+    FIT = MB(name + '_Fittings') if PRINT else FITTINGS
     if flanges:
-        flange(FITTINGS, P[0] + (P[1] - P[0]).normalized() * 0.012, P[1] - P[0], r * 1.65)
-        flange(FITTINGS, P[-1] - (P[-1] - P[-2]).normalized() * 0.012, P[-1] - P[-2], r * 1.65)
+        flange(FIT, P[0] + (P[1] - P[0]).normalized() * 0.012, P[1] - P[0], r * 1.65)
+        flange(FIT, P[-1] - (P[-1] - P[-2]).normalized() * 0.012, P[-1] - P[-2], r * 1.65)
     if supports:
         for a, b in zip(P, P[1:]):
             if abs(a.z - b.z) > 1e-4 or a.z < 0.14 or a.z > 1.35:
@@ -719,13 +783,15 @@ def pipe(name, pts, r=0.035, mat='steel', flanges=True, supports=True, valve=Fal
                 continue
             for s in arange(0.35, L - 0.2, 0.9):
                 p = a + (b - a) * (s / L)
-                FITTINGS.box((p.x, p.y, (p.z - r) / 2), (0.035, 0.035, p.z - r), 'steel_dark')
-                FITTINGS.box((p.x, p.y, p.z - r - 0.008), (0.09, 0.09, 0.016), 'steel_dark')
-                FITTINGS.box((p.x, p.y, 0.006), (0.09, 0.09, 0.012), 'concrete')
+                FIT.box((p.x, p.y, (p.z - r) / 2), (0.035, 0.035, p.z - r), 'steel_dark')
+                FIT.box((p.x, p.y, p.z - r - 0.008), (0.09, 0.09, 0.016), 'steel_dark')
+                FIT.box((p.x, p.y, 0.006), (0.09, 0.09, 0.012), 'concrete')
     if valve:
         best = max(zip(P, P[1:]), key=lambda s: (s[1] - s[0]).length)
         mid = (best[0] + best[1]) / 2
-        gate_valve(FITTINGS, mid, best[1] - best[0], r)
+        gate_valve(FIT, mid, best[1] - best[0], r)
+    if FIT is not FITTINGS and FIT.bm.verts:
+        FIT.finish(PIPE_COLL)
     return ob
 
 
@@ -741,7 +807,7 @@ def build_base(coll):
     mb.finish(coll)
 
     fr = MB('Board_Frame')
-    t = 0.16
+    t = FRAME_T
     X, Y = BOARD_X + t / 2, BOARD_Y + t / 2
     fr.box((0, -Y, -0.17), (2 * BOARD_X + 2 * t, t, 0.42), 'frame')
     fr.box((0, Y, -0.17), (2 * BOARD_X + 2 * t, t, 0.42), 'frame')
@@ -749,6 +815,8 @@ def build_base(coll):
     fr.box((X, 0, -0.17), (t, 2 * BOARD_Y, 0.42), 'frame')
     fr.finish(coll, bevel=0.025, bevel_segs=3)
 
+    if PRINT:
+        return
     tb = MB('Table')
     tb.box((0, 4, -0.43), (60, 40, 0.1), 'table')
     tb.box((0, 32, 4), (80, 0.2, 20), 'backdrop')
@@ -777,6 +845,9 @@ def build_roads(coll):
                       (3.43, -BOARD_Y, 1.4), (2.67, -0.8, 1.4)):
         mb.box((x, (y0 + y1) / 2, lz), (0.03, y1 - y0, 0.003), 'road_yellow')
     mb.box((1.6, -0.9, lz), (1.4, 0.03, 0.003), 'road_yellow')
+    if PRINT:
+        mb.finish(coll)
+        return
     # dashed white centre line
     for y in arange(-BOARD_Y + 0.15, -1.1, 0.42):
         mb.box((1.6, y + 0.12, lz), (0.035, 0.24, 0.003), 'road_white')
@@ -802,6 +873,8 @@ def build_grass(coll):
                (6.2, -3.55, BOARD_X, 1.1),             # right strip
                (-BOARD_X, -3.3, -5.75, 0.6),           # left strip
                (-2.55, -3.45, 0.45, -2.55)]            # middle strip
+    if BOARD_Y > 5.8:                                   # square (print) board: back strip
+        patches.append((-BOARD_X, 5.45, BOARD_X, BOARD_Y))
     for i, (x0, y0, x1, y1) in enumerate(patches):
         GRASS_PATCHES.append((x0, y0, x1, y1))
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -813,7 +886,7 @@ def build_grass(coll):
         gx0 = x0 + (inset if x0 > -BOARD_X + 0.01 else 0)
         gx1 = x1 - (inset if x1 < BOARD_X - 0.01 else 0)
         gy0 = y0 + (inset if y0 > -BOARD_Y + 0.01 else 0)
-        gy1 = y1 - inset
+        gy1 = y1 - (inset if y1 < BOARD_Y - 0.01 else 0)
         mb.box(((gx0 + gx1) / 2, (gy0 + gy1) / 2, 0.025), (gx1 - gx0, gy1 - gy0, 0.05), 'grass')
         mb.mats.append('grass_blade')
         ob = mb.finish(coll, bevel=0.01)
@@ -899,9 +972,10 @@ def column(name, cx, cy, r, H, plats, rt=None, zt=None, head=0.55, nozzles=(), c
     for i, zp in enumerate(plats):
         rr = rad_at(zp)
         ro = rr + 0.42
-        mb.lathe([(ro, zp - 0.015), (ro, zp + 0.015), (rr + 0.01, zp + 0.015), (rr + 0.01, zp - 0.015)],
+        tp = T(0.03) / 2
+        mb.lathe([(ro, zp - tp), (ro, zp + tp), (rr + 0.01, zp + tp), (rr + 0.01, zp - tp)],
                  'grating', segs=48, closed=True, M=Matrix.Translation((cx, cy, 0)))
-        mb.lathe([(ro + 0.006, zp - 0.04), (ro + 0.006, zp + 0.05), (ro - 0.004, zp + 0.05),
+        mb.lathe([(ro - 0.004 + T(0.01), zp - 0.04), (ro - 0.004 + T(0.01), zp + 0.05), (ro - 0.004, zp + 0.05),
                   (ro - 0.004, zp - 0.04)], 'rail_yellow', segs=48, closed=True,
                  M=Matrix.Translation((cx, cy, 0)))
         for k in range(8):
@@ -993,13 +1067,14 @@ def furnace(cx, cy, coll):
         zb = zc0 + (zc1 - zc0) * (k + 1) / n_str
         mat = 'paint_red' if (n_str - k) % 2 == 1 else 'paint_white'
         mb.cyl((cx, cy, za), (cx, cy, zb), rc, mat, segs=40, caps=False)
-    mb.lathe([(rc, zc1), (rc + 0.03, zc1), (rc + 0.03, zc1 + 0.05), (rc - 0.02, zc1 + 0.05),
-              (rc - 0.02, zc1 - 0.3)], 'steel_dark', segs=40, M=Matrix.Translation((cx, cy, 0)))
-    mb.cyl((cx, cy, zc1 - 0.25), (cx, cy, zc1 - 0.24), rc - 0.02, 'frame', segs=40)
+    mb.lathe([(rc + 0.03, zc1 - 0.01), (rc + 0.03, zc1 + 0.05), (rc - 0.03, zc1 + 0.05), (rc - 0.03, zc1 - 0.01)],
+             'steel_dark', segs=40, closed=True, M=Matrix.Translation((cx, cy, 0)))
+    mb.cyl((cx, cy, zc1 - 0.005), (cx, cy, zc1 + 0.03), rc - 0.03, 'frame', segs=40)
     mb.torus(rc + 0.008, 0.01, 'steel_dark', M=Matrix.Translation((cx, cy, zc0 + 0.9)), segs=40, tsegs=5)
     # chimney sampling platform
     zp = zc0 + 1.2
-    mb.lathe([(rc + 0.3, zp - 0.012), (rc + 0.3, zp + 0.012), (rc, zp + 0.012), (rc, zp - 0.012)],
+    tp = T(0.024) / 2
+    mb.lathe([(rc + 0.3, zp - tp), (rc + 0.3, zp + tp), (rc, zp + tp), (rc, zp - tp)],
              'grating', segs=40, closed=True, M=Matrix.Translation((cx, cy, 0)))
     railing(mb, circle_pts((cx, cy), rc + 0.29, zp, n=36), h=0.2)
     ladder(mb, (cx + 0.0, cy - rc - 0.12), (0, -1), c1 + 0.1, zp + 0.9, cage=True)
@@ -1078,7 +1153,7 @@ def cooling_tower(cx, cy, coll):
                    0.009, 'steel_dark', segs=6)
         mb.cyl((fc[0], fc[1], zg - 0.01), (fc[0], fc[1], zg + 0.02), 0.06, 'steel_dark', segs=16)
     # access ladder & distribution header
-    ladder(mb, (cx + W / 2 + 0.1, cy - 0.4), (1, 0), 0.0, zd + 0.9)
+    ladder(mb, (cx + 0.95, cy - D / 2 - 0.1), (0, -1), zb, zd + 0.9)
     mb.cyl((cx - W / 2 + 0.15, cy + D / 2 + 0.08, zt - 0.1), (cx + W / 2 - 0.15, cy + D / 2 + 0.08, zt - 0.1),
            0.045, 'steel', segs=20)
     for x in linspace(-W / 2 + 0.3, W / 2 - 0.3, 5):
@@ -1107,9 +1182,9 @@ def heat_exchanger(cx, cy, coll):
     zr = zd + 0.03
     x0, x1 = cx - L / 2, cx + L / 2
     y0, y1 = cy - Wd / 2, cy + Wd / 2
-    railing(mb, [(x1, y1 - 0.35, zr), (x1, y1, zr), (x0, y1, zr), (x0, y0, zr), (x1, y0, zr), (x1, y0 + 0.2, zr)],
+    railing(mb, [(cx + 0.75, y0, zr), (x1, y0, zr), (x1, y1, zr), (x0, y1, zr), (x0, y0, zr), (cx + 0.45, y0, zr)],
             closed=False, h=0.24)
-    ladder(mb, (x1 + 0.08, cy + 0.1), (1, 0), 0.0, zd + 0.95)
+    ladder(mb, (cx + 0.6, y0 - 0.08), (0, -1), 0.0, zd + 0.95)
     # shell
     zs = zd + 0.03 + 0.14 + 0.32
     R = 0.32
@@ -1260,19 +1335,20 @@ def flare_stack(cx, cy, H, coll):
     return ob
 
 
-def storage_tank(name, cx, cy, R, H, stair_az, coll):
+def storage_tank(name, cx, cy, R, H, stair_az, coll, nozzle_az=180):
     mb = MB(name)
     Mt = Matrix.Translation((cx, cy, 0))
     mb.cyl((cx, cy, 0), (cx, cy, 0.08), R + 0.14, 'concrete', segs=64)
     roof = [(R, H), (R + 0.01, H + 0.01), (R * 0.7, H + 0.13), (R * 0.35, H + 0.22), (0.12, H + 0.26), (0, H + 0.265)]
     mb.lathe([(0, 0.08), (R, 0.08), (R, H)], 'paint_white', segs=96, M=Mt)
     mb.lathe(roof, 'paint_white', segs=96, M=Mt, sharp_deg=20)
-    mb.lathe([(R + 0.006, 0.08), (R + 0.006, 0.24), (R - 0.01, 0.24)], 'paint_grey', segs=96, M=Mt)
+    mb.lathe([(R - 0.01 + T(0.016), 0.08), (R - 0.01 + T(0.016), 0.24), (R - 0.01, 0.24)], 'paint_grey', segs=96, M=Mt)
     for z in arange(0.45, H - 0.1, 0.32):
         mb.torus(R + 0.002, 0.004, 'paint_white', M=Matrix.Translation((cx, cy, z)), segs=96, tsegs=4)
     # wind girder + top angle
     zg = H - 0.18
-    mb.lathe([(R + 0.07, zg - 0.008), (R + 0.07, zg + 0.008), (R, zg + 0.008), (R, zg - 0.008)],
+    tg = T(0.016) / 2
+    mb.lathe([(R + 0.07, zg - tg), (R + 0.07, zg + tg), (R, zg + tg), (R, zg - tg)],
              'paint_white', segs=96, closed=True, M=Mt)
     mb.torus(R + 0.008, 0.012, 'paint_white', M=Matrix.Translation((cx, cy, H)), segs=96, tsegs=6)
     # spiral stair
@@ -1312,7 +1388,7 @@ def storage_tank(name, cx, cy, R, H, stair_az, coll):
     mb.box((cx - 0.4, cy - 0.3, H + 0.12), (0.18, 0.18, 0.06), 'paint_white', rot=(0.12, -0.1, 0.3))
     # shell nozzles + valves
     for da in (-0.25, 0.25):
-        a = a0 + pi + da
+        a = math.radians(nozzle_az) + da
         d = V((math.cos(a), math.sin(a), 0))
         e = nozzle(mb, V((cx, cy, 0.28)) + d * (R - 0.01), d, 0.05, 0.18)
         gate_valve(mb, e + d * 0.08, d, 0.05)
@@ -1510,7 +1586,7 @@ def tanker_truck(cx, cy, coll):
 
 def loading_gantry(x, y, coll):
     mb = MB('LoadingGantry')
-    zt = 1.25
+    zt = 1.4
     for yy in (y - 0.25, y + 0.25):
         mb.box((x, yy, 0.03), (0.16, 0.16, 0.06), 'concrete')
         mb.box((x, yy, zt / 2), (0.06, 0.06, zt), 'steel_dark')
@@ -1597,7 +1673,9 @@ def scatter_trees(coll, variants):
         o.location = (0, 0, -50)
     rnd = random.Random(SEED)
     placed = []
-    keep_out = [(-5.5, -2.85, -2.85, -1.2)]   # office front
+    keep_out = [(-5.5, -2.85, -2.85, -1.2),    # office front
+                (5.8, -3.1, 7.0, 1.2),         # product tank stairs
+                (3.3, -4.3, 5.7, -3.3)]       # product tank stair + label
     for (x0, y0, x1, y1) in GRASS_PATCHES:
         area = (x1 - x0) * (y1 - y0)
         n = int(area / 0.62)
@@ -1623,7 +1701,7 @@ def scatter_trees(coll, variants):
 
 def street_lamps(coll):
     mb = MB('StreetLamps')
-    for (x, y, dx) in ((0.72, -1.3, 1), (0.72, -3.7, 1), (3.62, -0.2, -1), (3.62, -4.6, -1), (-1.9, -2.0, 1)):
+    for (x, y, dx) in ((0.6, -2.2, 0.75), (0.6, -3.7, 0.75), (2.55, 0.6, 1), (2.5, -4.0, 1), (-1.9, -2.0, 1)):
         mb.box((x, y, 0.02), (0.1, 0.1, 0.04), 'concrete')
         mb.cyl((x, y, 0.04), (x, y, 1.15), 0.02, 'paint_grey', segs=10, r2=0.013)
         mb.beam((x, y, 1.12), (x + dx * 0.3, y, 1.16), 0.018, 0.018, 'paint_grey')
@@ -1642,7 +1720,7 @@ def sign(text, pos, coll, anchor=None, size=0.2):
     yaw = math.atan2(d.x, -d.y)
     mb = MB('Label_' + lines[0].replace(' ', '_'))
     mb.box((0, 0, 0), (w, 0.025, h), 'sign_white')
-    mb.box((0, 0.016, 0), (w + 0.02, 0.008, h + 0.02), 'paint_grey')
+    mb.box((0, T(0.025) / 2 + T(0.008) / 2 - 0.001, 0), (w + 0.02, 0.008, h + 0.02), 'paint_grey')
     if anchor is None:
         for x in (-w * 0.3, w * 0.3):
             mb.cyl((x, 0.03, -pos.z), (x, 0.03, -h / 2 + 0.02), 0.012, 'steel', segs=8)
@@ -1665,7 +1743,7 @@ def sign(text, pos, coll, anchor=None, size=0.2):
     cu.align_x = 'CENTER'
     cu.align_y = 'CENTER'
     cu.size = size * 1.3
-    cu.extrude = 0.0015
+    cu.extrude = 0.0015 if not PRINT else 0.5 / print_scale() / 2
     cu.space_line = 1.0
     if FONT is not None:
         cu.font = FONT
@@ -1673,7 +1751,8 @@ def sign(text, pos, coll, anchor=None, size=0.2):
     tob = bpy.data.objects.new('Text_' + lines[0], cu)
     coll.objects.link(tob)
     tob.parent = ob
-    tob.location = (0, -0.0135, -size * 0.1)
+    plate_t = T(0.025)
+    tob.location = (0, -plate_t / 2 - cu.extrude * 0.8, -size * 0.1)
     tob.rotation_euler = (pi / 2, 0, 0)
     return ob
 
@@ -1794,7 +1873,11 @@ def setup_render():
 # Main
 # ---------------------------------------------------------------------------
 def build():
-    global PIPE_COLL, FITTINGS
+    global PIPE_COLL, FITTINGS, BOARD_Y, MIN_T, GRASS_HAIR
+    if PRINT:
+        BOARD_Y = BOARD_X
+        MIN_T = MIN_FEATURE_MM / print_scale()
+        GRASS_HAIR = False
     reset_scene()
     build_materials()
     load_font()
@@ -1813,24 +1896,24 @@ def build():
     build_grass(c_base)
 
     # --- process units -----------------------------------------------------
-    heat_exchanger(-4.7, 1.8, c_units)
+    heat_exchanger(-4.7, 1.3, c_units)
     furnace(-2.7, 0.85, c_units)
     column('CatalyticCrackingUnit', -1.0, 3.2, 0.5, 6.9,
            plats=[1.5, 2.6, 3.7, 4.8, 5.9, 6.95], rt=0.42, zt=4.2, coll=c_units,
            nozzles=[(1.0, -90, 'manhole', 0.1), (3.2, -60, 'manhole', 0.1), (5.4, -120, 'manhole', 0.09),
                     (0.95, 0, 'n', 0.06), (2.1, 180, 'n', 0.05), (3.0, 30, 'n', 0.05), (4.4, -30, 'n', 0.045),
                     (6.3, 150, 'n', 0.045), (5.0, 60, 'n', 0.04), (1.9, -140, 'n', 0.04)])
-    column('HydrotreatingUnit', 1.6, 3.1, 0.3, 3.9,
+    column('HydrotreatingUnit', 1.75, 3.1, 0.3, 3.9,
            plats=[1.4, 2.6, 3.95], rt=0.24, zt=3.0, head=0.6, coll=c_units,
            nozzles=[(0.9, -90, 'manhole', 0.08), (2.2, -110, 'manhole', 0.07), (0.7, 180, 'n', 0.05),
                     (1.8, 0, 'n', 0.04), (3.4, 160, 'n', 0.035), (2.9, -40, 'n', 0.035)])
-    cooling_tower(-0.4, -0.75, c_units)
+    cooling_tower(-0.55, -0.85, c_units)
     water_tank(1.9, 0.15, 0.6, 1.25, c_units)
-    sphere_tank('SphericalTank_1', 3.5, 3.3, 0.95, 1.55, -112, c_units)
-    sphere_tank('SphericalTank_2', 5.75, 2.95, 0.9, 1.5, -100, c_units)
+    sphere_tank('SphericalTank_1', 3.5, 3.3, 0.95, 1.55, 150, c_units)
+    sphere_tank('SphericalTank_2', 5.75, 2.95, 0.9, 1.5, -45, c_units)
     flare_stack(4.75, 4.5, 8.1, c_units)
-    storage_tank('ProductTank_1', 4.95, 0.1, 1.15, 1.75, 165, c_units)
-    storage_tank('ProductTank_2', 4.85, -2.25, 1.15, 1.75, 15, c_units)
+    storage_tank('ProductTank_1', 4.95, 0.1, 1.15, 1.75, 0, c_units)
+    storage_tank('ProductTank_2', 4.85, -2.45, 1.15, 1.75, -100, c_units)
     office(-4.2, -2.0, c_units)
     loading_gantry(2.48, -3.0, c_units)
 
@@ -1853,29 +1936,29 @@ def build():
                        (-0.25, 2.11, 0.75)], r=0.04, supports=False, valve=True)
     pipe('Furnace_Transfer', [(-1.83, 0.75, 1.05), (-1.55, 0.75, 1.05), (-1.55, 3.2, 1.05), (-1.48, 3.2, 1.05)],
          r=0.055, supports=False)
-    pipe('Furnace_Feed', [(-3.55, 0.85, 1.25), (-3.95, 0.85, 1.25), (-3.95, 0.85, 1.75), (-4.3, 1.8, 1.75)],
+    pipe('Furnace_Feed', [(-3.55, 0.85, 1.25), (-3.95, 0.85, 1.25), (-3.95, 0.85, 1.75), (-4.3, 1.3, 1.75)],
          r=0.045, supports=False)
-    pipe('HX_Feed', [(-4.3, 1.8, 1.69), (-4.3, 1.8, 1.75)], r=0.045, flanges=False, supports=False)
-    pipe('HX_Channel', [(-5.67, 1.8, 1.67), (-5.67, 1.8, 1.9), (-5.67, 2.5, 1.9), (-5.67, 2.5, 0.85),
+    pipe('HX_Feed', [(-4.3, 1.3, 1.69), (-4.3, 1.3, 1.75)], r=0.045, flanges=False, supports=False)
+    pipe('HX_Channel', [(-5.67, 1.3, 1.67), (-5.67, 1.3, 1.9), (-5.67, 2.5, 1.9), (-5.67, 2.5, 0.85),
                         (-3.3, 2.5, 0.85), (-3.3, 2.09, 0.85), (-3.3, 2.09, 0.78)], r=0.045, supports=True)
-    pipe('HX_Bottom', [(-5.67, 1.8, 0.9), (-5.67, 1.15, 0.9), (-5.67, 1.15, 0.35), (-3.6, 1.15, 0.35),
-                       (-3.6, 0.6, 0.35)], r=0.04, valve=True)
-    pipe('HX_Shell_Top', [(-5.1, 1.8, 1.67), (-5.1, 1.8, 2.05), (-3.3, 1.8, 2.05), (-3.3, 1.94, 2.05),
+    pipe('HX_Bottom', [(-5.67, 1.3, 0.9), (-5.67, 0.6, 0.9), (-5.67, 0.6, 0.35), (-3.75, 0.6, 0.35),
+                       (-3.75, 0.1, 0.35)], r=0.04, valve=True)
+    pipe('HX_Shell_Top', [(-5.1, 1.3, 1.67), (-5.1, 1.3, 2.05), (-3.3, 1.3, 2.05), (-3.3, 1.94, 2.05),
                           (-3.3, 1.94, 1.07)], r=0.04, supports=False)
-    for i, x in enumerate((-0.05, 0.35)):
-        pipe('CT_Line_%d' % i, [(x, 0.18, 0.55), (x, 0.75, 0.55), (x, 0.75, 0.9), (x, 1.9 + 0.1 * i, 0.9),
+    for i, x in enumerate((-0.2, 0.2)):
+        pipe('CT_Line_%d' % i, [(x, 0.08, 0.55), (x, 0.75, 0.55), (x, 0.75, 0.9), (x, 1.9 + 0.1 * i, 0.9),
                                 (x, 1.9 + 0.1 * i, 0.81)], r=0.045, supports=False, valve=(i == 0))
-    pipe('CT_Furnace', [(-1.75, -0.4, 0.5), (-2.25, -0.4, 0.5), (-2.25, -0.4, 0.95), (-2.25, 0.2, 0.95)],
+    pipe('CT_Furnace', [(-1.88, -0.4, 0.5), (-2.15, -0.4, 0.5), (-2.15, -0.4, 0.95), (-2.15, 0.2, 0.95)],
          r=0.04, supports=False)
-    pipe('WaterTank_CT', [(1.38, 0.18, 0.25), (1.0, 0.18, 0.25), (1.0, 0.0, 0.25), (0.97, 0.0, 0.25)],
+    pipe('WaterTank_CT', [(1.38, 0.18, 0.25), (1.0, 0.18, 0.25), (1.0, 0.0, 0.25), (0.82, 0.0, 0.25)],
          r=0.04, supports=False)
     pipe('WaterTank_Rack', [(1.9, 0.87, 0.45), (1.9, 1.55, 0.45), (1.9, 1.55, 0.9), (1.9, 1.95, 0.9),
                             (1.9, 1.95, 1.07)], r=0.035, supports=False)
-    pipe('Hydro_Overhead', [(1.6, 3.1, 3.9 + 0.6 * 0.24 + 0.16), (1.6, 3.1, 4.4), (2.15, 3.1, 4.4),
-                            (2.15, 3.1, 1.2), (2.15, 2.1, 1.2), (2.15, 2.1, 1.07)], r=0.045, supports=False)
-    pipe('Hydro_Bottom', [(1.1, 3.1, 0.7), (0.9, 3.1, 0.7), (0.9, 3.1, 0.35), (0.9, 2.0, 0.35),
-                          (0.9, 2.0, 0.6)], r=0.04, supports=False, valve=True)
-    pipe('Hydro_FCC', [(-0.5, 3.2, 2.1), (0.0, 3.2, 2.1), (0.0, 2.7, 2.1), (1.27, 2.7, 2.1), (1.27, 3.0, 2.1)],
+    pipe('Hydro_Overhead', [(1.75, 3.1, 3.9 + 0.6 * 0.24 + 0.16), (1.75, 3.1, 4.4), (2.3, 3.1, 4.4),
+                            (2.3, 3.1, 1.2), (2.3, 2.1, 1.2), (2.3, 2.1, 1.07)], r=0.045, supports=False)
+    pipe('Hydro_Bottom', [(1.25, 3.1, 0.7), (1.1, 3.1, 0.7), (1.1, 3.1, 0.35), (1.1, 2.0, 0.35),
+                          (1.1, 2.0, 0.6)], r=0.04, supports=False, valve=True)
+    pipe('Hydro_FCC', [(-0.5, 3.2, 2.1), (0.0, 3.2, 2.1), (0.0, 2.7, 2.1), (1.42, 2.7, 2.1), (1.42, 3.0, 2.1)],
          r=0.035, supports=False)
     pipe('Sphere1_Bottom', [(3.5, 3.3, 0.42), (3.5, 3.3, 0.28), (3.5, 2.2, 0.28), (3.5, 2.2, 0.68)],
          r=0.05, supports=False, valve=True)
@@ -1887,12 +1970,13 @@ def build():
                          (4.7, 1.95, 1.07)], r=0.035, supports=False)
     pipe('Flare_Header', [(4.6, 2.12, 1.07), (4.6, 3.6, 1.07), (4.6, 3.6, 0.5), (4.75, 3.98, 0.5),
                           (4.75, 4.42, 0.5)], r=0.06, supports=False)
-    pipe('Tank1_Out', [(3.82, 0.25, 0.28), (3.6, 0.25, 0.28), (3.6, -3.25, 0.28), (3.6, -3.25, 1.12),
+    pipe('Tank1_Out', [(3.82, 0.25, 0.28), (3.53, 0.25, 0.28), (3.53, -3.25, 0.28), (3.53, -3.25, 1.12),
                        (2.62, -3.25, 1.12)], r=0.04)
-    pipe('Tank2_Out', [(3.7, -2.0, 0.28), (3.62, -2.0, 0.28)], r=0.04, flanges=False, supports=False)
+    pipe('Tank2_Out', [(3.76, -2.2, 0.28), (3.55, -2.2, 0.28)], r=0.04, flanges=False, supports=False)
     pipe('Rack_To_Tanks', [(4.62, 1.92, 0.75), (4.62, 1.5, 0.75), (4.62, 1.5, 0.45), (4.62, 1.33, 0.45)],
          r=0.04, supports=False)
-    FITTINGS.finish(c_pipes)
+    if FITTINGS.bm.verts:
+        FITTINGS.finish(c_pipes)
 
     # --- vegetation, vehicles, lamps --------------------------------------
     variants = [make_tree_mesh('TreeVariant_%d' % i, SEED + i) for i in range(4)]
@@ -1901,15 +1985,15 @@ def build():
     street_lamps(c_base)
 
     # --- labels ------------------------------------------------------------
-    sign('CATALYTIC\nCRACKING\nUNIT', (0.35, 3.0, 6.75), c_labels, anchor=(-0.55, 3.1, 6.6))
-    sign('HYDROTREATING\nUNIT', (2.95, 2.6, 4.0), c_labels, anchor=(1.85, 3.0, 3.75))
+    sign('CATALYTIC\nCRACKING\nUNIT', (0.15, 3.0, 7.55), c_labels, anchor=(-0.55, 3.1, 7.2))
+    sign('HYDROTREATING\nUNIT', (3.05, 2.5, 4.0), c_labels, anchor=(2.0, 3.0, 3.75))
     sign('FLARE\nSTACK', (6.0, 4.1, 7.0), c_labels, anchor=(4.95, 4.35, 6.9))
-    sign('HEAT\nEXCHANGER', (-4.7, 1.25, 2.35), c_labels, anchor=(-4.7, 1.75, 1.85))
+    sign('HEAT\nEXCHANGER', (-4.7, 0.75, 2.35), c_labels, anchor=(-4.7, 1.25, 1.85))
     sign('FURNACE', (-2.75, 0.12, 0.95), c_labels, anchor=(-2.75, 0.22, 0.95), size=0.18)
     sign('SPHERICAL\nTANK', (3.5, 2.25, 1.6), c_labels, anchor=(3.5, 2.37, 1.6), size=0.18)
-    sign('SPHERICAL\nTANK', (5.75, 1.95, 1.55), c_labels, anchor=(5.75, 2.07, 1.55), size=0.18)
+    sign('SPHERICAL\nTANK', (5.75, 2.0, 1.55), c_labels, anchor=(5.75, 2.12, 1.55), size=0.18)
     sign('WATER\nTANK', (2.35, -0.72, 0.62), c_labels, size=0.18)
-    sign('COOLING\nTOWER', (-0.4, -1.75, 0.72), c_labels, anchor=(-0.4, -1.62, 0.72), size=0.18)
+    sign('COOLING\nTOWER', (-0.55, -1.92, 0.72), c_labels, anchor=(-0.55, -1.77, 0.72), size=0.18)
     sign('PRODUCT\nSTORAGE TANKS', (4.05, -3.75, 0.95), c_labels, anchor=(4.3, -3.3, 0.95), size=0.18)
     sign('LOADING / UNLOADING\nAREA', (2.48, -4.55, 0.55), c_labels, size=0.18)
 
