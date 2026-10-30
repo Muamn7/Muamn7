@@ -766,11 +766,11 @@ TOWERS = [tower_lattice, tower_monopole, tower_microwave, tower_radome, tower_ce
 # Materials (for rendering in Blender; STL ignores them)
 # ----------------------------------------------------------------------------
 MAT_DEFS = {
-    "steel":    dict(color=(0.60, 0.62, 0.64, 1), metallic=1.0, rough=0.38),
-    "white":    dict(color=(0.86, 0.87, 0.86, 1), metallic=0.0, rough=0.45),
+    "steel":    dict(color=(0.50, 0.53, 0.56, 1), metallic=0.9, rough=0.32),
+    "white":    dict(color=(0.80, 0.81, 0.80, 1), metallic=0.0, rough=0.4),
     "dark":     dict(color=(0.07, 0.08, 0.09, 1), metallic=0.2, rough=0.5),
     "solar":    dict(color=(0.02, 0.05, 0.16, 1), metallic=0.5, rough=0.15),
-    "concrete": dict(color=(0.52, 0.51, 0.49, 1), metallic=0.0, rough=0.9),
+    "concrete": dict(color=(0.36, 0.35, 0.33, 1), metallic=0.0, rough=0.9),
     "red":      dict(color=(0.8, 0.05, 0.03, 1), metallic=0.0, rough=0.4, emit=2.0),
     "light":    dict(color=(1.0, 0.95, 0.85, 1), metallic=0.0, rough=0.2, emit=4.0),
 }
@@ -1049,12 +1049,46 @@ def setup_render(path=None):
     sc.cycles.use_denoising = True
     sc.render.resolution_x, sc.render.resolution_y = 2000, 1200
     sc.render.film_transparent = False
+    try:
+        sc.view_settings.view_transform = 'AgX'
+        sc.view_settings.look = 'AgX - Medium High Contrast'
+    except TypeError:
+        pass
+    # thin outlines so every member reads clearly
+    sc.render.use_freestyle = True
+    sc.render.line_thickness_mode = 'ABSOLUTE'
+    sc.render.line_thickness = 0.7
+    for ls in sc.view_layers[0].freestyle_settings.linesets:
+        ls.linestyle.color = (0.05, 0.06, 0.08)
+        ls.linestyle.alpha = 0.85
+    # sky gradient. The camera sees a screen-space gradient (an ortho camera would
+    # otherwise see one flat colour); reflections and lighting use a real sky dome.
     world = bpy.data.worlds.get("World") or bpy.data.worlds.new("World")
     sc.world = world
     world.use_nodes = True
-    bg = world.node_tree.nodes.get("Background")
-    bg.inputs[0].default_value = (0.92, 0.93, 0.95, 1)
-    bg.inputs[1].default_value = 1.1
+    nt = world.node_tree
+    bg = nt.nodes.get("Background")
+    bg.inputs[1].default_value = 0.8
+
+    def gradient(coord, axis, lo, hi, p_hi):
+        sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        e0, e1 = ramp.color_ramp.elements
+        e0.position, e0.color = 0.0, lo
+        e1.position, e1.color = p_hi, hi
+        nt.links.new(coord, sep.inputs[0])
+        nt.links.new(sep.outputs[axis], ramp.inputs[0])
+        return ramp.outputs["Color"]
+
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    screen = gradient(tc.outputs["Window"], "Y", (0.80, 0.86, 0.93, 1), (0.22, 0.40, 0.68, 1), 1.0)
+    dome = gradient(tc.outputs["Generated"], "Z", (0.70, 0.78, 0.88, 1), (0.12, 0.28, 0.60, 1), 0.6)
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = 'RGBA'
+    nt.links.new(nt.nodes.new("ShaderNodeLightPath").outputs["Is Camera Ray"], mix.inputs["Factor"])
+    nt.links.new(dome, mix.inputs[6])
+    nt.links.new(screen, mix.inputs[7])
+    nt.links.new(mix.outputs[2], bg.inputs[0])
     # ground
     me = bpy.data.meshes.new("Ground")
     s = 2000
@@ -1062,13 +1096,14 @@ def setup_render(path=None):
     g = bpy.data.objects.new("Ground", me)
     gm = bpy.data.materials.new("Ground")
     gm.use_nodes = True
-    gm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1)
+    gm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.42, 0.43, 0.42, 1)
+    gm.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
     me.materials.append(gm)
     bpy.context.scene.collection.objects.link(g)
     sun = bpy.data.objects.new("Sun", bpy.data.lights.new("Sun", 'SUN'))
-    sun.data.energy = 4.0
-    sun.data.angle = math.radians(8)
-    sun.rotation_euler = (math.radians(50), math.radians(10), math.radians(-35))
+    sun.data.energy = 5.0
+    sun.data.angle = math.radians(3)
+    sun.rotation_euler = (math.radians(55), math.radians(12), math.radians(-40))
     bpy.context.scene.collection.objects.link(sun)
     cam = bpy.data.objects.new("Camera", bpy.data.cameras.new("Camera"))
     cam.data.type = 'ORTHO'
