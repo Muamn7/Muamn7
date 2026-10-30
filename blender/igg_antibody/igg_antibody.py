@@ -303,32 +303,42 @@ def mesh_to_domain(mesh, name, mat, coll):
 
 
 def rod_network(name, segments, radius, mat, coll, joint_scale=1.15):
-    """Smooth tubes (metaball capsules) through a list of (p0, p1) segments."""
-    obj = new_metaball(name.replace(".", "_"), coll, threshold=0.6)
-    mb = obj.data
-    mb.resolution = min(MB_RES, radius * 0.35)
-    # visible radius of a capsule of radius R and stiffness 2 at threshold .6 ~ 0.58R
+    """
+    Smooth tubes through a list of (p0, p1) segments: real mesh cylinders with a
+    sphere at every joint, fused by a voxel remesh (identical in every Blender version).
+    """
     radius = max(radius, MIN_ROD)
-    R = radius / 0.58
+    bm = bmesh.new()
     joints = set()
     for p0, p1 in segments:
         p0, p1 = Vector(p0), Vector(p1)
         d = p1 - p0
-        L = d.length
-        el = mb.elements.new(type="CAPSULE")
-        el.co = (p0 + p1) * 0.5
-        el.radius = R
-        el.size_x = max(L * 0.5, 1e-4)
-        el.stiffness = 2.0
-        el.rotation = Vector((1, 0, 0)).rotation_difference(d.normalized())
-        joints.add(tuple(round(c, 4) for c in p0))
-        joints.add(tuple(round(c, 4) for c in p1))
-    for j in joints:   # round knuckles at every joint
-        el = mb.elements.new(type="BALL")
-        el.co = j
-        el.radius = R * joint_scale
-        el.stiffness = 1.6
-    return metaball_to_mesh(obj, name, mat, coll, displace=0.0, smooth_iter=3)
+        if d.length < 1e-6:
+            continue
+        rot = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=24,
+                              radius1=radius, radius2=radius, depth=d.length,
+                              matrix=Matrix.Translation((p0 + p1) * 0.5) @ rot)
+        joints.add(tuple(round(c, 5) for c in p0))
+        joints.add(tuple(round(c, 5) for c in p1))
+    for j in joints:   # round knuckles at every joint / end
+        bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=12,
+                                  radius=radius * joint_scale, matrix=Matrix.Translation(j))
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    coll.objects.link(obj)
+    rem = obj.modifiers.new("Remesh", "REMESH")
+    rem.mode = "VOXEL"
+    rem.voxel_size = min(VOXEL, radius * 0.25)
+    sm = obj.modifiers.new("Smooth", "CORRECTIVE_SMOOTH")   # soft fillets at the joints
+    sm.use_only_smooth = True
+    sm.iterations = 4
+    bake_modifiers(obj)
+    shade_smooth(obj.data)
+    obj.data.materials.append(mat)
+    return obj
 
 
 def torus_ring(name, center, axis, major, minor, mat, coll):
@@ -363,7 +373,7 @@ def build():
     parts = []
 
     # ---------------- Fc region: two columns of 2 domains (CH2, CH3) -------------
-    fc_x = 0.5
+    fc_x = 0.43
     for side, sx in (("L", -1), ("R", 1)):
         x = sx * fc_x
         tilt = Vector((sx * 0.03, 0.0, 1.0))
@@ -375,12 +385,12 @@ def build():
     # yellow inter-chain bridges between the Fc columns
     bridges = []
     for z in (BASE_TOP + 0.55, BASE_TOP + 1.25, BASE_TOP + 1.95):
-        bridges.append(((-0.28, 0.0, z), (0.28, 0.0, z)))
+        bridges.append(((-0.22, 0.0, z), (0.22, 0.0, z)))
     parts.append(rod_network("Fc_Disulfide", bridges, 0.06, M["ss"], col_ab))
 
     # ---------------- Hinge: yellow ladder + light-blue links -------------------
-    hz0, hz1 = BASE_TOP + 2.55, BASE_TOP + 3.30
-    hx = 0.24
+    hz0, hz1 = BASE_TOP + 2.48, BASE_TOP + 3.12
+    hx = 0.2
     hmid = (hz0 + hz1) * 0.5
     ladder = [
         ((-hx, 0, hz0), (-hx, 0, hz1)),
@@ -397,8 +407,8 @@ def build():
     for side, sx in (("L", -1), ("R", 1)):
         d = Vector((sx * math.sin(arm_angle), 0.0, math.cos(arm_angle)))     # along arm
         n_out = Vector((sx * math.cos(arm_angle), 0.0, -math.sin(arm_angle)))  # outer / lower side
-        root = Vector((sx * 0.62, 0.0, BASE_TOP + 3.38))
-        off = 0.29
+        root = Vector((sx * 0.46, 0.0, BASE_TOP + 3.20))
+        off = 0.25
         inner = root - n_out * off      # heavy chain strand (upper side)
         outer = root + n_out * off      # light chain strand (lower side)
 
@@ -406,33 +416,34 @@ def build():
             return base + d * t + n_out * lift + Vector((0, y, 0))
 
         # heavy chain: CH1 + VH (blue)
-        parts.append(protein_domain(f"Fab_{side}_CH1", at(inner, 0.62, y=0.02), d,
-                                    (0.30, 0.31, 0.66), M["heavy"], col_ab, rng, bulge=0.08))
-        parts.append(protein_domain(f"Fab_{side}_VH", at(inner, 1.86, y=-0.02), d,
+        parts.append(protein_domain(f"Fab_{side}_CH1", at(inner, 0.60, y=0.02), d,
+                                    (0.30, 0.31, 0.64), M["heavy"], col_ab, rng, bulge=0.08))
+        parts.append(protein_domain(f"Fab_{side}_VH", at(inner, 1.72, y=-0.02), d,
                                     (0.30, 0.31, 0.64), M["heavy"], col_ab, rng, bulge=0.08))
         # light chain: CL (blue, next to hinge) + VL (pink)
-        parts.append(protein_domain(f"Fab_{side}_CL", at(outer, 0.36, lift=0.03), d,
+        parts.append(protein_domain(f"Fab_{side}_CL", at(outer, 0.34, lift=0.0), d,
                                     (0.29, 0.30, 0.42), M["heavy"], col_ab, rng, bulge=0.05))
-        parts.append(protein_domain(f"Fab_{side}_VL", at(outer, 1.45, lift=0.02), d,
-                                    (0.28, 0.29, 0.80), M["light"], col_ab, rng, bulge=0.07))
+        parts.append(protein_domain(f"Fab_{side}_VL", at(outer, 1.34, lift=0.0), d,
+                                    (0.28, 0.29, 0.76), M["light"], col_ab, rng, bulge=0.07))
         # antigen-binding site (purple cap) on the tip
-        parts.append(protein_domain(f"Fab_{side}_Paratope", at(outer, 2.66, lift=-0.06), d,
+        parts.append(protein_domain(f"Fab_{side}_Paratope", at(outer, 2.42, lift=-0.12), d,
                                     (0.35, 0.34, 0.46), M["var"], col_ab, rng,
                                     blob_r=(0.075, 0.125), density=1.0, bulge=0.1))
 
         # yellow ring + small bridge at the arm root (inter-chain S-S)
-        parts.append(torus_ring(f"Fab_{side}_Ring", root + d * 0.02 - n_out * 0.05, d,
+        parts.append(torus_ring(f"Fab_{side}_Ring", root - d * 0.05, d,
                                 0.17, 0.05, M["ss"], col_ab))
         parts.append(rod_network(f"Fab_{side}_HL_Disulfide",
                                  [(at(inner, 0.10, lift=0.10), at(outer, 0.10, lift=-0.10))],
                                  0.06, M["ss"], col_ab))
 
         # light-blue hinge links: Fc top -> ladder -> arm root
-        top_fc = Vector((sx * fc_x * 0.75, 0.0, BASE_TOP + 2.45))
+        top_fc = Vector((sx * fc_x * 0.8, 0.0, BASE_TOP + 2.30))
         links += [
             (top_fc, (sx * hx, 0.0, hz0)),
-            ((sx * hx, 0.0, hz1), root - n_out * 0.05),
-            ((sx * hx * 0.2, 0.0, hz1 + 0.02), root - n_out * 0.22 + d * 0.05),
+            ((sx * hx, 0.0, hz1), root - d * 0.05),
+            ((sx * hx, 0.0, hz1), inner + d * 0.05),
+            ((sx * hx, 0.0, hmid), outer + d * 0.05),
         ]
     parts.append(rod_network("Hinge_Links", links, 0.045, M["linker"], col_ab))
 

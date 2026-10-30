@@ -134,6 +134,20 @@ def cylinders(name, centers, radius, z0, z1, chamfer=0.0, segs=48):
     return link(bpy.data.objects.new(name, me))
 
 
+def tube(name, p0, p1, radius, segs=48):
+    """Closed cylinder between two points."""
+    d = p1 - p0
+    rot = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segs,
+                          radius1=radius, radius2=radius, depth=d.length,
+                          matrix=Matrix.Translation((p0 + p1) * 0.5) @ rot)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    return link(bpy.data.objects.new(name, me))
+
+
 def islands(obj):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -290,19 +304,24 @@ def main(height_mm=PRINT_HEIGHT_MM):
         o.matrix_world = Matrix.Identity(4)
         o.data.transform(Matrix.Scale(S, 4))
 
-    # feet: a short solid post under each Fc column so it sits firmly in the base
-    feet = []
+    # internal posts: a foot under each Fc column (so it sits firmly in the base)
+    # and a spine through CH3 -> CH2 (so the stem joint is always thick and solid)
+    def centre(ob):
+        vs = ob.data.vertices
+        return sum((v.co for v in vs), Vector()) / len(vs)
+
+    posts = []
     for side in ("L", "R"):
         ch3 = bpy.data.objects[f"Fc_CH3_{side}"]
-        low = [v.co for v in ch3.data.vertices if v.co.z < (igg.BASE_TOP + 0.5) * S]
-        cx = sum(c.x for c in low) / len(low)
-        cy = sum(c.y for c in low) / len(low)
-        r = 0.21 * S
-        post = cylinders(f"Fc_Foot_{side}", [Vector((cx, cy, 0))], r,
-                         (igg.BASE_TOP - 0.15) * S, (igg.BASE_TOP + 0.55) * S, chamfer=0)
-        post.data.materials.append(ch3.data.materials[0])
-        feet.append(post)
-    parts = parts + feet
+        ch2 = bpy.data.objects[f"Fc_CH2_{side}"]
+        c3, c2 = centre(ch3), centre(ch2)
+        foot = c3.copy()
+        foot.z = (igg.BASE_TOP - 0.15) * S
+        for nm, a, b in ((f"Fc_Foot_{side}", foot, c3), (f"Fc_Spine_{side}", c3, c2)):
+            post = tube(nm, a, b, 0.21 * S)
+            post.data.materials.append(ch3.data.materials[0])
+            posts.append(post)
+    parts = parts + posts
 
     # 2) one watertight solid for the antibody
     solid = combine("IgG_Solid", parts)
@@ -365,6 +384,7 @@ def main(height_mm=PRINT_HEIGHT_MM):
     # print orientation: every part standing on its flat bottom at z = 0
     # (Part 1 & 2 bottoms are flat; Part 3 sits on its cut face)
     for o, zb in ((p1, 0.0), (p2, z1), (p3, z2)):
+        o["assembly_z_mm"] = zb             # where this part sits when assembled
         o.data.transform(Matrix.Translation((0, 0, -zb)))
         export(o, o.name)
 
