@@ -42,6 +42,7 @@ MIN_ROD_MM = 1.8          # thicker tubes -> bigger glue surfaces
 CLEARANCE_MM = 0.15       # gap between nesting pieces
 PIN_CLEARANCE_MM = 0.2    # radial play of the pins in the pedestal
 PIN_DEPTH_MM = 5.0
+SPINE_RADIUS_MM = 3.5     # hidden core joining CH3 and CH2 of each Fc column
 MIN_PIECE_MM3 = 4.0       # smaller fragments are dropped
 MAX_TRIS_PER_COLOUR = 320_000
 OUT_DIR = os.path.join(HERE, "print_colors")
@@ -171,7 +172,7 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
         pin = P.tube(f"Pin_{side}", foot, Vector((c3.x, c3.y, base_top + 8.0)), 3.0)
         pins.append(pin)
         groups["heavy"].append(pin)
-        groups["heavy"].append(P.tube(f"Spine_{side}", c3, c2, 0.21 * S))
+        groups["heavy"].append(P.tube(f"Spine_{side}", c3, c2, SPINE_RADIUS_MM))
 
     # 2) one watertight solid per colour (before any cutting)
     raw = {}
@@ -204,6 +205,9 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
         piece = P.combine(k, [raw[k]])
         P.boolean(piece, env, "DIFFERENCE")
         bpy.data.objects.remove(env)
+        # rebuild a clean surface: the exact boolean leaves sliver triangles that
+        # collapse into holes once a slicer merges near-duplicate points
+        P.voxel_union(piece, VOXEL_MM * 0.8)
         final[k] = piece
         print(f"cut {k} by {PRIORITY[:i]}")
 
@@ -277,13 +281,13 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
 
 def render_exploded(pieces, S):
     """Exploded preview: every piece pushed away from the model's centre line."""
-    centre_z = 95.0
     for pc in pieces:
-        c = centroid(pc)
         if pc.name.startswith("black"):
             continue
-        off = Vector((c.x * 0.22, 0.0, (c.z - centre_z) * 0.12 + 18.0))
-        pc.location = off
+        c = centroid(pc)
+        small = pc.name.split("_")[0] in ("yellow", "lightblue")
+        k = 0.55 if small else 0.32
+        pc.location = Vector((c.x * k, -8.0 if small else 0.0, (c.z - 95.0) * 0.18 + 26.0))
     sc = bpy.context.scene
     for o in bpy.data.objects:
         if o.type == "LIGHT":
@@ -293,13 +297,13 @@ def render_exploded(pieces, S):
         if o.name == "Backdrop":
             o.scale = (S, S, S)
     cam = sc.camera
-    cam.location = Vector((0, -650, 260))
-    t = Vector((0, 0, 115))
+    cam.location = Vector((0, -560, 170))
+    t = Vector((0, 0, 105))
     cam.rotation_euler = (t - cam.location).to_track_quat("-Z", "Y").to_euler()
-    cam.data.lens = 60
+    cam.data.lens = 62
     cam.data.clip_end = 5000
-    igg.setup_render(64)
-    sc.render.resolution_x, sc.render.resolution_y = 1200, 1300
+    igg.setup_render(96)
+    sc.render.resolution_x, sc.render.resolution_y = 1400, 1400
     sc.render.filepath = os.path.join(OUT_DIR, "IgG_colour_pieces_preview.png")
     bpy.ops.render.render(write_still=True)
 
