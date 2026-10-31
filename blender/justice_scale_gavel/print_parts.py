@@ -308,8 +308,8 @@ def plate_link(verts, faces, tip, axis, wdir, W, L, b, t, half_angle=28.0, side=
 # ---- print versions of the beam -----------------------------------------
 
 BEAM_BED_Y = 0.34    # the beam's back is flattened at y = +3.4 mm (printed face down)
-HOOK_T = 0.24        # hook plate thickness (y)
-HOOK_RI, HOOK_RO = 0.28, 0.48
+HOOK_T = 0.15        # hook plate thickness (y) - fits through the chain's top link
+HOOK_RI, HOOK_RO = 0.45, 0.65   # 9 mm opening: three chains hang side by side
 
 
 def print_beam_geometry(inflate=0.0, levels=16):
@@ -380,6 +380,7 @@ def beam_bottom_at(x, y):
     return J.BEAM_Z + zc - az * (1 - q ** 2.6) ** (1 / 2.6)
 
 
+CHAIN_ANGLES = (90, 210, 330)
 HOOK_X = J.HOOK_S * J.BEAM_L
 HOOK_Y = BEAM_BED_Y - HOOK_T / 2                   # centre plane of the hooks
 # curl centre: hook tip (zc + 0.40) stays 3.5 mm below the beam -> room to hang the loop
@@ -406,6 +407,173 @@ def hook_outline(sx):
     if sx < 0:                       # mirror for the left hook (keep a valid winding)
         pts = [(-x, z) for x, z in reversed(pts)]
     return pts, tip + rr
+
+
+# ---- movable print-in-place chain ------------------------------------------
+#
+# Printed lying flat along +X.  Links alternate:
+#   V  (even index) : stands in the XZ plane, flat bottom bar on the bed,
+#                     vertical posts and a 45 deg pointed top.
+#   H  (odd index)  : lies on the bed (two side bars along X); its two end bars
+#                     are 45 deg "tents" that arch over the V's bottom bar.
+# Every surface is either on the bed, vertical, or 45 deg; neighbours keep a
+# 0.4 mm gap, so the links come off the bed separate and free to move.
+
+CT = 0.10            # wire thickness (1.0 mm)
+CC = 0.04            # print-in-place clearance (0.4 mm)
+CW = 0.70            # H link width
+CL = 0.85            # link length (H and V)
+CP = 0.56            # printed pitch between link centres
+CP_MAX = CL - 2 * CT  # pitch when the chain is pulled straight (0.65)
+V_ZS = 0.36          # V: height of the vertical posts
+HJ_XS, HJ_R, HJ_W = 0.75, 0.27, 0.12   # end hook: stem end, curl radius, wire width
+
+
+def _prism(coll, pts2d, u, v, n, t0, t1, name="p"):
+    return extrude_polygon(name, coll, pts2d, u, v, n, t0, t1)
+
+
+def _ring_prism(coll, outer, inner, u, v, n, t0, t1, name="ring"):
+    """extruded polygon with one hole (outer/inner have the same vertex count)."""
+    U, Vv, N = Vector(u), Vector(v), Vector(n)
+    k = len(outer)
+    verts = [tuple(U * a + Vv * b + N * t) for t in (t0, t1) for poly in (outer, inner)
+             for a, b in poly]
+    O0, I0, O1, I1 = 0, k, 2 * k, 3 * k
+    faces = []
+    for i in range(k):
+        j = (i + 1) % k
+        faces += [(O0 + i, I0 + i, I0 + j, O0 + j), (O1 + i, O1 + j, I1 + j, I1 + i),
+                  (O0 + i, O0 + j, O1 + j, O1 + i), (I0 + i, I1 + i, I1 + j, I0 + j)]
+    return J.make_object(name, verts, faces, coll, smooth=False)
+
+
+def v_link(coll, x0):
+    h = CL / 2
+    apex_in = V_ZS + h - CT * math.sqrt(2)
+    outer = [(x0 - h, 0), (x0 + h, 0), (x0 + h, V_ZS), (x0, V_ZS + h), (x0 - h, V_ZS)]
+    inner = [(x0 - h + CT, CT), (x0 + h - CT, CT), (x0 + h - CT, apex_in - (h - CT)),
+             (x0, apex_in), (x0 - h + CT, apex_in - (h - CT))]
+    return _ring_prism(coll, outer, inner, (1, 0, 0), (0, 0, 1), (0, 1, 0), -CT / 2, CT / 2,
+                       "V_link")
+
+
+def _tent(coll, xa, xb):
+    w = CW / 2
+    k = CT * math.sqrt(2)
+    band = [(-w, 0), (0, w), (w, 0), (w - k, 0), (0, w - k), (-(w - k), 0)]
+    return _prism(coll, band, (0, 1, 0), (0, 0, 1), (1, 0, 0), xa, xb, "tent")
+
+
+def h_link(coll, x0, hook=False):
+    h, w = CL / 2, CW / 2
+    parts = [box(coll, x0 - h, x0 + h, -w, -w + CT, 0, CT), box(coll, x0 - h, x0 + h, w - CT, w, 0, CT),
+             _tent(coll, x0 - h, x0 - h + CT)]
+    if not hook:
+        parts.append(_tent(coll, x0 + h - CT, x0 + h))
+    else:
+        # Y-shaped neck + stem + J curl (flat on the bed) that goes through the pan rim
+        for sy in (-1, 1):
+            a, b = Vector((x0 + h - 0.06, sy * (w - CT / 2))), Vector((x0 + h + 0.24, 0))
+            dd = (b - a).normalized()
+            nn = Vector((-dd.y, dd.x)) * (HJ_W / 2)
+            quad = [tuple(a + nn), tuple(b + nn), tuple(b - nn), tuple(a - nn)]
+            parts.append(_prism(coll, quad, (1, 0, 0), (0, 1, 0), (0, 0, 1), 0, CT, "neck"))
+        xs, R, ww = x0 + h + HJ_XS - 0.425 + 0.425, HJ_R, HJ_W / 2
+        xs = x0 + HJ_XS
+        pts = [(x0 + h + 0.15, -ww), (xs, -ww)]
+        pts += [(xs + (R + ww) * math.cos(a), R + (R + ww) * math.sin(a))
+                for a in [math.radians(-90 + 180 * i / 24) for i in range(1, 24)]]
+        pts += [(xs, 2 * R + ww), (xs - 0.10, 2 * R + ww)]
+        pts += [(xs - 0.10 - ww * math.sin(math.radians(180 * i / 12)),
+                 2 * R + ww * math.cos(math.radians(180 * i / 12))) for i in range(1, 12)]
+        pts += [(xs - 0.10, 2 * R - ww), (xs, 2 * R - ww)]
+        pts += [(xs + (R - ww) * math.cos(a), R + (R - ww) * math.sin(a))
+                for a in [math.radians(90 - 180 * i / 24) for i in range(1, 24)]]
+        pts += [(xs, ww), (x0 + h + 0.15, ww)]
+        parts.append(_prism(coll, pts, (1, 0, 0), (0, 1, 0), (0, 0, 1), 0, CT, "curl"))
+    base = parts[0]
+    union(base, parts[1:])
+    base.name = "H_hook" if hook else "H_link"
+    return base
+
+
+N_LINKS = None   # chosen below so the pans hang at about the original height
+
+
+def chain_links(coll):
+    """one chain in print orientation; returns the list of link objects."""
+    links = []
+    for k in range(N_LINKS):
+        x0 = k * CP
+        if k % 2 == 0:
+            links.append(v_link(coll, x0))
+        else:
+            links.append(h_link(coll, x0, hook=(k == N_LINKS - 1)))
+    return links
+
+
+# hanging geometry -----------------------------------------------------------
+HOLE_Z = 1.02          # chain holes in the pan wall (above the pan bottom)
+HOLE_R = 2.29          # mid-wall radius of the holes
+PIVOT_TO_HOLE = (HJ_XS + HJ_R) + (CL / 2 - CT / 2)   # hook link: tent -> curl bottom
+T_TOP = None           # where the top links rest on the beam hook
+
+
+def _pan_z(n):
+    lc = (n - 1) * CP_MAX - 0.05
+    horiz = HOLE_R - HJ_R
+    return T_TOP.z - HOLE_Z - PIVOT_TO_HOLE - math.sqrt(max(lc * lc - horiz * horiz, 0))
+
+
+def init_chain_geometry():
+    global N_LINKS, T_TOP, PAN_Z
+    T_TOP = Vector((HOOK_X, HOOK_Y, HOOK_ZC - HOOK_RI))
+    best = None
+    for n in range(6, 20, 2):            # even count: V first, hook link (H) last
+        z = _pan_z(n)
+        if best is None or abs(z - J.PAN_BOTTOM) < abs(best[1] - J.PAN_BOTTOM):
+            best = (n, z)
+    N_LINKS, PAN_Z = best
+
+
+def hanging_matrices(side, ang, slot):
+    """world matrices for every link of one chain hanging from the hook to the pan."""
+    sx = 1 if side > 0 else -1
+    dx = (slot - 1) * 0.12                 # three chains side by side on the hook bar
+    zt = HOOK_ZC - math.sqrt(HOOK_RI ** 2 - (abs(dx) + CT / 2 + 0.01) ** 2)
+    top = Vector((sx * T_TOP.x + dx, T_TOP.y, zt))
+    radial = Vector((math.cos(ang), math.sin(ang), 0))
+    axis_xy = Vector((sx * HOOK_X, HOOK_Y, 0))
+    pivot = axis_xy + radial * (HOLE_R - HJ_R) + Vector((0, 0, PAN_Z + HOLE_Z + PIVOT_TO_HOLE))
+    d = (pivot - top).normalized()
+    u = Vector((1, 0, 0))                # V links' window normal -> along the hook bar
+    u = (u - d * u.dot(d)).normalized()
+    w = d.cross(u)
+    R = Matrix((d, u, w)).transposed().to_4x4()
+    mats = []
+    for k in range(N_LINKS - 1):
+        c = top + d * (CL / 2 - CT + k * CP_MAX) - w * 0.20
+        mats.append(Matrix.Translation(c * CM) @ R @ Matrix.Translation(Vector((-k * CP, 0, 0)) * CM))
+
+    def hang_straight(k, Y, q, target):
+        """link k hanging vertically (local +X down), local point q -> target."""
+        X = Vector((0, 0, -1))
+        Rv = Matrix((X, Y, X.cross(Y))).transposed()
+        c = target - Rv @ q
+        return (Matrix.Translation(c * CM) @ Rv.to_4x4()
+                @ Matrix.Translation(Vector((-k * CP, 0, 0)) * CM))
+
+    # top link hangs straight on the hook bar (window around the bar)
+    mats[0] = hang_straight(0, Vector((1, 0, 0)), Vector((-(CL / 2 - CT), 0, 0.20)), top)
+    # hook link hangs straight down from its pivot, curl centred in the rim hole
+    k = N_LINKS - 1
+    mats.append(hang_straight(k, radial, Vector((-(CL / 2 - CT / 2), 0, CT / 2)), pivot))
+    return mats
+
+
+init_chain_geometry()
+CHAIN_MESHES = []     # one chain's link meshes in print orientation (for the assembly view)
 
 
 def build_scale_parts(coll):
@@ -442,45 +610,46 @@ def build_scale_parts(coll):
     add(beam, Matrix.Rotation(-math.pi / 2, 4, "X"),
         note="front face up, flat back on the bed")
 
-    # 4) PAN + 3 CHAINS + HANGING LOOP: one piece (print 2)
+    # 4) PAN with three chain holes (print 2)
     p = J.Profile(0, 0)
     p.line(1.80, 0.0, 0.0)
     p.bez((2.15, 0.35), (2.40, 0.70), (2.42, 1.18), n=30)
     p.arc((2.30, 1.18), 0.12, 0, 180, n=16)
     p.bez((2.17, 0.70), (1.95, 0.34), (1.30, 0.30), n=26)
     p.line(0.0, 0.30, 0.0)
-    pan = J.lathe("S4_Pan_with_Chains", p, coll, [], segs=128, max_seg=0.1)
-    apply_matrix(pan, Matrix.Translation(Vector((HOOK_X, HOOK_Y, J.PAN_BOTTOM)) * CM))
+    pan = J.lathe("S4_Pan", p, coll, [], segs=128, max_seg=0.1)
+    for ang in CHAIN_ANGLES:
+        u = Vector((math.cos(math.radians(ang)), math.sin(math.radians(ang)), 0))
+        boolean(pan, teardrop(coll, u * 1.9 + Vector((0, 0, HOLE_Z)),
+                              u * 2.8 + Vector((0, 0, HOLE_Z)), 0.13, sides=16))
+    apply_matrix(pan, Matrix.Translation(Vector((HOOK_X, HOOK_Y, PAN_Z)) * CM))
+    add(pan, copies=2, note="standing on its foot")
 
-    # hanging loop (YZ plane) whose top bar sits inside the J-hook's curl
-    LW, LB, LT, LS = 0.56, 0.10, 0.12, 0.10
-    l_len = 2 * (LW / 2) / math.tan(math.radians(28)) + LS
-    apex_out = HOOK_ZC + LB / math.sin(math.radians(28))
-    node = Vector((HOOK_X, HOOK_Y, apex_out - l_len))
-    lv, lf = [], []
-    plate_link(lv, lf, node, (0, 0, 1), (0, 1, 0), LW, l_len, LB, LT, side=LS)
-    others = [J.make_object("loop", lv, lf, coll, smooth=False)]
-
-    # three chains of flat diamond links, alternating +-45 deg to the radial plane
-    W, b, t, L0 = 0.28, 0.08, 0.10, 0.62
-    overlap = 0.15
-    for ang in (90, 210, 330):
-        a = math.radians(ang)
-        radial = Vector((math.cos(a), math.sin(a), 0))
-        rim = Vector((HOOK_X, HOOK_Y, J.PAN_BOTTOM + 1.30 - 0.04)) + radial * 2.30
-        axis = (node - rim)
-        length = axis.length
-        axis.normalize()
-        n = max(2, int(round((length - L0) / (L0 - overlap))) + 1)
-        pitch = (length - L0) / (n - 1)
-        cv, cf = [], []
-        for i in range(n):
-            rot = Matrix.Rotation(math.radians(45 if i % 2 == 0 else -45), 3, (0, 0, 1))
-            wdir = rot @ radial
-            plate_link(cv, cf, rim + axis * (pitch * i), axis, wdir, W, L0, b, t)
-        others.append(J.make_object("chain", cv, cf, coll, smooth=False))
-    union(pan, others)
-    add(pan, copies=2, note="standing on its foot; chains + loop print with it")
+    # 5) SIX MOVABLE CHAINS, print-in-place, all in one file / one print
+    links = chain_links(coll)
+    CHAIN_MESHES.clear()
+    CHAIN_MESHES.extend(l.data.copy() for l in links)
+    allc = []
+    for j in range(6):
+        for l in links:
+            o = l.copy()
+            o.data = l.data.copy()
+            o.data.transform(Matrix.Translation((0, j * 1.15 * CM, 0)))
+            coll.objects.link(o)
+            allc.append(o)
+    for l in links:
+        bpy.data.objects.remove(l, do_unlink=True)
+    chains = allc[0]
+    others = allc[1:]
+    bm = bmesh.new()
+    for o in allc:
+        bm.from_mesh(o.data)            # appends: separate shells = separate links
+    bm.to_mesh(chains.data)
+    bm.free()
+    for o in others:
+        bpy.data.objects.remove(o, do_unlink=True)
+    chains.name = "S5_Chains_x6"
+    add(chains, note="flat on the bed - print-in-place, links come off free")
 
 
 def build_gavel_parts(coll):
@@ -669,7 +838,7 @@ def layout_and_render(coll, assembled, render, samples):
     gold = J.make_simple("PLA_Silk_Gold", (0.85, 0.58, 0.20), rough=0.3, metal=0.7)
     for ob, *_ in PARTS:
         ob.data.materials.clear()
-        ob.data.materials.append(wood)
+        ob.data.materials.append(gold if ob.name.startswith("S5") else wood)
         if ob.name.startswith("G2"):        # band = gold filament section
             ob.data.materials.append(gold)
             ob.data.update()
@@ -679,6 +848,9 @@ def layout_and_render(coll, assembled, render, samples):
         ob.data.polygons.foreach_set("use_smooth", [True] * len(ob.data.polygons))
         if hasattr(ob.data, "set_sharp_from_angle"):
             ob.data.set_sharp_from_angle(angle=math.radians(35))
+    for me in CHAIN_MESHES:
+        me.materials.clear()
+        me.materials.append(gold)
 
     # --- print plate: simple shelf packing (gap 8 mm)
     gap, row_w = 0.008, 0.46
@@ -700,13 +872,22 @@ def layout_and_render(coll, assembled, render, samples):
 
     # --- exploded assembly (linked duplicates back in assembled position)
     ex = J.new_collection("Exploded_Assembly")
-    lift = {"S1": 0, "S2": 4.0, "S3": 2.0, "S4": -1.5, "G1": 0, "G2": 3.0, "G3": 3.0}
+    lift = {"S1": 0, "S2": 3.0, "S3": 0, "S4": 0, "G1": 0, "G2": 3.0, "G3": 3.0}
     for ob, rot, copies, group, note in PARTS:
+        if ob.name.startswith("S5"):
+            # chains shown hanging from the beam hooks down to the pan holes
+            for side in (-1, 1):
+                for slot, ang in enumerate(CHAIN_ANGLES):
+                    for M, me in zip(hanging_matrices(side, math.radians(ang), slot),
+                                     CHAIN_MESHES):
+                        d = bpy.data.objects.new(f"chain_{side}_{ang}", me)
+                        d.matrix_world = M
+                        ex.objects.link(d)
+            continue
         base = assembled[ob.name]
         variants = [Matrix.Identity(4)]
-        if ob.name.startswith("S4"):        # second pan hangs on the left hook
-            variants = [Matrix.Identity(4),
-                        Matrix.Translation((-2 * HOOK_X * CM, 0, 0))]
+        if ob.name.startswith("S4"):        # second pan hangs on the left hook (mirror)
+            variants = [Matrix.Identity(4), Matrix.Scale(-1, 4, (1, 0, 0))]
         for k, V in enumerate(variants):
             d = ob.copy()
             d.name = ob.name + f"_asm{k}"
