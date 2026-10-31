@@ -456,8 +456,9 @@ def beam_shape(s):
     return zc, h, d
 
 
-def build_beam(coll, wood):
-    """Wing-shaped carved beam: swept rounded-rectangle (super-ellipse)."""
+def beam_geometry(inflate=0.0):
+    """Wing-shaped carved beam: swept rounded-rectangle (super-ellipse).
+    inflate (cm) grows the section on every side (used for print clearances)."""
     M = 40          # section resolution
     expo = 2.6      # super-ellipse exponent (2 = ellipse, higher = boxier)
     r_end = 0.55
@@ -488,8 +489,8 @@ def build_beam(coll, wood):
         for j in range(M):
             ph = 2 * math.pi * j / M
             c, s_ = math.cos(ph), math.sin(ph)
-            y = d / 2 * kk * math.copysign(abs(c) ** (2 / expo), c)
-            z = h / 2 * kk * math.copysign(abs(s_) ** (2 / expo), s_)
+            y = (d / 2 * kk + inflate) * math.copysign(abs(c) ** (2 / expo), c)
+            z = (h / 2 * kk + inflate) * math.copysign(abs(s_) ** (2 / expo), s_)
             ring.append(len(verts))
             verts.append((x, y, BEAM_Z + zc + z))
         rings.append(ring)
@@ -503,6 +504,11 @@ def build_beam(coll, wood):
                 faces.append((A[j], A[j2], B[0]))
             else:
                 faces.append((A[j], A[j2], B[j2], B[j]))
+    return verts, faces
+
+
+def build_beam(coll, wood):
+    verts, faces = beam_geometry()
     ob = make_object("Scale_Beam", verts, faces, coll, [wood], sharp_angle=60)
     sub = ob.modifiers.new("Subdivision", "SUBSURF")
     sub.levels = 1
@@ -510,7 +516,10 @@ def build_beam(coll, wood):
     return ob
 
 
-def build_column(coll, wood, ebony):
+COLUMN_EBONY_ZONES = [(2.86, 3.72), (6.40, 7.12), (13.28, 13.70), (16.26, 16.90)]
+
+
+def column_profile():
     p = Profile(0, 0)
     # --- round plinth disc
     p.line(3.95, 0.0, 0.10)
@@ -558,8 +567,13 @@ def build_column(coll, wood, ebony):
     p.bez((0.64, 18.65), (0.30, 19.40), (0.15, 19.82), n=30)
     p.arc((0.0, 19.82), 0.15, 0, 90, n=10)  # ends at (0, 19.97)
     p.line(0.0, 20.0, 0.0)
-    zones = [(2.86, 3.72, 1), (6.40, 7.12, 1), (13.28, 13.70, 1), (16.26, 16.90, 1)]
-    return lathe("Scale_Column", p, coll, [wood, ebony], zones, segs=112, max_seg=0.18)
+    return p
+
+
+def build_column(coll, wood, ebony):
+    zones = [(a, b, 1) for a, b in COLUMN_EBONY_ZONES]
+    return lathe("Scale_Column", column_profile(), coll, [wood, ebony], zones,
+                 segs=112, max_seg=0.18)
 
 
 def pan_profile():
@@ -686,7 +700,7 @@ HANDLE_LEN = 13.4   # from head axis to handle tip (13.4 + 1.6 head radius = 15 
 REST_X = 11.0       # position of the handle rest (from head axis)
 
 
-def build_handle_rest(coll, wood, ebony, base_z, handle_z, cup_r):
+def rest_profile(base_z, handle_z, cup_r, with_cup=True):
     """Turned post with a spherical cup on top that cradles the handle."""
     top_r = 0.80
     cup_rim = 0.56
@@ -707,16 +721,23 @@ def build_handle_rest(coll, wood, ebony, base_z, handle_z, cup_r):
     p.bez((0.55, rim_z - 0.45), (top_r, rim_z - 0.30), (top_r, rim_z - 0.08), n=14)
     p.arc((top_r - 0.08, rim_z - 0.08), 0.08, 0, 90, n=6)
     p.line(cup_rim, rim_z, 0.02)
+    if not with_cup:
+        return p, rim_z, zc
     for i in range(1, 17):                          # spherical cup = handle seat
         r = cup_rim * (1 - i / 16)
         p.line(r, zc - math.sqrt(cup_r ** 2 - r * r), 0.0)
+    return p, rim_z, zc
+
+
+def build_handle_rest(coll, wood, ebony, base_z, handle_z, cup_r):
+    p, rim_z, _ = rest_profile(base_z, handle_z, cup_r)
     zones = [(1.18, 1.54, 1), (rim_z - 0.92, rim_z - 0.58, 1)]
     ob = lathe("Gavel_Handle_Rest", p, coll, [wood, ebony], zones, segs=96, max_seg=0.15)
     ob.location = (0, 0, base_z * CM)
     return ob
 
 
-def build_gavel_head(coll, wood, ebony, brass):
+def head_half_profile():
     p = Profile(0, -HEAD_HALF - 0.04)          # slightly domed striking face
     p.line(1.10, -HEAD_HALF, 0.0)
     p.line(1.53, -HEAD_HALF, 0.14)
@@ -730,7 +751,11 @@ def build_gavel_head(coll, wood, ebony, brass):
     p.line(1.43, -1.48, 0.03)
     p.line(1.32, -1.44, 0.02)
     p.line(1.32, 0.0, 0.0)
-    full = p.mirrored()
+    return p
+
+
+def build_gavel_head(coll, wood, ebony, brass):
+    full = head_half_profile().mirrored()
     zones = [(-2.96, -2.28, 1), (2.28, 2.96, 1)]
     head = lathe("Gavel_Head", full, coll, [wood, ebony], zones, segs=112, max_seg=0.15)
 
@@ -747,7 +772,7 @@ def build_gavel_head(coll, wood, ebony, brass):
     return head, band
 
 
-def build_gavel_handle(coll, wood, ebony):
+def handle_profile():
     p = Profile(0, 0.6)
     p.line(0.48, 0.6, 0.02)
     p.line(0.48, 1.30, 0.0)
@@ -762,18 +787,27 @@ def build_gavel_handle(coll, wood, ebony):
     p.bez((0.47, 7.0), (0.43, 8.2), (0.46, 9.5), n=30)
     p.bez((0.50, 10.6), (0.63, 11.4), (0.63, 12.35), n=24)
     p.bez((0.64, 13.05), (0.36, HANDLE_LEN), (0.0, HANDLE_LEN), n=20)
+    return p
+
+
+def build_gavel_handle(coll, wood, ebony):
+    p = handle_profile()
     zones = [(2.76, 3.08, 1), (4.98, 5.32, 1)]
     return lathe("Gavel_Handle", p, coll, [wood, ebony], zones, segs=64, max_seg=0.2)
 
 
-def build_sound_block(coll, wood):
+def sound_block_profile():
     p = Profile(0, 0)
     p.line(2.90, 0.0, 0.08)
     p.line(2.95, 0.85, 0.12)
     p.line(2.62, 0.92, 0.04)
     p.bez((2.62, 1.10), (2.55, 1.30), (2.40, 1.42), n=12)
     p.line(0.0, 1.44, 0.0)
-    return lathe("Gavel_Sound_Block", p, coll, [wood], segs=112, max_seg=0.15)
+    return p
+
+
+def build_sound_block(coll, wood):
+    return lathe("Gavel_Sound_Block", sound_block_profile(), coll, [wood], segs=112, max_seg=0.15)
 
 
 def build_stand(coll, wood, length=17.4, width=7.2, height=1.7, x0=-3.7):
