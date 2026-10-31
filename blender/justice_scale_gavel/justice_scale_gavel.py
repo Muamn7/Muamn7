@@ -683,6 +683,37 @@ def build_scale(gold, wood, ebony, wood_x):
 
 HEAD_HALF = 3.5     # head length 7 cm
 HANDLE_LEN = 13.4   # from head axis to handle tip (13.4 + 1.6 head radius = 15 cm)
+REST_X = 11.0       # position of the handle rest (from head axis)
+
+
+def build_handle_rest(coll, wood, ebony, base_z, handle_z, cup_r):
+    """Turned post with a spherical cup on top that cradles the handle."""
+    top_r = 0.80
+    cup_rim = 0.56
+    zc = handle_z - base_z                 # handle axis height above the stand
+    rim_z = zc - math.sqrt(cup_r ** 2 - cup_rim ** 2)
+    p = Profile(0, 0)
+    p.line(1.05, 0.0, 0.06)
+    p.line(1.05, 0.28, 0.08)
+    p.line(0.86, 0.32, 0.03)
+    p.bez((0.80, 0.70), (0.42, 0.75), (0.36, 1.10), n=20)
+    p.line(0.36, 1.20, 0.02)
+    p.arc((0.36, 1.36), 0.16, -90, 90, n=12)        # ebony bead
+    p.line(0.34, 1.56, 0.02)
+    p.bez((0.62, 2.10), (0.62, 2.70), (0.32, rim_z - 1.05), n=24)
+    p.line(0.32, rim_z - 0.90, 0.02)
+    p.arc((0.32, rim_z - 0.75), 0.15, -90, 90, n=12)  # ebony bead
+    p.line(0.36, rim_z - 0.58, 0.02)
+    p.bez((0.55, rim_z - 0.45), (top_r, rim_z - 0.30), (top_r, rim_z - 0.08), n=14)
+    p.arc((top_r - 0.08, rim_z - 0.08), 0.08, 0, 90, n=6)
+    p.line(cup_rim, rim_z, 0.02)
+    for i in range(1, 17):                          # spherical cup = handle seat
+        r = cup_rim * (1 - i / 16)
+        p.line(r, zc - math.sqrt(cup_r ** 2 - r * r), 0.0)
+    zones = [(1.18, 1.54, 1), (rim_z - 0.92, rim_z - 0.58, 1)]
+    ob = lathe("Gavel_Handle_Rest", p, coll, [wood, ebony], zones, segs=96, max_seg=0.15)
+    ob.location = (0, 0, base_z * CM)
+    return ob
 
 
 def build_gavel_head(coll, wood, ebony, brass):
@@ -754,7 +785,7 @@ def build_stand(coll, wood, length=17.4, width=7.2, height=1.7, x0=-3.7):
     ob = make_object("Gavel_Stand", v, f, coll, [wood], smooth=False)
     # decorative groove along the top (rest for the handle) - boolean, baked
     gv, gf = [], []
-    gx0, gx1, gw, gd = 3.6, x1 - 1.6, 0.55, 0.32
+    gx0, gx1, gw, gd = 3.6, REST_X - 1.6, 0.55, 0.32
     gv = [(gx0, -gw, height - gd), (gx1, -gw, height - gd), (gx1, gw, height - gd), (gx0, gw, height - gd),
           (gx0, -gw, height + 1), (gx1, -gw, height + 1), (gx1, gw, height + 1), (gx0, gw, height + 1)]
     cutter = make_object("tmp_groove", gv, f, coll, smooth=False)
@@ -806,22 +837,17 @@ def build_gavel(wood, wood_x, ebony, brass):
     head.location = head_c * CM
     band.location = head_c * CM
 
-    # tilt so the handle knob rests in the groove of the stand
-    groove_floor = stand_h - 0.32
-    knob_r, knob_z = 0.63, 12.35
-    best = 0.0
-    for i in range(4000):
-        a = math.radians(i * 0.01)
-        low = head_c.z - knob_z * math.sin(a) - knob_r * math.cos(a)
-        if low <= groove_floor + 0.01:  # knob rests on the groove edges
-            best = a
-            break
+    # handle perfectly straight: horizontal and at right angles to the head
     handle = build_gavel_handle(coll, wood, ebony)
-    # local +Z of the handle -> direction (+X, tilted down)
-    handle.rotation_euler = (0.0, math.pi / 2 + best, 0.0)
+    handle.rotation_euler = (0.0, math.pi / 2, 0.0)  # local +Z -> +X
     handle.location = head_c * CM
 
-    for ob in (stand, block, head, band, handle):
+    # small turned rest under the grip so the straight handle is supported
+    rest = build_handle_rest(coll, wood, ebony, base_z=stand_h, handle_z=head_c.z,
+                             cup_r=0.60)
+    rest.location = (REST_X * CM, 0, stand_h * CM)
+
+    for ob in (stand, block, head, band, handle, rest):
         parent_to(ob, root)
     return root
 
@@ -943,7 +969,7 @@ def main(with_studio=True):
     # arrange like the reference photo: gavel in front, scale behind
     scale_root.location = (0.0, 0.0, 0)
     gavel_root.location = (-0.085, -0.10, 0)
-    gavel_root.rotation_euler = (0, 0, math.radians(8))
+    gavel_root.rotation_euler = (0, 0, 0)
 
     if with_studio:
         build_studio()
