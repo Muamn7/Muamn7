@@ -312,10 +312,10 @@ def sculpt_detail(me, lines):
     me.attributes.new("disc", 'FLOAT', 'POINT').data.foreach_set("value", disc_a)
 
     # baked vertex colour too (for GLB / viewport / other software)
-    base = np.array((0.78, 0.40, 0.33))
-    dark = np.array((0.58, 0.23, 0.19))
-    pale = np.array((0.86, 0.76, 0.72))
-    c = base + (dark - base) * (stria * 0.8)[:, None]
+    base = np.array((0.52, 0.07, 0.05))
+    dark = np.array((0.20, 0.015, 0.012))
+    pale = np.array((0.24, 0.06, 0.06))
+    c = base + (dark - base) * stria[:, None]
     c = c + (pale - c) * disc_a[:, None]
     rgba = np.concatenate([c, np.ones((n, 1))], axis=1)
     me.color_attributes.new("Col", 'FLOAT_COLOR', 'POINT').data.foreach_set("color", rgba.ravel())
@@ -403,21 +403,21 @@ def material_fibre():
     L.new(tc.outputs['Object'], nz.inputs['Vector'])
 
     m1 = nt.nodes.new('ShaderNodeMix'); m1.data_type = 'RGBA'
-    m1.inputs['A'].default_value = (0.55, 0.17, 0.11, 1)
-    m1.inputs['B'].default_value = (0.34, 0.08, 0.05, 1)
+    m1.inputs['A'].default_value = (0.52, 0.07, 0.05, 1)
+    m1.inputs['B'].default_value = (0.20, 0.015, 0.012, 1)
     str_ramp = nt.nodes.new('ShaderNodeMapRange')
-    str_ramp.inputs['To Max'].default_value = 0.7
+    str_ramp.inputs['To Max'].default_value = 0.95
     L.new(a_str.outputs['Fac'], str_ramp.inputs['Value'])
     L.new(str_ramp.outputs['Result'], m1.inputs['Factor'])
 
     m2 = nt.nodes.new('ShaderNodeMix'); m2.data_type = 'RGBA'
-    m2.inputs['B'].default_value = (0.42, 0.30, 0.31, 1)
+    m2.inputs['B'].default_value = (0.24, 0.06, 0.06, 1)
     L.new(m1.outputs['Result'], m2.inputs['A'])
     L.new(a_dsc.outputs['Fac'], m2.inputs['Factor'])
 
     m3 = nt.nodes.new('ShaderNodeMix'); m3.data_type = 'RGBA'
     m3.blend_type = 'OVERLAY'
-    m3.inputs['Factor'].default_value = 0.25
+    m3.inputs['Factor'].default_value = 0.15
     L.new(m2.outputs['Result'], m3.inputs['A'])
     L.new(nz.outputs['Color'], m3.inputs['B'])
     L.new(m3.outputs['Result'], bsdf.inputs['Base Color'])
@@ -428,11 +428,12 @@ def material_fibre():
     L.new(nz.outputs['Fac'], bump.inputs['Height'])
     L.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
 
-    _set(bsdf, 'Roughness', 0.42)
-    _set(bsdf, 'Subsurface Weight', 0.35)
-    _set(bsdf, 'Subsurface Radius', (1.0, 0.35, 0.22))
+    _set(bsdf, 'Roughness', 0.55)
+    _set(bsdf, 'Specular IOR Level', 0.35)
+    _set(bsdf, 'Subsurface Weight', 0.25)
+    _set(bsdf, 'Subsurface Radius', (1.0, 0.15, 0.08))
     _set(bsdf, 'Subsurface Scale', 0.004)
-    _set(bsdf, 'Coat Weight', 0.12)
+    _set(bsdf, 'Coat Weight', 0.04)
     _set(bsdf, 'Coat Roughness', 0.25)
     _set(bsdf, 'Sheen Weight', 0.0)
     return m
