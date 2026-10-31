@@ -12,6 +12,7 @@ What it builds / ماذا يبني:
   * Intercalated discs (zig-zag step grooves) between cells
   * Purple oval central nuclei (separate object)
   * Materials (Cycles / EEVEE), lights and a camera
+  * Fibres stand vertically, cut flat and level at top and bottom
   * Real-world size: total HEIGHT = 20 cm (change TARGET_HEIGHT_M)
 
 No text / labels are created - model only.
@@ -28,12 +29,13 @@ from mathutils import Matrix, Vector, kdtree, noise
 # --------------------------------------------------------------------------
 # Settings / الإعدادات
 # --------------------------------------------------------------------------
-TARGET_HEIGHT_M = 0.20      # final height of the whole bundle (20 cm)
+TARGET_HEIGHT_M = 0.20      # final height (fibres stand vertically, 20 cm tall)
+X_CUT = 10.5                # fibres are cut flat at +/- X_CUT (fibre-radius units)
 SEED = 7
 VOXEL = 0.05                # remesh voxel size in fibre-radius units (smaller = more detail)
 STRIATION_PITCH = 0.30      # distance between striations (fibre-radius units)
-STRIATION_DEPTH = 0.022
-DISC_DEPTH = 0.10
+STRIATION_DEPTH = 0.035     # deep enough to show on a 3D print
+DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
 RENDER_PATH = "//cardiac_muscle_render.png"
@@ -88,14 +90,13 @@ class Fibre:
 def build_layout():
     """Hexagonally packed, staggered bundle: 3 depth layers."""
     fibres = []
-    L = 11.0
     layers = [(-2.75, [-3.1, 0.0, 3.1]),
               (0.0, [-4.65, -1.55, 1.55, 4.65]),
               (2.75, [-3.1, 0.0, 3.1])]
     for y0, zs in layers:
         for z0 in zs:
-            xs = -L + random.uniform(-1.2, 1.6)
-            xe = L + random.uniform(-1.6, 1.2)
+            xs = -X_CUT - 1.5
+            xe = X_CUT + 1.5
             fibres.append(Fibre(y0, z0, xs, xe))
     return fibres
 
@@ -138,8 +139,8 @@ def make_centerlines(fibres):
         if n_branch >= 15:
             break
         a, b = fibres[i], fibres[j]
-        lo = max(a.xs, b.xs) + 2.0
-        hi = min(a.xe, b.xe) - 2.0
+        lo = -X_CUT + 1.2
+        hi = X_CUT - 1.2
         span = random.uniform(4.5, 6.0)
         if hi - lo < span + 0.5:
             continue
@@ -324,6 +325,31 @@ def sculpt_detail(me, lines):
 
 
 # --------------------------------------------------------------------------
+# Flat, level ends (top and bottom) - good for display and 3D printing
+# --------------------------------------------------------------------------
+def cut_flat_ends(me):
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    for sign in (1.0, -1.0):
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        res = bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5,
+                                     plane_co=(sign * X_CUT, 0, 0),
+                                     plane_no=(sign, 0, 0), clear_outer=True)
+        cut_edges = [e for e in res['geom_cut'] if isinstance(e, bmesh.types.BMEdge)]
+        bmesh.ops.holes_fill(bm, edges=cut_edges, sides=0)
+    # triangulate the new flat caps so the mesh is clean for slicers
+    caps = [f for f in bm.faces if len(f.verts) > 4]
+    if caps:
+        bmesh.ops.triangulate(bm, faces=caps)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    for f in bm.faces:
+        f.smooth = abs(f.normal.x) < 0.999
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+
+# --------------------------------------------------------------------------
 # Nuclei
 # --------------------------------------------------------------------------
 def make_nuclei(lines, n_fibres, discs):
@@ -354,7 +380,10 @@ def make_nuclei(lines, n_fibres, discs):
                 ax_w = r * random.uniform(0.36, 0.42)
                 ax_h = r * random.uniform(0.26, 0.31)
                 center = co + radial * (r * 1.0 - ax_h * 0.35)
-                side = t.cross(radial).normalized()
+                if abs(center.x) > X_CUT - 1.0:
+                    u += 1.0
+                    continue
+                side = radial.cross(t).normalized()   # right-handed frame -> outward normals
                 rot = Matrix((t, side, radial)).transposed().to_4x4()
                 mat = (Matrix.Translation(center) @ rot @
                        Matrix.Diagonal((ax_long, ax_w, ax_h, 1.0)))
@@ -479,7 +508,7 @@ def setup_stage(height):
     cam_data.lens = 60
     cam = bpy.data.objects.new("Camera", cam_data)
     sc.collection.objects.link(cam)
-    cam.location = target + Vector((0.10, -0.80, 0.42))
+    cam.location = target + Vector((0.16, -0.50, 0.15))
     cam.rotation_euler = (target - cam.location).to_track_quat('-Z', 'Y').to_euler()
     sc.camera = cam
 
@@ -521,8 +550,8 @@ def setup_stage(height):
     sc.render.engine = 'CYCLES'
     sc.cycles.samples = 96
     sc.cycles.use_denoising = True
-    sc.render.resolution_x = 1600
-    sc.render.resolution_y = 1000
+    sc.render.resolution_x = 1000
+    sc.render.resolution_y = 1400
     sc.view_settings.view_transform = 'Standard'
     sc.view_settings.look = 'None'
 
@@ -538,19 +567,20 @@ def main():
     tubes = curve_tube_mesh(lines)
     fibre_me = fuse_and_smooth(tubes)
     _, discs = sculpt_detail(fibre_me, lines)
+    cut_flat_ends(fibre_me)
     nuc_me, n_nuc = make_nuclei(lines, len(fibres), discs)
 
-    # Scale to real size: height = TARGET_HEIGHT_M, sitting on the floor (z = 0)
-    zs = [v.co.z for v in fibre_me.vertices]
-    xs = [v.co.x for v in fibre_me.vertices]
+    # Stand the fibres up (X -> Z), real size: height = TARGET_HEIGHT_M, base on z = 0
     ys = [v.co.y for v in fibre_me.vertices]
-    s = TARGET_HEIGHT_M / (max(zs) - min(zs))
-    cx, cy = (max(xs) + min(xs)) * 0.5, (max(ys) + min(ys)) * 0.5
-    M = Matrix.Diagonal((s, s, s, 1.0)) @ Matrix.Translation((-cx, -cy, -min(zs)))
+    zs = [v.co.z for v in fibre_me.vertices]
+    cy, cz = (max(ys) + min(ys)) * 0.5, (max(zs) + min(zs)) * 0.5
+    s = TARGET_HEIGHT_M / (2.0 * X_CUT)
+    M = (Matrix.Translation((0, 0, TARGET_HEIGHT_M * 0.5)) @
+         Matrix.Diagonal((s, s, s, 1.0)) @
+         Matrix.Rotation(math.radians(-90), 4, 'Y') @
+         Matrix.Translation((0, -cy, -cz)))
     fibre_me.transform(M)
     nuc_me.transform(M)
-    for p in fibre_me.polygons:
-        p.use_smooth = True
 
     fibre_me.materials.append(material_fibre())
     nuc_me.materials.append(material_nucleus())
