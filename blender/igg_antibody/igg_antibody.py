@@ -32,6 +32,7 @@ MB_RES = 0.03 / QUALITY  # metaball polygonisation resolution
 SEED = 7
 BASE_TOP = 0.45         # height of the pedestal
 MIN_ROD = 0.0           # minimum tube radius (raised by the 3D-print script)
+ARM_DIRS = {}           # side -> unit vector along each Fab arm (filled by build())
 
 COLORS = {               # sRGB hex, matched to the reference picture
     "heavy":  "#2F86E8",  # blue  - heavy chain
@@ -377,10 +378,10 @@ def build():
     for side, sx in (("L", -1), ("R", 1)):
         x = sx * fc_x
         tilt = Vector((sx * 0.03, 0.0, 1.0))
-        parts.append(protein_domain(f"Fc_CH3_{side}", (x, 0.0, BASE_TOP + 0.62), tilt,
-                                    (0.31, 0.32, 0.62), M["heavy"], col_ab, rng, bulge=0.06))
-        parts.append(protein_domain(f"Fc_CH2_{side}", (x + sx * 0.02, 0.02, BASE_TOP + 1.86), tilt,
-                                    (0.30, 0.31, 0.62), M["heavy"], col_ab, rng, bulge=0.06))
+        parts.append(protein_domain(f"Fc_CH3_{side}", (x, 0.0, BASE_TOP + 0.55), tilt,
+                                    (0.31, 0.32, 0.70), M["heavy"], col_ab, rng, bulge=0.06))
+        parts.append(protein_domain(f"Fc_CH2_{side}", (x + sx * 0.02, 0.02, BASE_TOP + 1.78), tilt,
+                                    (0.30, 0.31, 0.70), M["heavy"], col_ab, rng, bulge=0.06))
 
     # yellow inter-chain bridges between the Fc columns
     bridges = []
@@ -407,6 +408,7 @@ def build():
     for side, sx in (("L", -1), ("R", 1)):
         d = Vector((sx * math.sin(arm_angle), 0.0, math.cos(arm_angle)))     # along arm
         n_out = Vector((sx * math.cos(arm_angle), 0.0, -math.sin(arm_angle)))  # outer / lower side
+        ARM_DIRS[side] = d.copy()
         root = Vector((sx * 0.46, 0.0, BASE_TOP + 3.20))
         off = 0.25
         inner = root - n_out * off      # heavy chain strand (upper side)
@@ -439,12 +441,20 @@ def build():
 
         # light-blue hinge links: Fc top -> ladder -> arm root
         top_fc = Vector((sx * fc_x * 0.8, 0.0, BASE_TOP + 2.30))
-        links += [
-            (top_fc, (sx * hx, 0.0, hz0)),
-            ((sx * hx, 0.0, hz1), root - d * 0.05),
-            ((sx * hx, 0.0, hz1), inner + d * 0.05),
-            ((sx * hx, 0.0, hmid), outer + d * 0.05),
-        ]
+        links.append((top_fc, (sx * hx, 0.0, hz0)))
+
+        # hinge -> arm links all run parallel to the arm, from the ladder into the
+        # heavy strand, the ring centre and the light strand (so a printed arm can
+        # slide straight onto them)
+        def onto_ladder(p):
+            s_up = (p.x - sx * hx) / d.x            # back along -d to the ladder upright
+            q = p - d * s_up
+            if hz0 <= q.z <= hz1:
+                return q
+            return p - d * ((p.z - hz1) / d.z)      # ... or to its top rung
+        for p in (inner, root, outer):
+            end = p + d * 0.14
+            links.append((onto_ladder(end), end))
     parts.append(rod_network("Hinge_Links", links, 0.045, M["linker"], col_ab))
 
     # ---------------- Pedestal --------------------------------------------------

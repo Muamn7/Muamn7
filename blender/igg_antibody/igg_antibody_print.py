@@ -4,14 +4,15 @@ IgG Antibody - 3D-print version in 4 parts (Blender 4.2+ / 5.x)
 Builds the model with igg_antibody.py, merges it into one watertight solid,
 scales it to millimetres and splits it into printable parts joined by pins:
 
-    Part 1  Base       : black pedestal                         (2 pins up)
-    Part 2  Stem       : Fc region + hinge (yellow ladder)       (holes below, pins
-                                                                  towards each arm)
-    Part 3  Arm left   : left Fab arm  (blue/pink/purple + ring) (holes in its cut face)
-    Part 4  Arm right  : right Fab arm                           (holes in its cut face)
+    Part 1  Base       : black pedestal                          (2 pins up)
+    Part 2  Stem       : Fc region + hinge (yellow ladder) + the light-blue hinge
+                         links                                   (2 holes below)
+    Part 3  Arm left   : left Fab arm  (blue/pink/purple + yellow ring)
+    Part 4  Arm right  : right Fab arm
 
-Each arm is cut off with a flat face perpendicular to the arm, so it slides
-straight onto two pins of the stem and prints standing on that face.
+The hinge links run parallel to each arm, so they are the arm's pins: the arm
+has matching straight sockets and slides onto them in one straight move
+(checked by a slide-off test while building).
 
 Output (next to this script, in print/):
     IgG_part*.stl         (mm, single colour)
@@ -41,14 +42,13 @@ import igg_antibody as igg  # noqa: E402
 PRINT_HEIGHT_MM = 180.0   # total height of the assembled model
 VOXEL_MM = 0.4            # surface resolution of the printed solid
 MAX_TRIS_TOTAL = 560_000  # whole antibody; the rest is decimated away
-MIN_ROD_MM = 1.6          # thinnest tube radius (3.2 mm diameter)
+MIN_ROD_MM = 1.8          # thinnest tube radius (3.6 mm diameter; the hinge links are the arm pins)
 PEG_RADIUS_MM = 2.5
 PEG_LENGTH_MM = 6.0
 CLEARANCE_MM = 0.2        # radial play in the holes
 PIN_SEPARATION_MM = 9.0   # minimum distance between two pins of one joint
-ARM_CUT_RANGE = (0.05, 0.45)  # where along each arm (model units from its root) to cut;
-                               # starts past the yellow ring so the hinge stays whole
-PIN_TARGET_MM = 5.0           # cut as close to the hinge as this pin clearance allows
+FOOT_RADIUS_MM = 4.5           # hidden post under each Fc column, carries the base pins
+SOCKET_CLEARANCE_MM = 0.25     # play around the hinge links inside the arm sockets
 SPINE_RADIUS_MM = 3.5          # hidden core joining CH3 and CH2 of each Fc column
 OUT_DIR = os.path.join(HERE, "print")
 
@@ -91,6 +91,15 @@ def decimate(obj, max_tris):
     m.decimate_type = "COLLAPSE"
     m.ratio = max_tris / tris
     m.use_collapse_triangulate = True
+    igg.bake_modifiers(obj)
+
+
+def displace(obj, dist):
+    """Grow (or shrink) obj along its normals."""
+    m = obj.modifiers.new("Offset", "DISPLACE")
+    m.direction = "NORMAL"
+    m.mid_level = 0.0
+    m.strength = dist
     igg.bake_modifiers(obj)
 
 
@@ -390,98 +399,80 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
         vs = ob.data.vertices
         return sum((v.co for v in vs), Vector()) / len(vs)
 
-    # internal posts: a foot under each Fc column (sits in the base) and a thin
-    # spine CH3 -> CH2 so each column is one solid even where the domains part
+    # internal posts (hidden inside the domains): a foot under each Fc column that
+    # carries the base pins, and a spine CH3 -> CH2 so each column is one solid
     posts = []
     for side in ("L", "R"):
         ch3 = bpy.data.objects[f"Fc_CH3_{side}"]
         c3, c2 = centre(ch3), centre(bpy.data.objects[f"Fc_CH2_{side}"])
         foot = c3.copy()
-        foot.z = (igg.BASE_TOP - 0.15) * S
-        for nm, a, b, r in ((f"Fc_Foot_{side}", foot, c3, 0.21 * S),
+        foot.z = base_top - 3.0
+        for nm, a, b, r in ((f"Fc_Foot_{side}", foot, c3, FOOT_RADIUS_MM),
                             (f"Fc_Spine_{side}", c3, c2, SPINE_RADIUS_MM)):
             post = tube(nm, a, b, r)
             post.data.materials.append(ch3.data.materials[0])
             posts.append(post)
     parts = parts + posts
 
-    # 2) one watertight solid for the antibody
-    solid = combine("IgG_Solid", parts)
-    voxel_union(solid, VOXEL_MM)
-    specks = remove_small_islands(solid)
-    decimate(solid, MAX_TRIS_TOTAL)          # before the boolean cuts -> they stay manifold
-    print(f"antibody solid: {len(solid.data.polygons):,} faces, {islands(solid)} island(s) "
-          f"({specks} voxel specks removed)")
+    # 2) split by membership: each Fab arm is its own solid, everything else is the stem
+    arm_parts = {side: [p for p in parts if p.name.startswith(f"Fab_{side}_")] for side in "LR"}
+    stem_parts = [p for p in parts if not p.name.startswith("Fab_")]
 
-    # 3) arm cut planes: perpendicular to each arm, placed where the section is thickest
-    min_wall = PEG_RADIUS_MM + CLEARANCE_MM + 1.2
-    arms = {}
-    for side in ("L", "R"):
-        d = (centre(bpy.data.objects[f"Fab_{side}_VH"]) -
-             centre(bpy.data.objects[f"Fab_{side}_CH1"])).normalized()
-        root = centre(bpy.data.objects[f"Fab_{side}_Ring"])
-        # walk outwards from the hinge; take the first cut that gives two good pins
-        best = None
-        steps = 23
-        for i in range(steps):
-            t = ARM_CUT_RANGE[0] + (ARM_CUT_RANGE[1] - ARM_CUT_RANGE[0]) * i / (steps - 1)
-            co = root + d * t * S
-            pins = pin_points(solid, co, d, 2, min_wall, PIN_SEPARATION_MM)
-            score = (len(pins), min((r for _, r in pins), default=0))
-            if best is None or score > best[0]:
-                best = (score, t, co, pins)
-            if len(pins) == 2 and score[1] >= PIN_TARGET_MM:
-                best = (score, t, co, pins)
-                break
-        _, t, co, pins = best
-        arms[side] = (co, d)
-        print(f"arm {side}: cut {t:.2f} units from the root, pin clearances " +
-              ", ".join(f"{r:.1f}mm" for _, r in pins))
-
-    # 4) split
-    def cut(name, keep_boxes, remove_boxes):
-        ob = combine(name, [solid])
-        for b in keep_boxes:
-            boolean(ob, b, "INTERSECT")
-        for b in remove_boxes:
-            boolean(ob, b, "DIFFERENCE")
+    def solid_of(name, objs):
+        ob = combine(name, objs)
+        voxel_union(ob, VOXEL_MM)
+        remove_small_islands(ob)
         return ob
 
-    hs = {}
-    for side, (co, d) in arms.items():
-        h = halfspace(f"hs_{side}", co, d)
-        own_side = halfspace(f"side_{side}", Vector((0, 0, 0)),
-                             Vector((-1 if side == "L" else 1, 0, 0)))
-        boolean(h, own_side, "INTERSECT")          # never reach across the middle
-        bpy.data.objects.remove(own_side)
-        hs[side] = h
+    stem = solid_of("IgG_part2_stem", stem_parts)
+    decimate(stem, MAX_TRIS_TOTAL // 2)
     above = box("above_base", base_top, 1e4)
-    stem = cut("IgG_part2_stem", [above], [hs["L"], hs["R"]])
-    arm_l = cut("IgG_part3_arm_left", [hs["L"]], [])
-    arm_r = cut("IgG_part4_arm_right", [hs["R"]], [])
-    for o in list(hs.values()) + [above]:
-        bpy.data.objects.remove(o)
+    boolean(stem, above, "INTERSECT")                 # flat bottom on the pedestal
+    bpy.data.objects.remove(above)
+
+    # sockets: every arm loses the stem (grown by the clearance), so the hinge links
+    # that run into the arm become pins sitting in straight sockets
+    fat_stem = solid_of("fat_stem", stem_parts)
+    displace(fat_stem, SOCKET_CLEARANCE_MM)
+    voxel_union(fat_stem, VOXEL_MM)
+    arms = {}
+    for side, nm in (("L", "IgG_part3_arm_left"), ("R", "IgG_part4_arm_right")):
+        arm = solid_of(nm, arm_parts[side])
+        decimate(arm, MAX_TRIS_TOTAL // 4)
+        boolean(arm, fat_stem, "DIFFERENCE")
+        voxel_union(arm, VOXEL_MM * 0.8)              # clean surface after the cut
+        remove_small_islands(arm)
+        arms[side] = arm
+    bpy.data.objects.remove(fat_stem)
+    arm_l, arm_r = arms["L"], arms["R"]
     base = combine("IgG_part1_base", [pedestal])
 
-    # 5) pins: base -> stem (vertical), stem -> each arm (along the arm)
-    def join(lower, upper, co, no):
-        no = Vector(no).normalized()
-        centres = [c for c, r in pin_points(upper, co + no * 1e-3, no, 2, min_wall,
-                                             PIN_SEPARATION_MM)]
-        for c in centres:
-            peg = tube("peg", c - no * 1.0, c + no * PEG_LENGTH_MM, PEG_RADIUS_MM)
-            hole = tube("hole", c - no * 1.0, c + no * (PEG_LENGTH_MM + 0.6),
-                        PEG_RADIUS_MM + CLEARANCE_MM)
-            boolean(lower, peg, "UNION")
-            boolean(upper, hole, "DIFFERENCE")
-            bpy.data.objects.remove(peg)
-            bpy.data.objects.remove(hole)
-        return len(centres)
+    # 3) base -> stem pins (vertical)
+    min_wall = PEG_RADIUS_MM + CLEARANCE_MM + 1.2
+    centres = [c for c, r in pin_points(stem, Vector((0, 0, base_top + 1e-3)), Vector((0, 0, 1)),
+                                        2, min_wall, PIN_SEPARATION_MM)]
+    for c in centres:
+        peg = tube("peg", c - Vector((0, 0, 1.0)), c + Vector((0, 0, PEG_LENGTH_MM)), PEG_RADIUS_MM)
+        hole = tube("hole", c - Vector((0, 0, 1.0)), c + Vector((0, 0, PEG_LENGTH_MM + 0.6)),
+                    PEG_RADIUS_MM + CLEARANCE_MM)
+        boolean(base, peg, "UNION")
+        boolean(stem, hole, "DIFFERENCE")
+        bpy.data.objects.remove(peg)
+        bpy.data.objects.remove(hole)
+    voxel_union(stem, VOXEL_MM * 0.8)     # clean surface: exact-boolean slivers -> holes in slicers
+    print(f"base -> stem: {len(centres)} pin(s)")
 
-    print(f"base -> stem: {join(base, stem, Vector((0, 0, base_top)), Vector((0, 0, 1)))} pin(s)")
-    for side, arm in (("L", arm_l), ("R", arm_r)):
-        co, d = arms[side]
-        print(f"stem -> arm {side}: {join(stem, arm, co, d)} pin(s)")
+    # 4) assembly test: each arm must slide off its pins along the arm without touching
+    for side, arm in arms.items():
+        d = igg.ARM_DIRS[side]
+        worst = 0.0
+        for dist in (2.0, 6.0, 12.0, 25.0):
+            probe = combine("probe", [arm])
+            probe.data.transform(Matrix.Translation(d * dist))
+            boolean(probe, stem, "INTERSECT")
+            worst = max(worst, check_solid(probe)[1])
+            bpy.data.objects.remove(probe)
+        print(f"arm {side}: slide-off test, worst overlap {worst:.2f} mm3")
 
     # 6) colours, checks
     pieces = (base, stem, arm_l, arm_r)
@@ -500,14 +491,15 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
         print(report[-1])
 
     # 7) export in print orientation, on the bed (z = 0)
-    #    base & stem stand on their flat bottoms, each arm stands on its cut face
+    #    base & stem stand on their flat bottoms; each arm points down with its
+    #    sockets facing up (so no support material ends up inside them)
     for o in pieces:
         name = o.name
         o.name = name + "_assembled"
         me = o.data.copy()
         if o in (arm_l, arm_r):
-            d = arms["L" if o is arm_l else "R"][1]
-            me.transform(d.rotation_difference(Vector((0, 0, 1))).to_matrix().to_4x4())
+            d = igg.ARM_DIRS["L" if o is arm_l else "R"]
+            me.transform(d.rotation_difference(Vector((0, 0, -1))).to_matrix().to_4x4())
         zs = [v.co.z for v in me.vertices]
         xs = [v.co.x for v in me.vertices]
         ys = [v.co.y for v in me.vertices]
@@ -533,8 +525,8 @@ def main(height_mm=PRINT_HEIGHT_MM, render=False):
 
 def render_exploded(base, stem, arms, arm_l, arm_r, S):
     stem.location = (0, 0, 22)
-    arm_l.location = stem.location + arms["L"][1] * 28
-    arm_r.location = stem.location + arms["R"][1] * 28
+    arm_l.location = stem.location + igg.ARM_DIRS["L"] * 28
+    arm_r.location = stem.location + igg.ARM_DIRS["R"] * 28
     sc = bpy.context.scene
     for o in bpy.data.objects:
         if o.type == "LIGHT":
