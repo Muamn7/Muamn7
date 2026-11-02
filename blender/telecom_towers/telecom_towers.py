@@ -327,10 +327,12 @@ def top_mast(m, ztop, base_r=1.4, mast_h=10.0, rod_h=8.0, light=True):
 # ----------------------------------------------------------------------------
 # 1) أبراج شبكية - Lattice (self-supporting, 4-legged) tower
 # ----------------------------------------------------------------------------
-def tower_lattice(name="01_Lattice_Tower", steep_x=False):
-    """steep_x: same tower, but every face panel carries as many side-by-side
-    X braces as needed to keep each brace >= PRINT_MIN_ANGLE, so the lattice
-    body prints without supports (head/platform stay as designed)."""
+def tower_lattice(name="01_Lattice_Tower", x_bays=None):
+    """x_bays: print mode. Same tower (levels, horizontals, head), but each X
+    brace spans as many panels as needed to climb at >= PRINT_MIN_ANGLE, with
+    x_bays X braces side by side across the face; the lattice body then
+    prints without supports."""
+    steep_x = x_bays is not None
     m = Model(name)
     m.loft_rects((0, 0), [(58, 58, 0), (58, 58, 2.2), (55, 55, 3.0)], "concrete")
     zb = 3.0
@@ -378,7 +380,7 @@ def tower_lattice(name="01_Lattice_Tower", steep_x=False):
         # base plate at pier
         m.box_at(P(c, z0) + UP * 0.2, (5.0, 5.0, 1.0))
 
-    if steep_x:
+    if steep_x and x_bays > 1:
         # ground tie beams on the plinth: the bottom row of X braces starts on them
         zg = zb + 0.6
         levels = [zg] + levels[1:]
@@ -389,36 +391,45 @@ def tower_lattice(name="01_Lattice_Tower", steep_x=False):
     def Q(ca, cb, z, f):
         return P(ca, z).lerp(P(cb, z), f)
 
-    def bays(ca, cb, za, zc):
-        """Fewest side-by-side X braces that keep every brace steep enough."""
-        if not steep_x:
-            return 1
-        tan_min = math.tan(math.radians(PRINT_MIN_ANGLE))
-        for k in range(1, 12):
-            d = Q(ca, cb, zc, 1.0 / k) - Q(ca, cb, za, 0.0)
-            if d.z >= d.xy.length * tan_min:
-                return k
-        return 12
+    k = x_bays or 1
+    tan_min = math.tan(math.radians(PRINT_MIN_ANGLE))
+
+    def steep_enough(ja, jc):
+        d = Q(corners[0], corners[1], levels[jc], 1.0 / k) - Q(corners[0], corners[1], levels[ja], 0.0)
+        return d.z >= d.xy.length * tan_min
+
+    # each X spans one panel (original) or as many panels as it needs (print mode)
+    spans, j, n = [], 0, len(levels) - 1
+    while j < n:
+        e = j + 1
+        while steep_x and e < n and not steep_enough(j, e):
+            e += 1
+        spans.append((j, e))
+        j = e
+    if steep_x and len(spans) > 1 and not steep_enough(*spans[-1]):
+        spans[-2:] = [(spans[-2][0], spans[-1][1])]
 
     brace_angles = []
     for i in range(4):   # X bracing + horizontals on each face
         ca, cb = corners[i], corners[(i + 1) % 4]
         nrm = Vector((ca[0] + cb[0], ca[1] + cb[1], 0)).normalized()
-        for j in range(len(levels) - 1):
-            za, zc = levels[j], levels[j + 1]
+        for ja, jc in spans:
+            za, zc = levels[ja], levels[jc]
             w = 1.25 if za < 60 else 1.0
-            k = bays(ca, cb, za, zc)
-            ext = 0 if steep_x else None
             for b in range(k):
                 f0, f1 = b / k, (b + 1) / k
                 for pa, pc in ((Q(ca, cb, za, f0), Q(ca, cb, zc, f1)), (Q(ca, cb, za, f1), Q(ca, cb, zc, f0))):
                     d = pc - pa
-                    # steep mode: overlap only at the top end, so nothing pokes out below a joint
-                    m.beam(pa, pc + d.normalized() * 0.35 if steep_x else pc, w, x_hint=nrm, ext=ext)
+                    if steep_x:   # overlap only at the top end, so nothing pokes out below a joint
+                        m.beam(pa, pc + d.normalized() * 0.35, w, x_hint=nrm, ext=0)
+                    else:
+                        m.beam(pa, pc, w, x_hint=nrm)
                     brace_angles.append(math.degrees(math.atan2(d.z, d.xy.length)))
-            if j > 0:
-                m.beam(P(ca, za), P(cb, za), w, x_hint=UP)
+        for j in range(1, n):
+            w = 1.25 if levels[j] < 60 else 1.0
+            m.beam(P(ca, levels[j]), P(cb, levels[j]), w, x_hint=UP)
         m.beam(P(ca, ztop), P(cb, ztop), 1.1, x_hint=UP)
+    m.x_per_face = len(spans) * k
     m.brace_angles = (min(brace_angles), max(brace_angles))
     for z in (zt, lv[len(lv) // 2]):   # plan bracing
         m.beam(P(corners[0], z), P(corners[2], z), 1.0, x_hint=UP)
@@ -489,11 +500,17 @@ def tower_lattice(name="01_Lattice_Tower", steep_x=False):
 # ----------------------------------------------------------------------------
 # 1b) أبراج شبكية - نفس البرج، حدايد X بزاوية تطبع بدون سبورت
 # ----------------------------------------------------------------------------
-PRINT_MIN_ANGLE = 50.0    # أقل زاوية لحدايد X عن الأفقي (45 تطبع بدون سبورت؛ 50 للأمان)
+PRINT_MIN_ANGLE = 45.0    # أقل زاوية لحدايد X عن الأفقي (45 تطبع بدون سبورت)
 
 
-def tower_lattice_print_x():
-    return tower_lattice("07_Lattice_Tower_PrintX", steep_x=True)
+def tower_lattice_print_a():
+    """خيار A: X واحد عريض في كل وجه مثل القديم، كل X يغطي عدة مستويات."""
+    return tower_lattice("07_Lattice_PrintX_A", x_bays=1)
+
+
+def tower_lattice_print_b():
+    """خيار B: X صغيرتان جنب بعض، كثافة قريبة من القديم."""
+    return tower_lattice("08_Lattice_PrintX_B", x_bays=2)
 
 # ----------------------------------------------------------------------------
 # 2) أبراج أحادية - Monopole
@@ -816,7 +833,7 @@ def tower_smart():
 
 
 TOWERS = [tower_lattice, tower_monopole, tower_microwave, tower_radome, tower_cell, tower_smart,
-          tower_lattice_print_x]
+          tower_lattice_print_a, tower_lattice_print_b]
 
 # ----------------------------------------------------------------------------
 # Materials (for rendering in Blender; STL ignores them)
