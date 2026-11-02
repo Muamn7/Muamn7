@@ -309,6 +309,46 @@ def text_obj(name, body, loc, size, depth, mat):
     return curve_to_mesh(t, name, mat)
 
 
+def prism(name, profile, x0, x1, bevel=3.0, segs=4, mat="Cream_Body", angle=30.0):
+    """Extrude a side profile [(y, z), ...] along X from x0 to x1, then round
+    the sharp outline edges (gives sculpted, non-boxy shapes)."""
+    bm = bmesh.new()
+    left = [bm.verts.new((x0, y, z)) for y, z in profile]
+    right = [bm.verts.new((x1, y, z)) for y, z in profile]
+    bm.faces.new(left)
+    bm.faces.new(list(reversed(right)))
+    n = len(profile)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((left[i], left[j], right[j], right[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    obj = mesh_obj(name, bm, mat)
+    if bevel > 0:
+        m = obj.modifiers.new("Bevel", 'BEVEL')
+        m.width = bevel
+        m.segments = segs
+        m.limit_method = 'ANGLE'
+        m.angle_limit = math.radians(angle)
+        apply_mods(obj)
+    shade(obj, angle=40)
+    return obj
+
+
+def arc(cy, cz, r, a0, a1, n=10):
+    """Points on an arc in the YZ plane (angles in degrees, 0 = +Y, 90 = +Z)."""
+    return [(cy + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+             cz + r * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+
+
+def stadium(a, b, r, n=10):
+    """Rounded slot outline in the YZ plane between centres a and b."""
+    a, b = Vector(a), Vector(b)
+    d = (b - a).normalized()
+    ang = math.degrees(math.atan2(d.y, d.x))
+    pts = arc(b.x, b.y, r, ang - 90, ang + 90, n) + arc(a.x, a.y, r, ang + 90, ang + 270, n)
+    return pts
+
+
 def transform_objs(objs, M):
     for o in objs:
         o.data.transform(M)
@@ -319,52 +359,90 @@ def transform_objs(objs, M):
 # MODEL  (front / operator side = -Y,  up = +Z,  units = mm,  height ~ 400)
 # ---------------------------------------------------------------------------
 def build_caster(tag, x, y):
+    """Twin-wheel caster like the photo (dark tyres, grey hub, grey fork)."""
     parts = []
-    wheel_r = 11.6 if FLAT_WHEELS else 11.0
-    parts.append(cyl(f"Caster_{tag}_Wheel", (x, y, 11.0), wheel_r, 9.0, axis='X', segs=48, mat="Dark_Grey"))
-    parts.append(cyl(f"Caster_{tag}_Hub", (x, y, 11.0), 5.0, 10.6, axis='X', segs=32, mat="Light_Grey"))
-    parts.append(rbox(f"Caster_{tag}_Fork", (x, y + 1.5, 22.5), (13.0, 21.0, 15.0), bevel=4.0, mat="Light_Grey"))
-    parts.append(cyl(f"Caster_{tag}_Swivel", (x, y + 1.5, 32.5), 6.5, 8.0, mat="Dark_Grey"))
+    R = 14.0
+    wheel_r = R + 0.6 if FLAT_WHEELS else R
+    for side in (-1, 1):
+        parts.append(cyl(f"Caster_{tag}_Wheel{side}", (x + side * 4.2, y, R), wheel_r, 6.0,
+                         axis='X', segs=56, mat="Dark_Grey"))
+        parts.append(cyl(f"Caster_{tag}_HubCap{side}", (x + side * 7.4, y, R), 6.5, 0.8,
+                         axis='X', segs=40, mat="Light_Grey"))
+    parts.append(cyl(f"Caster_{tag}_Axle", (x, y, R), 3.0, 16.0, axis='X', segs=24, mat="Light_Grey"))
+    parts.append(rbox(f"Caster_{tag}_Fork", (x, y + 3, 27), (12.0, 22.0, 14.0), bevel=4.0, mat="Light_Grey"))
+    parts.append(cyl(f"Caster_{tag}_Swivel", (x, y + 3, 35), 6.5, 6.0, mat="Dark_Grey"))
     return parts
 
 
 def build_base():
-    base = rbox("Base_Plinth", (0, 5, 46), (156, 200, 24), bevel=6, mat="Light_Grey")
-    # side vents (left side, x = -78) - فتحات التهوية
-    for i in range(5):
-        c = rbox("cut", (-78.5, -45, 39.5 + i * 3.8), (4.0, 46, 2.0), bevel=0.6)
-        cut(base, c)
-    for i in range(5):
-        c = rbox("cut", (78.5, -45, 39.5 + i * 3.8), (4.0, 46, 2.0), bevel=0.6)
-        cut(base, c)
-    feet = [rbox(f"Base_Foot_{s}", (sx * 50, -112, 44), (36, 54, 22), bevel=7, mat="Light_Grey")
-            for s, sx in (("L", -1), ("R", 1))]
-    kick = rbox("Base_Kick", (0, -96, 48), (64, 14, 16), bevel=5, mat="Cream_Body")
-    casters = []
-    for tag, x, y in (("FL", -50, -122), ("FR", 50, -122), ("RL", -60, 86), ("RR", 60, 86)):
-        casters += build_caster(tag, x, y)
-    return [base, kick] + feet + casters
+    parts = []
+    # grey plinth (القاعدة الرمادية)
+    base = rbox("Base_Plinth", (0, 15, 51), (146, 170, 42), bevel=8, mat="Light_Grey")
+    # vents at the rear of both sides - فتحات التهوية
+    for sx in (-1, 1):
+        for i in range(7):
+            cut(base, rbox("cut", (sx * 73.5, 64, 37 + i * 4.0), (4.0, 44, 2.0), bevel=0.6))
+    parts.append(base)
+    # two chunky front feet (الأرجل الأمامية) - side profile extruded across X
+    foot = [(-66, 31), (-66, 66)] + arc(-112, 52, 14, 90, 30, 6) + [(-140, 44), (-142, 36), (-138, 31)]
+    for s, (x0, x1) in (("L", (-72, -30)), ("R", (30, 72))):
+        parts.append(prism(f"Base_Foot_{s}", foot, x0, x1, bevel=5, mat="Light_Grey"))
+    # low step between the feet + grey skirt under the bin
+    parts.append(rbox("Base_Step", (0, -97, 31), (62, 70, 14), bevel=4, mat="Light_Grey"))
+    parts.append(rbox("Base_Skirt", (0, -78, 47), (62, 30, 22), bevel=4, mat="Light_Grey"))
+    for tag, x, y in (("FL", -51, -124), ("FR", 51, -124), ("RL", -56, 80), ("RR", 56, 80)):
+        parts += build_caster(tag, x, y)
+    return parts
 
 
 def build_body():
     parts = []
-    body = rbox("Body_Main", (0, 15, 115), (146, 170, 120), bevel=12, mat="Cream_Body")
+    # main cream body - side profile (y, z); its front is hidden by the cover
+    body_prof = [(-82, 54), (98, 54), (98, 188), (-5, 185), (-22, 174), (-42, 152), (-62, 140), (-82, 120)]
+    body = prism("Body_Main", body_prof, -68, 68, bevel=9, mat="Cream_Body")
     parts.append(body)
-    # front rounded cover
-    parts.append(rbox("Body_FrontCover", (0, -72, 113), (132, 30, 108), bevel=13, mat="Cream_Body"))
-    # front bin / pocket (open top) - الحاوية الأمامية
-    bin_ = rbox("Body_Bin", (0, -92, 86), (122, 24, 36), bevel=6, mat="Cream_Body")
-    cut(bin_, rbox("cut", (0, -93.5, 95), (113, 17, 34), bevel=4))
+
+    # sculpted front cover - the rear edge is the S-shaped seam seen on the side
+    seam = [(-80, 106), (-64, 108), (-50, 114), (-38, 125), (-28, 141), (-20, 159), (-13, 175)]
+    cover_prof = ([(-4, 188), (-20, 179), (-40, 159)] + arc(-62, 128, 22, 80, 175, 10)
+                  + [(-85, 120), (-86, 109)] + seam)
+    parts.append(prism("Body_FrontCover", cover_prof, -71.5, 71.5, bevel=5, mat="Cream_Body"))
+
+    # low front bin across the whole front (open top) - الحاوية الأمامية
+    bin_prof = [(-62, 56), (-62, 104), (-99, 104), (-101, 97), (-100, 66), (-95, 57), (-86, 56)]
+    bin_ = prism("Body_Bin", bin_prof, -66, 66, bevel=4, mat="Cream_Body")
+    cut(bin_, rbox("cut", (0, -87.5, 96), (122, 15, 40), bevel=3))
     parts.append(bin_)
-    # bin label slot
-    parts.append(rbox("Body_BinSlot", (0, -104.3, 78), (8, 1.6, 9), bevel=0.7, mat="Dark_Grey"))
-    # speaker grille on the left side - شبكة السماعة
-    parts.append(rbox("Body_Speaker", (-73.2, 32, 118), (2.2, 28, 82), bevel=1.0, mat="Dark_Grey"))
-    for i in range(9):
-        parts.append(rbox(f"Body_SpeakerRib_{i}", (-74.2, 32, 84 + i * 8.5), (1.2, 22, 2.2),
-                          bevel=0.5, mat="Light_Grey"))
+    parts.append(rbox("Body_BinSlot", (0, -100.4, 80), (5.5, 2.2, 12), bevel=1.0, mat="Dark_Grey"))
+
+    # tilted speaker grille on the left side, on the cover seam - شبكة السماعة
+    grille = prism("Body_Speaker", stadium((-30, 134), (-6, 182), 6.0), -73.0, -66.0,
+                   bevel=0.6, mat="Dark_Grey")
+    holes = bmesh.new()
+    a, b = Vector((-30, 134)), Vector((-6, 182))
+    u = (b - a).normalized()
+    v = Vector((-u.y, u.x))
+    L = (b - a).length
+    t = -3.0
+    while t <= L + 3.0:
+        for k in (-2, -1, 0, 1, 2):
+            c = a + u * t + v * (k * 1.9 + (0.95 if int(t / 2.0) % 2 else 0.0))
+            if (c - a).dot(v) ** 2 > 4.4 ** 2:
+                continue
+            nearest = a + u * max(0.0, min(L, (c - a).dot(u)))
+            if (c - nearest).length > 4.4:
+                continue
+            r = bmesh.ops.create_cone(holes, cap_ends=True, cap_tris=False, segments=10,
+                                      radius1=0.55, radius2=0.55, depth=1.6)
+            vs = r["verts"]
+            bmesh.ops.rotate(holes, cent=(0, 0, 0), matrix=Matrix.Rotation(math.pi / 2, 3, 'Y'), verts=vs)
+            bmesh.ops.translate(holes, vec=(-73.0, c.x, c.y), verts=vs)
+        t += 2.0
+    cut(grille, mesh_obj("cut", holes))
+    parts.append(grille)
+
     # grey shoulder band
-    parts.append(rbox("Body_Shoulder", (0, 18, 175), (140, 160, 8), bevel=3, mat="Light_Grey"))
+    parts.append(rbox("Body_Shoulder", (0, 34, 188), (136, 124, 6), bevel=2.5, mat="Light_Grey"))
     # rear tower (holds printer + probe holders) - البرج الخلفي
     parts.append(rbox("Tower", (0, 62, 207), (140, 76, 66), bevel=9, mat="Cream_Body"))
     parts.append(rbox("Tower_Cap", (0, 62, 241), (130, 70, 6), bevel=2.5, mat="Light_Grey"))
@@ -377,15 +455,15 @@ def build_body():
     # rear vents + cable hooks - فتحات وخطافات خلفية
     back = parts[0]
     for i in range(6):
-        cut(back, rbox("cut", (0, 100.5, 80 + i * 6.5), (90, 4.0, 2.6), bevel=0.8))
-    parts.append(rbox("Body_RearLabel", (38, 100.6, 150), (26, 1.4, 16), bevel=0.5, mat="Light_Grey"))
+        cut(back, rbox("cut", (0, 98.5, 80 + i * 6.5), (90, 4.0, 2.6), bevel=0.8))
+    parts.append(rbox("Body_RearLabel", (38, 98.6, 150), (26, 1.4, 16), bevel=0.5, mat="Light_Grey"))
     for sx in (-1, 1):
-        parts.append(tube(f"Body_CableHook_{sx}", [(sx * 40, 99, 160), (sx * 40, 110, 160),
-                                                  (sx * 40, 113, 167), (sx * 40, 112, 172)], 3.0,
+        parts.append(tube(f"Body_CableHook_{sx}", [(sx * 40, 96, 160), (sx * 40, 108, 160),
+                                                  (sx * 40, 111, 167), (sx * 40, 110, 172)], 3.0,
                           mat="Light_Grey"))
     # column under the control panel - العمود الرمادي
-    parts.append(cyl("Column", (0, -42, 196), 24, 60, r2=33, sx=1.35, segs=64, mat="Light_Grey"))
-    parts.append(cyl("Column_Collar", (0, -42, 168), 25, 6, sx=1.35, segs=64, mat="Dark_Grey"))
+    parts.append(cyl("Column", (0, -42, 183), 21, 86, r2=33, sx=1.35, segs=64, mat="Light_Grey"))
+    parts.append(cyl("Column_Collar", (0, -42, 186), 28.3, 4, sx=1.35, segs=64, mat="Dark_Grey"))
     return parts
 
 
@@ -476,29 +554,17 @@ def build_probes_and_cables():
     # two holders on the tower's left side
     parts += build_probe("B", (-77, 40, 184), height=12)
     parts += build_probe("C", (-77, 78, 184), height=12)
-    # gel bottle holder on the body's left side
-    gel = cyl("GelCup", (-79, -12, 150), 7.0, 22, segs=40, mat="Light_Grey")
-    cut(gel, cyl("cut", (-79, -12, 156), 5.6, 16, segs=40))
-    parts.append(gel)
-    parts.append(cyl("GelBottle", (-79, -12, 160), 5.2, 24, r2=4.6, segs=32, mat="Monitor_White"))
-    parts.append(cyl("GelBottle_Cap", (-79, -12, 174), 2.6, 4.5, r2=1.4, segs=24, mat="Dark_Grey"))
-
-    # connector panel (where the cables enter the cart)
-    parts.append(rbox("Connector_Panel", (-73.5, -48, 132), (3, 36, 50), bevel=1.0, mat="Dark_Grey"))
-    for i, z in enumerate((116, 132, 148)):
-        parts.append(rbox(f"Connector_{i}", (-76, -48, z), (5, 20, 9), bevel=1.5, mat="Light_Grey"))
+    # connector bay under the left of the panel (cables plug in here)
+    parts.append(rbox("Connector_Bay", (-60, -50, 212), (32, 40, 18), bevel=3, mat="Dark_Grey"))
 
     if WITH_CABLES:
         R = 1.5  # 3 mm cable
-        parts.append(tube("Cable_A1", [(-93, -28, 208), (-97, -36, 190), (-103, -50, 158),
-                                       (-101, -64, 124), (-91, -71, 110), (-82, -64, 116),
-                                       (-77, -52, 132), (-74, -48, 132)], R, mat="Light_Grey"))
-        parts.append(tube("Cable_A2", [(-93, -28, 208), (-104, -27, 186), (-112, -36, 150),
-                                       (-108, -54, 104), (-96, -62, 92), (-84, -56, 100),
-                                       (-78, -50, 114), (-74, -48, 116)], R, mat="Light_Grey"))
-        parts.append(tube("Cable_B", [(-77, 40, 184), (-79, 38, 176), (-84, 30, 160),
-                                      (-86, 8, 136), (-84, -20, 128), (-80, -40, 146),
-                                      (-74, -48, 148)], R, mat="Light_Grey"))
+        parts.append(tube("Cable_A1", [(-93, -28, 208), (-98, -40, 182), (-101, -56, 146),
+                                       (-94, -70, 124), (-82, -72, 128), (-76, -66, 156),
+                                       (-72, -58, 186), (-66, -52, 210)], R, mat="Light_Grey"))
+        parts.append(tube("Cable_A2", [(-93, -28, 208), (-104, -32, 176), (-108, -48, 136),
+                                       (-99, -64, 114), (-85, -64, 118), (-77, -60, 148),
+                                       (-71, -50, 180), (-62, -46, 210)], R, mat="Light_Grey"))
     return parts
 
 
