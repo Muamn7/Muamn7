@@ -177,15 +177,15 @@ class Model:
 # ----------------------------------------------------------------------------
 # Reusable telecom equipment
 # ----------------------------------------------------------------------------
-def panel_antenna(m, center, outward, w=3.4, d=1.6, h=16.0, mat="white", connectors=True):
-    """Sector panel antenna with end caps and (optionally) bottom connectors."""
+def panel_antenna(m, center, outward, w=3.4, d=1.6, h=16.0, mat="white"):
+    """Sector panel antenna with end caps and bottom connectors."""
     n = V(outward).normalized()
     tang = UP.cross(n)
     M = frame(V(center), UP, tang)   # local x = tangent, y = outward
     m.box(M, w, d, h, mat=mat)
     for s in (-1, 1):
         m.box(M @ Matrix.Translation((0, 0, s * (h / 2 - 0.3))), w + 0.3, d + 0.3, 0.9, mat="dark")
-    for s in ((-0.25, 0.25) if connectors else ()):
+    for s in (-0.25, 0.25):
         p = M @ Vector((s * w, 0, -h / 2 - 0.2))
         m.rod(p, p - UP * 1.5, 1.0, seg=8, mat="dark")
 
@@ -194,13 +194,13 @@ def mount_pipe(m, p, z0, z1, d=1.2):
     m.rod(V(p.x, p.y, z0), V(p.x, p.y, z1), d, seg=10)
 
 
-def antenna_on_pipe(m, pipe_xy, outward, zc, w, d, h, pipe_d=1.2, mat="white", connectors=True):
+def antenna_on_pipe(m, pipe_xy, outward, zc, w, d, h, pipe_d=1.2, mat="white"):
     n = V(outward).normalized()
     n.z = 0
     n.normalize()
     pipe = V(pipe_xy[0], pipe_xy[1], zc)
     c = pipe + n * (t(pipe_d) / 2 + d / 2 - EPS)
-    panel_antenna(m, c, n, w, d, h, mat, connectors)
+    panel_antenna(m, c, n, w, d, h, mat)
     for s in (-0.3, 0.3):
         m.beam(pipe + UP * (s * h), c + UP * (s * h), 0.9, 1.0, x_hint=UP, ext=0)
 
@@ -218,11 +218,8 @@ def rru(m, pipe_xy, inward, zc, w=2.6, d=1.8, h=5.0):
         m.box(M @ Matrix.Translation((x, d / 2 + 0.25, 0)), t(0.6), 0.8, h * 0.85, mat="dark")
 
 
-def microwave_dish(m, base, direction, R, arm=2.5, mat="white", rib_from=None):
-    """Shrouded microwave dish with radome cover, hub, arm and support strut.
-
-    rib_from: a point on the structure below; a rib then runs from it up to the
-    underside of the dish, so the dish never starts in mid-air when printed."""
+def microwave_dish(m, base, direction, R, arm=2.5, mat="white"):
+    """Shrouded microwave dish with radome cover, hub, arm and support strut."""
     d = V(direction).normalized()
     base = V(base)
     depth = R * 0.5
@@ -236,21 +233,8 @@ def microwave_dish(m, base, direction, R, arm=2.5, mat="white", rib_from=None):
             (R * 0.95, -depth * 0.15), (R, 0), (R + 0.35, 0), (R + 0.35, R * 0.2),
             (R * 0.98, R * 0.23), (R * 0.6, R * 0.27), (0, R * 0.29)]
     m.revolve(prof, frame(center, d), seg=40, mat=mat)
-    if rib_from is None:
-        # mounting strut from the pole/leg up to the dish hub (triangulated mount)
-        m.beam(base - UP * (R * 0.9), hub - UP * (R * 0.15), 0.9, 0.9)
-        return
-    low = dish_underside(base, d, R, arm)
-    rf = V(rib_from)
-    m.beam(rf, low, 1.0, 1.0, x_hint=UP.cross(low - rf) if (low - rf).cross(UP).length > 1e-6 else None, ext=0)
-
-
-def dish_underside(base, direction, R, arm):
-    """Lowest point under a microwave_dish (where a print rib must arrive)."""
-    d = V(direction).normalized()
-    depth = R * 0.5
-    center = V(base) + d * (arm + depth)
-    return center + d * (R * 0.1) - UP * (R + 0.1)
+    # mounting strut from the pole/leg up to the dish hub (triangulated mount)
+    m.beam(base - UP * (R * 0.9), hub - UP * (R * 0.15), 0.9, 0.9)
 
 
 def solar_panel(m, center, normal, w, h, cols, rows):
@@ -343,8 +327,11 @@ def top_mast(m, ztop, base_r=1.4, mast_h=10.0, rod_h=8.0, light=True):
 # ----------------------------------------------------------------------------
 # 1) أبراج شبكية - Lattice (self-supporting, 4-legged) tower
 # ----------------------------------------------------------------------------
-def tower_lattice():
-    m = Model("01_Lattice_Tower")
+def tower_lattice(name="01_Lattice_Tower", steep_x=False):
+    """steep_x: same tower, but every face panel carries as many side-by-side
+    X braces as needed to keep each brace >= PRINT_MIN_ANGLE, so the lattice
+    body prints without supports (head/platform stay as designed)."""
+    m = Model(name)
     m.loft_rects((0, 0), [(58, 58, 0), (58, 58, 2.2), (55, 55, 3.0)], "concrete")
     zb = 3.0
     b0, b1 = 21.0, 6.5
@@ -382,21 +369,57 @@ def tower_lattice():
         for z in levels[1:-1]:
             q = P(c, z)
             uu = u if z <= zt else UP
-            m.cyl(q - uu * 0.6, q + uu * 0.6, r_leg(z) + 0.45, seg=14)
+            if steep_x:     # same flange, 45 degree chamfer underneath (no lip to print in the air)
+                r = r_leg(z)
+                m.revolve([(0, -1.3), (r - 0.1, -1.3), (r + 0.45, -0.6), (r + 0.45, 0.6), (0, 0.6)],
+                          frame(q, uu), seg=19)
+            else:
+                m.cyl(q - uu * 0.6, q + uu * 0.6, r_leg(z) + 0.45, seg=14)
         # base plate at pier
         m.box_at(P(c, z0) + UP * 0.2, (5.0, 5.0, 1.0))
 
+    if steep_x:
+        # ground tie beams on the plinth: the bottom row of X braces starts on them
+        zg = zb + 0.6
+        levels = [zg] + levels[1:]
+        for i in range(4):
+            ca, cb = corners[i], corners[(i + 1) % 4]
+            m.beam(P(ca, zg), P(cb, zg), 1.4, 1.4, x_hint=UP)
+
+    def Q(ca, cb, z, f):
+        return P(ca, z).lerp(P(cb, z), f)
+
+    def bays(ca, cb, za, zc):
+        """Fewest side-by-side X braces that keep every brace steep enough."""
+        if not steep_x:
+            return 1
+        tan_min = math.tan(math.radians(PRINT_MIN_ANGLE))
+        for k in range(1, 12):
+            d = Q(ca, cb, zc, 1.0 / k) - Q(ca, cb, za, 0.0)
+            if d.z >= d.xy.length * tan_min:
+                return k
+        return 12
+
+    brace_angles = []
     for i in range(4):   # X bracing + horizontals on each face
         ca, cb = corners[i], corners[(i + 1) % 4]
         nrm = Vector((ca[0] + cb[0], ca[1] + cb[1], 0)).normalized()
         for j in range(len(levels) - 1):
             za, zc = levels[j], levels[j + 1]
             w = 1.25 if za < 60 else 1.0
-            m.beam(P(ca, za), P(cb, zc), w, x_hint=nrm)
-            m.beam(P(cb, za), P(ca, zc), w, x_hint=nrm)
+            k = bays(ca, cb, za, zc)
+            ext = 0 if steep_x else None
+            for b in range(k):
+                f0, f1 = b / k, (b + 1) / k
+                for pa, pc in ((Q(ca, cb, za, f0), Q(ca, cb, zc, f1)), (Q(ca, cb, za, f1), Q(ca, cb, zc, f0))):
+                    d = pc - pa
+                    # steep mode: overlap only at the top end, so nothing pokes out below a joint
+                    m.beam(pa, pc + d.normalized() * 0.35 if steep_x else pc, w, x_hint=nrm, ext=ext)
+                    brace_angles.append(math.degrees(math.atan2(d.z, d.xy.length)))
             if j > 0:
                 m.beam(P(ca, za), P(cb, za), w, x_hint=UP)
         m.beam(P(ca, ztop), P(cb, ztop), 1.1, x_hint=UP)
+    m.brace_angles = (min(brace_angles), max(brace_angles))
     for z in (zt, lv[len(lv) // 2]):   # plan bracing
         m.beam(P(corners[0], z), P(corners[2], z), 1.0, x_hint=UP)
         m.beam(P(corners[1], z), P(corners[3], z), 1.0, x_hint=UP)
@@ -442,9 +465,14 @@ def tower_lattice():
         ba, bc = half(za), half(zc)
         return za + (zc - za) * ba / (ba + bc)
 
-    zc = face_cross(4)
+    def face_mount(j):
+        # with several X braces per panel the panel centre may be empty:
+        # mount the dish on the horizontal at the top of that panel instead
+        return lv[j + 1] if steep_x else face_cross(j)
+
+    zc = face_mount(4)
     microwave_dish(m, V(0, -half(zc), zc), V(0, -1, 0), 6.5, arm=2.2)
-    zc = face_cross(3)
+    zc = face_mount(3)
     microwave_dish(m, V(half(zc), 0, zc), V(1, 0, 0), 5.5, arm=2.2)
 
     # --- top cap, mast with omni antennas, aviation light, lightning rod
@@ -457,168 +485,15 @@ def tower_lattice():
 
 
 
+
 # ----------------------------------------------------------------------------
-# 1b) أبراج شبكية - نسخة بدون دعامات طباعة (Support-free lattice tower)
+# 1b) أبراج شبكية - نفس البرج، حدايد X بزاوية تطبع بدون سبورت
 # ----------------------------------------------------------------------------
-PRINT_MIN_ANGLE = 50.0    # أقل زاوية للحدايد عن الأفقي (45 تطبع بدون سبورت؛ 50 للأمان)
-BRIDGE_MAX = 22.0         # أطول جسر أفقي مسموح بين نقطتين مدعومتين (مم)
+PRINT_MIN_ANGLE = 50.0    # أقل زاوية لحدايد X عن الأفقي (45 تطبع بدون سبورت؛ 50 للأمان)
 
 
-def tower_lattice_nosupport():
-    """Same tower, re-engineered for upright FDM printing without supports:
-    every brace climbs at >= PRINT_MIN_ANGLE, horizontals only where they are
-    short bridges, the platform sits on a 50 degree skirt, and every antenna,
-    dish and mast part grows out of something underneath it."""
-    m = Model("07_Lattice_Tower_NoSupport")
-    m.loft_rects((0, 0), [(58, 58, 0), (58, 58, 2.2), (55, 55, 3.0)], "concrete")
-    zb = 3.0
-    b0, b1 = 21.0, 6.5
-    z0, zt, ztop = zb + 3.5, 138.0, 174.0
-    corners = [(1, 1), (-1, 1), (-1, -1), (1, -1)]
-    tan_min = math.tan(math.radians(PRINT_MIN_ANGLE))
-
-    def half(z):
-        return b0 + (b1 - b0) * (z - z0) / (zt - z0) if z < zt else b1
-
-    def P(c, z):
-        h = half(z)
-        return Vector((c[0] * h, c[1] * h, z))
-
-    def slope(za, zc):
-        """Angle (deg) above horizontal of a face diagonal from za to zc."""
-        d = P(corners[1], zc) - P(corners[0], za)
-        return math.degrees(math.atan2(d.z, d.xy.length))
-
-    def climb(z, tan_a):
-        dz = 2 * half(z) * tan_a
-        for _ in range(40):
-            d = P(corners[1], z + dz) - P(corners[0], z)
-            dz = d.xy.length * tan_a
-        return z + dz
-
-    # tapered part: largest number of panels that keeps every brace >= the
-    # minimum angle, then steepen them evenly so the last one lands on zt
-    n, z = 0, z0
-    while climb(z, tan_min) <= zt:
-        z = climb(z, tan_min)
-        n += 1
-    lo, hi = tan_min, 20.0
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        z = z0
-        for _ in range(n):
-            z = climb(z, mid)
-        lo, hi = (mid, hi) if z < zt else (lo, mid)
-    lv = [z0]
-    for _ in range(n):
-        lv.append(climb(lv[-1], lo))
-    lv[-1] = zt
-    n_top = max(1, int((ztop - zt) / (2 * b1 * tan_min)))
-    top = [zt + (ztop - zt) * (i + 1) / n_top for i in range(n_top)]
-    levels = lv + top
-    mids = [(a + b) / 2 for a, b in zip(levels, levels[1:])]
-
-    for c in corners:   # concrete piers
-        p = P(c, z0)
-        m.loft_rects((p.x, p.y), [(8.5, 8.5, zb - EPS), (8.5, 8.5, z0 - 0.7), (7.0, 7.0, z0 + 0.3)], "concrete")
-
-    def r_leg(z):
-        return 1.7 - 0.55 * (z - z0) / (ztop - z0)
-
-    for c in corners:   # legs + splice flanges
-        a, b = P(c, z0 - 1.0), P(c, zt)
-        m.cyl(a, b, r_leg(z0), r_leg(zt), seg=14)
-        m.cyl(P(c, zt) - UP * 1.0, V(c[0] * b1, c[1] * b1, ztop + 0.8), r_leg(zt), r_leg(ztop), seg=14)
-        u = (b - a).normalized()
-        for z in levels[1:-1]:      # splice flanges with a 45 degree chamfer underneath
-            q = P(c, z)
-            uu = u if z <= zt else UP
-            r = r_leg(z)
-            m.revolve([(0, -1.2), (r - 0.1, -1.2), (r + 0.45, -0.6), (r + 0.45, 0.6), (0, 0.6)],
-                      frame(q, uu), seg=19)
-        m.box_at(P(c, z0) + UP * 0.2, (5.0, 5.0, 1.0))
-
-    angles = []
-    for i in range(4):   # double X bracing: main panels + a second set offset by half a panel
-        ca, cb = corners[i], corners[(i + 1) % 4]
-        nrm = Vector((ca[0] + cb[0], ca[1] + cb[1], 0)).normalized()
-        # the two sets get different depths so their faces never coincide
-        for zs, depth in ((levels, 1.2), (mids, 1.0)):
-            for za, zc in zip(zs, zs[1:]):
-                ang = slope(za, zc)
-                if ang < PRINT_MIN_ANGLE - 0.01:
-                    continue
-                angles.append(ang)
-                w = 1.25 if za < 60 else 1.0
-                m.beam(P(ca, za), P(cb, zc), depth + (w - 1.0), w, x_hint=nrm, ext=0)
-                m.beam(P(cb, za), P(ca, zc), depth + (w - 1.0), w, x_hint=nrm, ext=0)
-        for z in levels[1:]:    # horizontals only where they are short bridges
-            if 2 * half(z) <= BRIDGE_MAX:
-                m.beam(P(ca, z), P(cb, z), 1.0, 1.4, x_hint=UP)
-
-    # --- antenna platform on a self-supporting 50 degree skirt
-    F, Fp = 13.0, 16.0
-    zp = zt + 18.0
-    zu = zp + 17.0
-    zs = zp - 1.0 - (Fp - b1) * tan_min
-    m.loft_rects((0, 0), [(2 * b1, 2 * b1, zs), (2 * Fp, 2 * Fp, zp - 1.0), (2 * Fp, 2 * Fp, zp)], "steel")
-    for k in range(4):
-        c = corners[k]
-        corner = Vector((c[0] * F, c[1] * F, 0))
-        m.beam(corner + UP * (zp - 0.3), corner + UP * (zu + 0.5), 1.2)          # corner post
-        m.beam(P(c, zu), corner + UP * zu, 1.0, x_hint=UP)                         # leg -> post (bridge)
-        nxt = corners[(k + 1) % 4]
-        a, b = corner, Vector((nxt[0] * F, nxt[1] * F, 0))
-        m.beam(a + UP * zu, b + UP * zu, 1.0, x_hint=UP)                           # upper frame
-        nrm = Vector((c[0] + nxt[0], c[1] + nxt[1], 0)).normalized()
-        tang = (b - a).normalized()
-        mid = (a + b) / 2
-        # handrail inside the antenna ring
-        for s in (-1, 0, 1):
-            pp = mid * (11.6 / F) + tang * (s * 11.6) + UP * zp
-            m.beam(pp - UP * 0.3, pp + UP * 5.2, 0.9, x_hint=tang)
-        a2, b2 = mid * (11.6 / F) - tang * 11.6, mid * (11.6 / F) + tang * 11.6
-        m.beam(a2 + UP * (zp + 5.2), b2 + UP * (zp + 5.2), 1.0, x_hint=UP)
-        m.beam(a2 + UP * (zp + 2.7), b2 + UP * (zp + 2.7), t(0.8), x_hint=UP)
-        # two panel antennas per face, standing on the platform
-        for s in (-5.5, 5.5):
-            pipe = mid + tang * s
-            mount_pipe(m, pipe, zp - 0.3, zu + 3)
-            h = 18.0
-            antenna_on_pipe(m, pipe, nrm, zp - 0.2 + h / 2, 3.6, 1.7, h, connectors=False)
-            if s > 0:
-                rru(m, pipe, -nrm, zp - 0.2 + 2.5)
-
-    # --- microwave dishes, each carried by a rib from the structure below
-    def dish_on_leg(c, z, R):
-        d = Vector((c[0], c[1], 0)).normalized()
-        base = P(c, z)
-        low = dish_underside(base, d, R, 2.2)
-        run = (low - P(c, low.z)).xy.length
-        zr = low.z - run * math.tan(math.radians(60))
-        microwave_dish(m, base, d, R, arm=2.2, rib_from=P(c, zr))
-
-    dish_on_leg((1, -1), zt - 8, 5.0)
-    dish_on_leg((-1, 1), zt - 14, 4.5)
-
-    def face_cross(j):
-        za, zc = lv[j], lv[j + 1]
-        ba, bc = half(za), half(zc)
-        return za + (zc - za) * ba / (ba + bc)
-
-    for j, d, R in ((3, V(0, -1, 0), 6.5), (2, V(1, 0, 0), 5.5)):
-        zc, zl = face_cross(j), face_cross(j - 1)
-        base = d * half(zc) + UP * zc
-        microwave_dish(m, base, d, R, arm=2.2, rib_from=d * half(zl) + UP * (zl + 0.3))
-
-    # --- top cap, omni antennas standing on it, mast, light, lightning rod
-    m.box_at((0, 0, ztop + 0.6), (2 * b1 + 3.5, 2 * b1 + 3.5, 1.3))
-    for s in (-1, 1):
-        m.cyl(V(s * 6.2, 0, ztop + 0.8), V(s * 6.2, 0, ztop + 15), 0.85, 0.7, seg=12, mat="white")
-        m.beam(V(0, 0, ztop + 8), V(s * 6.2, 0, ztop + 8), 1.0, x_hint=UP)
-    top_mast(m, ztop + 1.0, base_r=1.6, mast_h=17.0, rod_h=9.0)
-    m.brace_angles = (min(angles), max(angles))
-    return m
+def tower_lattice_print_x():
+    return tower_lattice("07_Lattice_Tower_PrintX", steep_x=True)
 
 # ----------------------------------------------------------------------------
 # 2) أبراج أحادية - Monopole
@@ -941,7 +816,7 @@ def tower_smart():
 
 
 TOWERS = [tower_lattice, tower_monopole, tower_microwave, tower_radome, tower_cell, tower_smart,
-          tower_lattice_nosupport]
+          tower_lattice_print_x]
 
 # ----------------------------------------------------------------------------
 # Materials (for rendering in Blender; STL ignores them)
@@ -1182,7 +1057,7 @@ def check_manifold(ob):
                         seen.add(g.index)
                         stack.append(g)
     vol = bm.calc_volume(signed=True)
-    bad = _count_bad(bm)
+    bad = sum(1 for e in bm.edges if not e.is_manifold)
     bm.free()
     return bad, shells, vol
 
