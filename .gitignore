@@ -32,3 +32,4 @@ assets/ashen-save.json*
 audio-cache/
 assets/audio-cache/
 *.blend1
+__pycache__/
