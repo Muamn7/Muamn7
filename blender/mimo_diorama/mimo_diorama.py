@@ -39,6 +39,7 @@ SIGN_HEADER = "MIMO"
 SIGN_LINES = ["1. Higher data rates",
               "2. Better reliability",
               "3. Spectral efficiency"]
+SHOW_BEAMS = False                       # True = add the coloured MIMO beams back
 BEAM_STRENGTH = 2.6                      # emission strength of the beams
 
 # Key heights (metres)
@@ -1196,7 +1197,6 @@ def build():
     C_city = new_collection("Buildings_Road", root)
     C_phone = new_collection("Phone", root)
     C_sign = new_collection("Info_Sign", root)
-    C_beam = new_collection("MIMO_Beams", root)
     C_studio = new_collection("Studio")
 
     build_base(C_base, M)
@@ -1209,8 +1209,10 @@ def build():
                    cols_s=3)
     phone_mat, PW, PH, PT = build_phone(C_phone, M)
     build_sign(C_sign, M)
-    build_beams(C_beam, M, panels, phone_mat, PW, PH, PT,
-                (ax + aw / 2 + 0.002, ay, G + 0.006 + ah))
+    if SHOW_BEAMS:
+        C_beam = new_collection("MIMO_Beams", root)
+        build_beams(C_beam, M, panels, phone_mat, PW, PH, PT,
+                    (ax + aw / 2 + 0.002, ay, G + 0.006 + ah))
     build_studio(C_studio)
     setup_render(scene)
     fix_viewport()
