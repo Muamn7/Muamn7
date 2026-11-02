@@ -1,21 +1,25 @@
 """
-IgG Antibody - 3D-print version in 3 parts (Blender 4.2+ / 5.x)
+IgG Antibody - 3D-print version in 4 parts (Blender 4.2+ / 5.x)
 
 Builds the model with igg_antibody.py, merges it into one watertight solid,
-scales it to millimetres and splits it into three printable parts that plug
-together with pegs and holes:
+scales it to millimetres and splits it into printable parts joined by pins:
 
-    Part 1  Base     : pedestal                                 (pegs up)
-    Part 2  Fc stem  : lower half of the Fc region             (holes below, pegs up)
-    Part 3  Top      : upper Fc + hinge + both Fab arms         (holes below)
+    Part 1  Base       : black pedestal                         (2 pins up)
+    Part 2  Stem       : Fc region + hinge (yellow ladder)       (holes below, pins
+                                                                  towards each arm)
+    Part 3  Arm left   : left Fab arm  (blue/pink/purple + ring) (holes in its cut face)
+    Part 4  Arm right  : right Fab arm                           (holes in its cut face)
 
-Every part has a flat face to print on. Output (next to this script, in print/):
-    IgG_part1_base.stl / IgG_part2_fc.stl / IgG_part3_top.stl   (mm)
+Each arm is cut off with a flat face perpendicular to the arm, so it slides
+straight onto two pins of the stem and prints standing on that face.
+
+Output (next to this script, in print/):
+    IgG_part*.stl         (mm, single colour)
     IgG_part*.obj + .mtl  (same parts with colours, for multi-colour slicers)
-    IgG_print_parts.blend (the three parts, laid out)
+    IgG_print_parts.blend / IgG_print_parts_preview.png (with --render)
 
 Headless:
-    blender -b -P igg_antibody_print.py -- --height 180 --render preview.png
+    blender -b -P igg_antibody_print.py -- --height 180 --render
 """
 
 import math
@@ -41,8 +45,11 @@ MIN_ROD_MM = 1.6          # thinnest tube radius (3.2 mm diameter)
 PEG_RADIUS_MM = 2.5
 PEG_LENGTH_MM = 6.0
 CLEARANCE_MM = 0.2        # radial play in the holes
-CUT_1 = igg.BASE_TOP          # base | Fc stem   (model units, top of the pedestal)
-CUT_2 = igg.BASE_TOP + 1.12   # Fc stem | top    (between the CH3 and CH2 domains)
+PIN_SEPARATION_MM = 9.0   # minimum distance between two pins of one joint
+ARM_CUT_RANGE = (0.05, 0.45)  # where along each arm (model units from its root) to cut;
+                               # starts past the yellow ring so the hinge stays whole
+PIN_TARGET_MM = 5.0           # cut as close to the hinge as this pin clearance allows
+SPINE_RADIUS_MM = 3.5          # hidden core joining CH3 and CH2 of each Fc column
 OUT_DIR = os.path.join(HERE, "print")
 
 
@@ -179,12 +186,13 @@ def check_solid(obj):
     return non_manifold, volume, tris
 
 
-def section_loops(obj, z):
-    """Cross-section islands of obj at height z -> [(centre, inscribed radius)]."""
+def section(obj, co, no):
+    """Cross-section islands of obj on a plane -> [(centre, inscribed radius)]."""
+    co, no = Vector(co), Vector(no).normalized()
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     res = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
-                                 plane_co=(0, 0, z), plane_no=(0, 0, 1))
+                                 plane_co=co, plane_no=no)
     cut_edges = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
     parent = {}
 
@@ -206,11 +214,84 @@ def section_loops(obj, z):
         if len(pts) < 8:
             continue
         c = sum(pts, Vector()) / len(pts)
-        c.z = z
-        r_in = min((Vector((p.x, p.y, z)) - c).length for p in pts)
+        c -= no * (c - co).dot(no)          # back onto the plane
+        r_in = min((p - c).length for p in pts)
         out.append((c, r_in))
     bm.free()
-    return out
+    return sorted(out, key=lambda t: -t[1])
+
+
+def pin_points(obj, co, no, count=2, r_min=0.0, sep=0.0, step=0.5):
+    """
+    Up to `count` points on the cross-section of obj with the plane (co, no) that lie
+    deepest inside the material -> [(point, distance to the section's edge)].
+    Points are at least `sep` apart and at least `r_min` from the edge.
+    """
+    from mathutils.kdtree import KDTree
+    co, no = Vector(co), Vector(no).normalized()
+    u = no.orthogonal().normalized()
+    v = no.cross(u)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    res = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+                                 plane_co=co, plane_no=no)
+    edges = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
+    segs = [tuple(((x.co - co).dot(u), (x.co - co).dot(v)) for x in e.verts) for e in edges]
+    bm.free()
+    if not segs:
+        return []
+    pts = {p for sgm in segs for p in sgm}
+    kd = KDTree(len(pts))
+    for i, (a, b) in enumerate(pts):
+        kd.insert((a, b, 0.0), i)
+    kd.balance()
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+
+    def inside(x, y):                     # even-odd rule, edge order not needed
+        n = 0
+        for (x1, y1), (x2, y2) in segs:
+            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                n += 1
+        return n % 2 == 1
+
+    cands = []
+    y = min(ys)
+    while y <= max(ys):
+        x = min(xs)
+        while x <= max(xs):
+            clear = kd.find((x, y, 0.0))[2]
+            if clear >= r_min and inside(x, y):
+                cands.append((clear, x, y))
+            x += step
+        y += step
+    cands.sort(reverse=True)
+    chosen = []
+    for clear, x, y in cands:
+        if all(((x - a) ** 2 + (y - b) ** 2) ** 0.5 >= sep for _, a, b in chosen):
+            chosen.append((clear, x, y))
+            if len(chosen) == count:
+                break
+    return [(co + u * x + v * y, clear) for clear, x, y in chosen]
+
+
+def section_loops(obj, z):
+    return section(obj, (0, 0, z), (0, 0, 1))
+
+
+def halfspace(name, co, no, size=2000.0):
+    """Huge box filling the side of the plane (co, no) that `no` points to."""
+    no = Vector(no).normalized()
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((v.co.x * size, v.co.y * size, (v.co.z + 0.5) * size))
+    rot = Vector((0, 0, 1)).rotation_difference(no).to_matrix().to_4x4()
+    bm.transform(Matrix.Translation(co) @ rot)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    return link(bpy.data.objects.new(name, me))
 
 
 def remove_small_islands(obj, keep_ratio=0.01):
@@ -286,39 +367,40 @@ def export(obj, base):
 
 
 # --------------------------------------------------------------------------
-def main(height_mm=PRINT_HEIGHT_MM):
+def main(height_mm=PRINT_HEIGHT_MM, render=False):
     os.makedirs(OUT_DIR, exist_ok=True)
+    for f in os.listdir(OUT_DIR):
+        os.remove(os.path.join(OUT_DIR, f))
 
-    # 1) build the colour model with print-safe tube thickness
-    pedestal_h_guess = 6.6                       # model units, refined below
-    igg.MIN_ROD = MIN_ROD_MM / (height_mm / pedestal_h_guess)
+    # 1) build the colour model with print-safe tube thickness, scale to mm
+    igg.MIN_ROD = MIN_ROD_MM / (height_mm / 6.0)
     parts = igg.build()
     pedestal = bpy.data.objects["Pedestal"]
     top = max((p.matrix_world @ Vector(c)).z for p in parts for c in p.bound_box)
     S = height_mm / top                          # model units -> mm
     print(f"model height {top:.3f} units -> scale {S:.2f} mm/unit")
-
     for o in parts + [pedestal]:
         o.data.transform(o.matrix_world)
         o.parent = None
         o.matrix_world = Matrix.Identity(4)
         o.data.transform(Matrix.Scale(S, 4))
+    base_top = igg.BASE_TOP * S
 
-    # internal posts: a foot under each Fc column (so it sits firmly in the base)
-    # and a spine through CH3 -> CH2 (so the stem joint is always thick and solid)
     def centre(ob):
         vs = ob.data.vertices
         return sum((v.co for v in vs), Vector()) / len(vs)
 
+    # internal posts: a foot under each Fc column (sits in the base) and a thin
+    # spine CH3 -> CH2 so each column is one solid even where the domains part
     posts = []
     for side in ("L", "R"):
         ch3 = bpy.data.objects[f"Fc_CH3_{side}"]
-        ch2 = bpy.data.objects[f"Fc_CH2_{side}"]
-        c3, c2 = centre(ch3), centre(ch2)
+        c3, c2 = centre(ch3), centre(bpy.data.objects[f"Fc_CH2_{side}"])
         foot = c3.copy()
         foot.z = (igg.BASE_TOP - 0.15) * S
-        for nm, a, b in ((f"Fc_Foot_{side}", foot, c3), (f"Fc_Spine_{side}", c3, c2)):
-            post = tube(nm, a, b, 0.21 * S)
+        for nm, a, b, r in ((f"Fc_Foot_{side}", foot, c3, 0.21 * S),
+                            (f"Fc_Spine_{side}", c3, c2, SPINE_RADIUS_MM)):
+            post = tube(nm, a, b, r)
             post.data.materials.append(ch3.data.materials[0])
             posts.append(post)
     parts = parts + posts
@@ -328,52 +410,88 @@ def main(height_mm=PRINT_HEIGHT_MM):
     voxel_union(solid, VOXEL_MM)
     specks = remove_small_islands(solid)
     decimate(solid, MAX_TRIS_TOTAL)          # before the boolean cuts -> they stay manifold
-    n = islands(solid)
-    print(f"antibody solid: {len(solid.data.polygons):,} faces, {n} island(s) ({specks} voxel specks removed)")
+    print(f"antibody solid: {len(solid.data.polygons):,} faces, {islands(solid)} island(s) "
+          f"({specks} voxel specks removed)")
 
-    z1, z2 = CUT_1 * S, CUT_2 * S
-    for z in (z1, z2):
-        for c, r in section_loops(solid, z):
-            print(f"  section z={z:.1f}mm at ({c.x:.1f},{c.y:.1f})  inscribed radius {r:.1f} mm")
+    # 3) arm cut planes: perpendicular to each arm, placed where the section is thickest
+    min_wall = PEG_RADIUS_MM + CLEARANCE_MM + 1.2
+    arms = {}
+    for side in ("L", "R"):
+        d = (centre(bpy.data.objects[f"Fab_{side}_VH"]) -
+             centre(bpy.data.objects[f"Fab_{side}_CH1"])).normalized()
+        root = centre(bpy.data.objects[f"Fab_{side}_Ring"])
+        # walk outwards from the hinge; take the first cut that gives two good pins
+        best = None
+        steps = 23
+        for i in range(steps):
+            t = ARM_CUT_RANGE[0] + (ARM_CUT_RANGE[1] - ARM_CUT_RANGE[0]) * i / (steps - 1)
+            co = root + d * t * S
+            pins = pin_points(solid, co, d, 2, min_wall, PIN_SEPARATION_MM)
+            score = (len(pins), min((r for _, r in pins), default=0))
+            if best is None or score > best[0]:
+                best = (score, t, co, pins)
+            if len(pins) == 2 and score[1] >= PIN_TARGET_MM:
+                best = (score, t, co, pins)
+                break
+        _, t, co, pins = best
+        arms[side] = (co, d)
+        print(f"arm {side}: cut {t:.2f} units from the root, pin clearances " +
+              ", ".join(f"{r:.1f}mm" for _, r in pins))
 
-    # 3) split into slabs
-    def slab(name, zmin, zmax):
+    # 4) split
+    def cut(name, keep_boxes, remove_boxes):
         ob = combine(name, [solid])
-        cutter = box(name + "_box", zmin, zmax)
-        boolean(ob, cutter, "INTERSECT")
-        bpy.data.objects.remove(cutter)
+        for b in keep_boxes:
+            boolean(ob, b, "INTERSECT")
+        for b in remove_boxes:
+            boolean(ob, b, "DIFFERENCE")
         return ob
 
-    p2 = slab("IgG_part2_fc", z1, z2)
-    p3 = slab("IgG_part3_top", z2, 1e4)
+    hs = {}
+    for side, (co, d) in arms.items():
+        h = halfspace(f"hs_{side}", co, d)
+        own_side = halfspace(f"side_{side}", Vector((0, 0, 0)),
+                             Vector((-1 if side == "L" else 1, 0, 0)))
+        boolean(h, own_side, "INTERSECT")          # never reach across the middle
+        bpy.data.objects.remove(own_side)
+        hs[side] = h
+    above = box("above_base", base_top, 1e4)
+    stem = cut("IgG_part2_stem", [above], [hs["L"], hs["R"]])
+    arm_l = cut("IgG_part3_arm_left", [hs["L"]], [])
+    arm_r = cut("IgG_part4_arm_right", [hs["R"]], [])
+    for o in list(hs.values()) + [above]:
+        bpy.data.objects.remove(o)
+    base = combine("IgG_part1_base", [pedestal])
 
-    # the base is only the pedestal (the antibody below its top surface is discarded)
-    p1 = combine("IgG_part1_base", [pedestal])
+    # 5) pins: base -> stem (vertical), stem -> each arm (along the arm)
+    def join(lower, upper, co, no):
+        no = Vector(no).normalized()
+        centres = [c for c, r in pin_points(upper, co + no * 1e-3, no, 2, min_wall,
+                                             PIN_SEPARATION_MM)]
+        for c in centres:
+            peg = tube("peg", c - no * 1.0, c + no * PEG_LENGTH_MM, PEG_RADIUS_MM)
+            hole = tube("hole", c - no * 1.0, c + no * (PEG_LENGTH_MM + 0.6),
+                        PEG_RADIUS_MM + CLEARANCE_MM)
+            boolean(lower, peg, "UNION")
+            boolean(upper, hole, "DIFFERENCE")
+            bpy.data.objects.remove(peg)
+            bpy.data.objects.remove(hole)
+        return len(centres)
 
-    # 4) pegs (on the lower part) and holes (in the upper part) at every joint
-    for lower, upper, z in ((p1, p2, z1), (p2, p3, z2)):
-        centres = []
-        for c, r_in in section_loops(upper, z + 1e-3):
-            if r_in > PEG_RADIUS_MM + CLEARANCE_MM + 1.2:   # >= 1.2 mm wall around the hole
-                centres.append(c)
-        rp = PEG_RADIUS_MM
-        pegs = cylinders("pegs", centres, rp, z - 1.0, z + PEG_LENGTH_MM, chamfer=0.6)
-        holes = cylinders("holes", centres, rp + CLEARANCE_MM, z - 1.0,
-                          z + PEG_LENGTH_MM + 0.6)
-        boolean(lower, pegs, "UNION")
-        boolean(upper, holes, "DIFFERENCE")
-        bpy.data.objects.remove(pegs)
-        bpy.data.objects.remove(holes)
-        print(f"joint z={z:.1f}mm: {len(centres)} peg(s)")
+    print(f"base -> stem: {join(base, stem, Vector((0, 0, base_top)), Vector((0, 0, 1)))} pin(s)")
+    for side, arm in (("L", arm_l), ("R", arm_r)):
+        co, d = arms[side]
+        print(f"stem -> arm {side}: {join(stem, arm, co, d)} pin(s)")
 
-    # 5) colours, checks, export
+    # 6) colours, checks
+    pieces = (base, stem, arm_l, arm_r)
     sources = parts + [pedestal]
-    for o in (p1, p2, p3):
+    for o in pieces:
         colour_by_nearest(o, sources)
-    igg.shade_smooth(p2.data)
-    igg.shade_smooth(p3.data)
+        if o is not base:
+            igg.shade_smooth(o.data)
     report = []
-    for o in (p1, p2, p3):
+    for o in pieces:
         nm, vol, tris = check_solid(o)
         dims = o.dimensions
         report.append(f"{o.name}: {dims.x:.0f} x {dims.y:.0f} x {dims.z:.0f} mm, "
@@ -381,27 +499,63 @@ def main(height_mm=PRINT_HEIGHT_MM):
                       f"non-manifold edges {nm}")
         print(report[-1])
 
-    # print orientation: every part standing on its flat bottom at z = 0
-    # (Part 1 & 2 bottoms are flat; Part 3 sits on its cut face)
-    for o, zb in ((p1, 0.0), (p2, z1), (p3, z2)):
-        o["assembly_z_mm"] = zb             # where this part sits when assembled
-        o.data.transform(Matrix.Translation((0, 0, -zb)))
-        export(o, o.name)
+    # 7) export in print orientation, on the bed (z = 0)
+    #    base & stem stand on their flat bottoms, each arm stands on its cut face
+    for o in pieces:
+        name = o.name
+        o.name = name + "_assembled"
+        me = o.data.copy()
+        if o in (arm_l, arm_r):
+            d = arms["L" if o is arm_l else "R"][1]
+            me.transform(d.rotation_difference(Vector((0, 0, 1))).to_matrix().to_4x4())
+        zs = [v.co.z for v in me.vertices]
+        xs = [v.co.x for v in me.vertices]
+        ys = [v.co.y for v in me.vertices]
+        me.transform(Matrix.Translation((-(min(xs) + max(xs)) / 2,
+                                         -(min(ys) + max(ys)) / 2, -min(zs))))
+        tmp = link(bpy.data.objects.new(name, me))
+        export(tmp, name)
+        bpy.data.objects.remove(tmp)
+        bpy.data.meshes.remove(me)
+        o.name = name
 
-    # clean scene: keep only the parts, laid out side by side
-    keep = {p1, p2, p3}
+    # keep only the pieces (assembled) in the saved file
+    keep = set(pieces)
     for o in list(bpy.data.objects):
-        if o not in keep and o.type == "MESH":
+        if o.type == "MESH" and o not in keep and o.name != "Backdrop":
             bpy.data.objects.remove(o)
-    p1.location.x = -(p1.dimensions.x / 2 + 25)
-    p2.location.x = 0
-    p3.location.x = p3.dimensions.x / 2 + 25
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT_DIR, "IgG_print_parts.blend"),
                                 compress=True)
-    return p1, p2, p3, report
+    if render:
+        render_exploded(base, stem, arms, arm_l, arm_r, S)
+    return report
+
+
+def render_exploded(base, stem, arms, arm_l, arm_r, S):
+    stem.location = (0, 0, 22)
+    arm_l.location = stem.location + arms["L"][1] * 28
+    arm_r.location = stem.location + arms["R"][1] * 28
+    sc = bpy.context.scene
+    for o in bpy.data.objects:
+        if o.type == "LIGHT":
+            o.location *= S
+            o.data.energy *= S * S
+            o.data.size *= S
+        if o.name == "Backdrop":
+            o.scale = (S, S, S)
+    cam = sc.camera
+    cam.location = Vector((0, -600, 190))
+    t = Vector((0, 0, 110))
+    cam.rotation_euler = (t - cam.location).to_track_quat("-Z", "Y").to_euler()
+    cam.data.lens = 62
+    cam.data.clip_end = 5000
+    igg.setup_render(96)
+    sc.render.resolution_x, sc.render.resolution_y = 1400, 1400
+    sc.render.filepath = os.path.join(OUT_DIR, "IgG_print_parts_preview.png")
+    bpy.ops.render.render(write_still=True)
 
 
 if __name__ == "__main__":
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     h = float(argv[argv.index("--height") + 1]) if "--height" in argv else PRINT_HEIGHT_MM
-    main(h)
+    main(h, render="--render" in argv)
