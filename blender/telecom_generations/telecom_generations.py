@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-مجسم «الأجيال من الاتصالات» — من الجيل الأول إلى الجيل الخامس
-=================================================================
+"Generations of Communication" display model - 1G to 5G
+========================================================
 
-سكربت بلندر يبني المجسم كاملاً بالأبعاد الحقيقية:
-  * الارتفاع الكلي = 60 سم بالضبط (من أسفل القاعدة إلى أعلى دائرة 5G)
-  * العرض = 70 سم ، العمق = 22 سم
-  * الوحدة في المشهد: المتر، والعرض في الواجهة بالسنتيمتر
+Blender script that builds the whole display at real-world scale:
+  * Total height = exactly 60 cm (bottom of the base to the top of the 5G disc)
+  * Width = 70 cm, depth = 22 cm
+  * Scene unit: metre, displayed in centimetres
 
-طريقة الاستعمال داخل بلندر (3.6 / 4.x / 5.x):
-  1. افتح تبويب Scripting
-  2. افتح هذا الملف (Text > Open) واضغط Run Script
-  3. ضع ملف الخط DejaVuSans-Bold.ttf بجانب هذا الملف (مرفق معه)
-     أو أي خط يدعم العربية (Tahoma / Arial) — السكربت يبحث عنه تلقائياً.
+How to use inside Blender (3.6 / 4.x / 5.x):
+  1. Open the Scripting workspace
+  2. Text > Open this file and press Run Script
+  3. Keep DejaVuSans-Bold.ttf next to this file (shipped with it);
+     otherwise the script falls back to Tahoma / Arial Bold automatically.
 
-أو من سطر الأوامر:
+Or from the command line:
   blender -b -P telecom_generations.py -- --save model.blend --render front.png
 
-كل جيل في Collection خاصة به ومربوط بـ Empty واحد (1G … 5G) لتحريكه بسهولة.
-النصوص العربية مُشكّلة مسبقاً (حروف موصولة ومرتبة من اليمين لليسار) لأن بلندر
-لا يشكّل العربية بنفسه. إن أردت تعديل نص عربي فاستعمل أداة تشكيل
-(مثل arabic_reshaper) ثم ضع الناتج في القاموس AR بالأسفل.
+Every generation lives in its own collection and is parented to one Empty
+(1G_Root ... 5G_Root) so it can be moved as a unit.
+All label text is in the TEXT dictionary below - edit it and re-run.
 """
 
 import bpy
@@ -31,30 +30,25 @@ import sys
 from mathutils import Matrix, Vector
 
 # ---------------------------------------------------------------------------
-# إعدادات عامة
+# General settings
 # ---------------------------------------------------------------------------
-TOTAL_HEIGHT_CM = 60.0      # الارتفاع الكلي المطلوب
-CLEAR_SCENE = True          # حذف محتوى المشهد الحالي قبل البناء
-BUILD_ENVIRONMENT = True    # طاولة خشب + جدار + إضاءة + كاميرا
+TOTAL_HEIGHT_CM = 60.0      # required total height
+CLEAR_SCENE = True          # delete the current scene content first
+BUILD_ENVIRONMENT = True    # wooden table + wall + lights + cameras
 
-# النصوص العربية بعد التشكيل (الأصل مكتوب في التعليق)
-AR = {
-    "title": "ﺕﻻﺎﺼﺗﻻﺍ ﻦﻣ ﻝﺎﻴﺟﻷﺍ",  # الأجيال من الاتصالات
-    "subtitle": "ﺲﻣﺎﺨﻟﺍ ﻞﻴﺠﻟﺍ ﻰﻟﺇ ... ﻝﻭﻷﺍ ﻞﻴﺠﻟﺍ ﻦﻣ",  # من الجيل الأول ... إلى الجيل الخامس
-    "g1a": "ﻂﻘﻓ ﺕﻮﺼﻟﺍ",  # الصوت فقط
-    "g1b": "ﺔﻳﺮﻇﺎﻨﺗ",  # تناظرية
-    "g2a": "ﺔﻴﺼﻨﻟﺍ ﻞﺋﺎﺳﺮﻟﺍﻭ ﺕﻮﺼﻟﺍ",  # الصوت والرسائل النصية
-    "g2b": "ﺔﻴﻤﻗﺭ",  # رقمية
-    "g3a": "ﻒﺗﺎﻬﻟﺍ ﺮﺒﻋ ﺖﻧﺮﺘﻧﻹﺍ",  # الإنترنت عبر الهاتف
-    "g3b": "ﻮﻳﺪﻴﻔﻟﺍﻭ ﺭﻮﺼﻟﺍ",  # الصور والفيديو
-    "g4a": "ﺔﻋﺮﺴﻟﺍ ﻲﻟﺎﻋ ﺖﻧﺮﺘﻧﺇ",  # إنترنت عالي السرعة
-    "g4b": "ﺮﺷﺎﺒﻣ ﺚﺑ",  # بث مباشر
-    "g5a": "ﺔﻘﺋﺎﻓ ﺕﺎﻋﺮﺳ",  # سرعات فائقة
-    "g5b": "ﻲﻛﺫ ﻝﺎﺼﺗﺍ",  # اتصال ذكي
+# All text that appears on the model
+TEXT = {
+    "title": "Generations of Communication",
+    "subtitle": "From the First Generation ... to the Fifth Generation",
+    "g1a": "Voice Calls Only", "g1b": "Analog Network",
+    "g2a": "Voice & Text (SMS)", "g2b": "Digital Network",
+    "g3a": "Web on Your Phone", "g3b": "Photos & Video",
+    "g4a": "High-Speed Internet", "g4b": "Live Streaming",
+    "g5a": "Ultra-Fast Speeds", "g5b": "Smart Connectivity",
 }
 
 GENERATIONS = [
-    # label, years, arabic line 1, arabic line 2, english, column color, accent
+    # label, years, description line 1, line 2, tag line, column color, icon colors
     dict(g="1G", years="(1980s)", a="g1a", b="g1b", en="(Analog)",
          color="#353537", ring="#353537", icon_bg="#e6e6e6", icon_fg="#5a5a5a"),
     dict(g="2G", years="(1990s)", a="g2a", b="g2b", en="(Digital)",
@@ -67,7 +61,7 @@ GENERATIONS = [
          color="#6a2fb8", ring="#6a2fb8", icon_bg="#6a2fb8", icon_fg="#ffffff"),
 ]
 
-# كل الأبعاد في هذا الملف بالسنتيمتر ثم تُحوَّل إلى متر
+# Every dimension in this file is in cm and converted to metres here
 S = TOTAL_HEIGHT_CM / 60.0 * 0.01
 
 
@@ -76,7 +70,7 @@ def V(x, y, z):
 
 
 # ---------------------------------------------------------------------------
-# أدوات عامة
+# Helpers
 # ---------------------------------------------------------------------------
 def srgb(hexstr, alpha=1.0):
     h = hexstr.lstrip("#")
@@ -138,7 +132,7 @@ def get_coll(name, parent=None):
 
 
 class Ctx:
-    """المجموعة الحالية والأب الحالي لكل الأجسام الجديدة"""
+    """Current collection and parent for every new object"""
     coll = None
     parent = None
 
@@ -182,7 +176,7 @@ def _smooth_bevel(ob, me, bevel, seg, angle=None):
 
 
 def box(name, center, size, material, bevel=0.0, seg=3, parent=None):
-    """صندوق بالأبعاد الحقيقية (سم) مع حواف مشطوفة اختيارية"""
+    """Box with real dimensions (cm) and optional bevelled edges"""
     me = bpy.data.meshes.new(name)
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
@@ -197,7 +191,7 @@ def box(name, center, size, material, bevel=0.0, seg=3, parent=None):
 
 
 def rrect(w, h, r, seg=8):
-    """نقاط مستطيل بزوايا دائرية (عكس عقارب الساعة)"""
+    """Rounded-rectangle outline points (counter-clockwise)"""
     r = max(0.0, min(r, w / 2 - 1e-4, h / 2 - 1e-4))
     pts = []
     for cx, cy, a0 in ((w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90),
@@ -216,9 +210,9 @@ def circle(r, n=64, cx=0.0, cy=0.0, rx=None):
 
 def prism(name, pts, depth, center, material, plane="XZ", bevel=0.0, seg=2,
           bevel_angle=30, parent=None):
-    """شكل ثنائي الأبعاد مُجسَّم.
-    plane='XZ' : الشكل في مستوى الواجهة والسماكة باتجاه -Y (نحو المشاهد)
-    plane='XY' : الشكل أفقي والسماكة باتجاه +Z
+    """Extruded 2D outline.
+    plane='XZ' : outline on the front plane, thickness along -Y (towards the viewer)
+    plane='XY' : horizontal outline, thickness along +Z
     """
     area = 0.0
     for i in range(len(pts)):
@@ -254,7 +248,7 @@ def prism(name, pts, depth, center, material, plane="XZ", bevel=0.0, seg=2,
 
 
 def tube(name, pts, thick, center, material, cyclic=False, plane="XZ", parent=None):
-    """خط/قوس أنبوبي (منحنى مع سماكة دائرية)"""
+    """Round tube along a polyline / arc"""
     cu = bpy.data.curves.new(name, "CURVE")
     cu.dimensions = "3D"
     cu.bevel_depth = thick / 2 * S
@@ -310,13 +304,13 @@ def load_font():
         if p and os.path.isfile(p):
             print("[telecom] font:", p)
             return bpy.data.fonts.load(p, check_existing=True)
-    print("[telecom] WARNING: no Arabic font found, Arabic text will not display")
+    print("[telecom] WARNING: DejaVuSans-Bold.ttf not found, using Blender's built-in font")
     return bpy.data.fonts.get("Bfont") or bpy.data.fonts.load("<builtin>")
 
 
 def text(name, body, size, center, material, maxw=None, depth=0.06, plane="XZ",
          flip=False, parent=None, bold=0.0):
-    """نص مجسم في مستوى الواجهة، يتقلص تلقائياً ليناسب العرض maxw (سم)"""
+    """3D text on the front plane, auto-shrunk to fit width maxw (cm)"""
     cu = bpy.data.curves.new(name, "FONT")
     cu.body = body
     cu.font = FONT
@@ -338,7 +332,7 @@ def text(name, body, size, center, material, maxw=None, depth=0.06, plane="XZ",
 
 
 # ---------------------------------------------------------------------------
-# المواد
+# Materials
 # ---------------------------------------------------------------------------
 def materials():
     M = {}
@@ -358,10 +352,10 @@ def materials():
 
 
 # ---------------------------------------------------------------------------
-# الهواتف
+# Phones
 # ---------------------------------------------------------------------------
 def phone_brick(M):
-    """هاتف 1G (هاتف الطوب الكبير مع هوائي)"""
+    """1G brick phone with antenna"""
     body = mat("1G_Phone_Body", "#232325", rough=0.42)
     face = mat("1G_Phone_Face", "#303033", rough=0.5)
     key = mat("1G_Key", "#c3c4c6", rough=0.45)
@@ -376,16 +370,16 @@ def phone_brick(M):
     box("1G_Body", (0, 0, H / 2), (W, T, H), body, bevel=0.45, seg=4)
     prism("1G_FacePlate", rrect(W - 0.5, H - 0.6, 0.35), 0.1, (0, fy - 0.02, H / 2), face,
           bevel=0.03)
-    # سماعة الأذن
+    # earpiece
     for i in range(4):
         prism(f"1G_Speaker_{i}", rrect(1.8, 0.14, 0.07), 0.1,
               (0, fy - 0.08, H - 0.75 - i * 0.28), M["ink"])
-    # الشاشة
+    # display
     prism("1G_LCD_Frame", rrect(3.3, 1.55, 0.2), 0.12, (0, fy - 0.08, 8.85), M["ink"],
           bevel=0.03)
     prism("1G_LCD", rrect(2.95, 1.2, 0.12), 0.06, (0, fy - 0.14, 8.85), lcd)
     text("1G_LCD_Digits", "555-0198", 0.62, (0, fy - 0.19, 8.85), led, maxw=2.6, depth=0.02)
-    # أزرار الوظائف
+    # function keys
     for x, m in ((-1.25, key_g), (0, key), (1.25, key_r)):
         box(f"1G_FnKey_{x:+.0f}", (x, fy - 0.2, 7.35), (1.05, 0.4, 0.5), m, bevel=0.12, seg=3)
     labels = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"]
@@ -397,10 +391,10 @@ def phone_brick(M):
                 bevel=0.14, seg=3)
             text(f"1G_KeyTxt_{labels[r * 3 + c]}", labels[r * 3 + c], 0.5,
                  (x, fy - 0.45, z), ink, depth=0.02)
-    # الميكروفون
+    # microphone
     for i in range(3):
         prism(f"1G_Mic_{i}", circle(0.1, 16), 0.1, ((i - 1) * 0.4, fy - 0.06, 1.15), M["ink"])
-    # الهوائي
+    # antenna
     prism("1G_Antenna_Base", circle(0.48, 32), 0.9, (1.15, 0, H + 0.4), body, plane="XY",
           bevel=0.08)
     prism("1G_Antenna", circle(0.2, 24), 4.6, (1.15, 0, H + 2.9), M["ink"], plane="XY",
@@ -411,7 +405,7 @@ def phone_brick(M):
 
 
 def phone_candybar(M):
-    """هاتف 2G (هاتف بأزرار وشاشة صغيرة)"""
+    """2G candybar phone with keypad and small LCD"""
     shell = mat("2G_Back_Shell", "#2b2f38", rough=0.38)
     cover = mat("2G_Front_Cover", "#2c4f8f", rough=0.3, coat=0.4)
     bezel = mat("2G_Screen_Bezel", "#aab3c0", rough=0.35, metal=0.3)
@@ -428,7 +422,7 @@ def phone_candybar(M):
           bevel=0.2, seg=3)
     prism("2G_Bezel", rrect(3.7, 3.6, 0.7), 0.12, (0, fy - 0.2, 7.95), bezel, bevel=0.05)
     prism("2G_LCD", rrect(2.85, 2.35, 0.18), 0.06, (0, fy - 0.27, 8.05), lcd)
-    # محتوى الشاشة: أعمدة الإشارة + الساعة + 2G
+    # screen content: signal bars + clock + 2G
     for i in range(4):
         hgt = 0.18 + i * 0.12
         prism(f"2G_Bar_{i}", rrect(0.13, hgt, 0.02, 2), 0.02,
@@ -436,7 +430,7 @@ def phone_candybar(M):
     text("2G_LCD_Clock", "12:45", 0.55, (0.5, fy - 0.31, 8.05), pix, depth=0.01)
     text("2G_LCD_Net", "2G", 0.38, (0.85, fy - 0.31, 8.85), pix, depth=0.01)
     text("2G_LCD_Menu", "Menu", 0.32, (0, fy - 0.31, 7.2), pix, depth=0.01)
-    # زر التنقل
+    # navigation key
     prism("2G_Nav", rrect(2.7, 0.95, 0.47), 0.3, (0, fy - 0.2, 5.55), nav, bevel=0.1, seg=3)
     prism("2G_Nav_C", circle(0.33, 32), 0.3, (-1.75, fy - 0.15, 5.55), key, bevel=0.1)
     prism("2G_Nav_Up", circle(0.33, 32), 0.3, (1.75, fy - 0.15, 5.55), key, bevel=0.1)
@@ -466,11 +460,11 @@ def smartphone_shell(M, tag, screen_color):
     prism(f"{tag}_Display", rrect(W - 0.55, H - 0.75, 0.55, 12), 0.01,
           (0, fy - 0.035, H / 2), scr)
     prism(f"{tag}_FrontCam", circle(0.13, 24), 0.01, (0, fy - 0.045, H - 0.62), M["lens"])
-    # أزرار جانبية
+    # side buttons
     for i, (z, ln) in enumerate(((8.6, 1.4), (6.9, 0.9))):
         box(f"{tag}_SideBtn_{i}", (W / 2 + 0.03, 0, z), (0.12, 0.35, ln), M["frame"],
             bevel=0.05, seg=2)
-    # الكاميرا الخلفية
+    # rear camera
     by = T / 2
     prism(f"{tag}_CamBump", rrect(1.9, 1.9, 0.5), 0.14, (-1.6, by + 0.07, H - 1.5),
           M["glass"], bevel=0.05)
@@ -479,7 +473,7 @@ def smartphone_shell(M, tag, screen_color):
               M["frame"], bevel=0.04)
         prism(f"{tag}_CamGlass_{i}", circle(0.22, 32), 0.17, (-1.6 + dx, by + 0.17, H - 1.5 + dz),
               M["lens"])
-    return H, T, fy - 0.045   # الارتفاع، السماكة، سطح الشاشة
+    return H, T, fy - 0.045   # height, thickness, screen surface
 
 
 def screen_status(tag, sy, net, fg):
@@ -541,7 +535,7 @@ def phone_5g(M):
         hgt = 0.35 + i * 0.3
         prism(f"5G_Bar_{i}", rrect(0.32, hgt, 0.06), 0.01, (1.0 + i * 0.45, fy - 0.004,
                                                             8.0 + hgt / 2), cyan)
-    # أيقونة الكرة الأرضية
+    # globe icon
     gz = 4.6
     tube("5G_Globe_Ring", circle(1.45, 64), 0.12, (0, fy - 0.03, gz), cyan, cyclic=True)
     tube("5G_Globe_Meridian", circle(1.45, 64, rx=0.62), 0.1, (0, fy - 0.03, gz), cyan,
@@ -556,7 +550,7 @@ def phone_5g(M):
 
 
 # ---------------------------------------------------------------------------
-# أيقونات القاعدة
+# Base icons
 # ---------------------------------------------------------------------------
 def icon_handset(fg, y, z):
     pts_out, pts_in = [], []
@@ -600,7 +594,7 @@ def icon_hd(fg, bg, y, z):
 
 
 def cloud_outline():
-    """حدود شكل الغيمة كاتحاد ثلاث دوائر ومستطيل (شكل واحد نظيف)"""
+    """Cloud outline: union of three circles and a rounded bar (one clean shape)"""
     circles = ((-0.8, -0.1, 0.62), (0.05, 0.33, 0.85), (0.85, -0.05, 0.6))
     rx0, rx1, rz0, rz1 = -1.3, 1.3, -0.75, -0.1
 
@@ -609,7 +603,7 @@ def cloud_outline():
             return True
         if rx0 + 0.375 <= px <= rx1 - 0.375 and rz0 <= pz <= rz1:
             return True
-        for cx in (rx0 + 0.375, rx1 - 0.375):   # زوايا دائرية للمستطيل
+        for cx in (rx0 + 0.375, rx1 - 0.375):   # rounded corners of the bar
             if (px - cx) ** 2 + (pz - (rz0 + 0.375)) ** 2 <= 0.375 ** 2:
                 return True
         return rx0 <= px <= rx1 and rz0 + 0.375 <= pz <= rz1
@@ -637,15 +631,15 @@ def icon_cloud(fg, bg, y, z):
 
 
 # ---------------------------------------------------------------------------
-# بناء المجسم
+# Model construction
 # ---------------------------------------------------------------------------
-PITCH = 13.4          # المسافة بين مراكز الأعمدة
-COL_W = 12.0          # عرض العمود
-BASE_TOP = 19.0       # سطح القاعدة العلوي
-PED_TOP = 32.6        # سطح القاعدة الملونة (حيث يقف الهاتف)
-PANEL_TOP = 49.5      # أعلى اللوح الخلفي
-SIGN_R = 5.0          # نصف قطر دائرة الجيل
-SIGN_Z = 60.0 - SIGN_R   # مركز الدائرة = 55 سم ، أعلاها = 60 سم
+PITCH = 13.4          # distance between column centres
+COL_W = 12.0          # column width
+BASE_TOP = 19.0       # top of the black base
+PED_TOP = 32.6        # top of the coloured pedestal (phone stands here)
+PANEL_TOP = 49.5      # top of the back panel
+SIGN_R = 5.0          # radius of the generation disc
+SIGN_Z = 60.0 - SIGN_R   # disc centre = 55 cm, disc top = 60 cm
 PED_Y0, PED_Y1 = -8.0, 1.5
 PANEL_Y0, PANEL_Y1 = 1.5, 4.5
 
@@ -653,35 +647,35 @@ PANEL_Y0, PANEL_Y1 = 1.5, 4.5
 def build_base(M, root):
     Ctx.coll = get_coll("Base", root)
     Ctx.parent = empty("Base_Root")
-    # الدرجة الأمامية
+    # front step
     box("Base_Lower", (0, -5.0, 5.5), (70.0, 22.0, 11.0), M["base"], bevel=0.35, seg=3)
-    # الدرجة الخلفية (عليها الأعمدة)
+    # rear step (columns stand on it)
     box("Base_Upper", (0, -1.5, 15.0), (68.0, 15.0, 8.0), M["base"], bevel=0.3, seg=3)
-    # شريط LED الأزرق
+    # blue LED strip
     box("LED_Strip_Housing", (0, -16.05, 10.45), (69.0, 0.3, 0.8), M["ink"], bevel=0.05)
     box("LED_Strip", (0, -16.25, 10.45), (68.6, 0.15, 0.42), M["led"], bevel=0.05)
     box("LED_Strip_Top", (0, -1.5 - 7.6, 19.02), (66.0, 0.25, 0.06), M["led_diff"])
 
-    # اللوحة الأمامية
+    # front title sign
     sy = -16.0
-    prism("Sign_Border", rrect(47.0, 9.6, 1.4), 0.25, (0, sy - 0.12, 5.6), M["border"],
+    prism("Sign_Border", rrect(54.0, 9.6, 1.4), 0.25, (0, sy - 0.12, 5.6), M["border"],
           bevel=0.06)
-    prism("Sign_Panel", rrect(45.8, 8.4, 1.0), 0.12, (0, sy - 0.3, 5.6), M["sign_white"],
+    prism("Sign_Panel", rrect(52.8, 8.4, 1.0), 0.12, (0, sy - 0.3, 5.6), M["sign_white"],
           bevel=0.03)
-    prism("Sign_InnerLine_Outer", rrect(44.6, 7.3, 0.8), 0.02, (0, sy - 0.37, 5.6), M["ink"])
-    prism("Sign_InnerLine_Inner", rrect(44.3, 7.0, 0.7), 0.02, (0, sy - 0.38, 5.6),
+    prism("Sign_InnerLine_Outer", rrect(51.6, 7.3, 0.8), 0.02, (0, sy - 0.37, 5.6), M["ink"])
+    prism("Sign_InnerLine_Inner", rrect(51.3, 7.0, 0.7), 0.02, (0, sy - 0.38, 5.6),
           M["sign_white"])
-    text("Sign_Title", AR["title"], 3.4, (0, sy - 0.42, 6.85), M["ink"], maxw=31.0, depth=0.08,
+    text("Sign_Title", TEXT["title"], 3.0, (0, sy - 0.42, 6.85), M["ink"], maxw=38.0, depth=0.08,
          bold=0.03)
-    text("Sign_Subtitle", AR["subtitle"], 1.7, (0, sy - 0.42, 3.5), M["ink"], maxw=28.0,
+    text("Sign_Subtitle", TEXT["subtitle"], 1.6, (0, sy - 0.42, 3.5), M["ink"], maxw=36.0,
          depth=0.06, bold=0.02)
     for side in (-1, 1):
         for k, r in enumerate((0.9, 1.6, 2.3)):
             a0, a1 = (-48, 48) if side > 0 else (132, 228)
             tube(f"Sign_Wave_{'R' if side > 0 else 'L'}_{k}", arc_pts(r, a0, a1, 20), 0.32,
-                 (side * 18.6, sy - 0.45, 5.6), M["ink"])
+                 (side * 22.6, sy - 0.45, 5.6), M["ink"])
 
-    # الأيقونات والأسهم على الدرجة الخلفية
+    # icons and arrows on the rear step
     fy = -9.0
     iz = 15.0
     builders = [
@@ -718,13 +712,13 @@ def build_column(M, root, i, g):
     Ctx.parent = col_root
     paint = mat(f"{g['g']}_Paint", g["color"], rough=0.55)
 
-    # القاعدة الملونة واللوح الخلفي
+    # coloured pedestal and back panel
     box(f"{g['g']}_Pedestal", (0, (PED_Y0 + PED_Y1) / 2, (BASE_TOP + PED_TOP) / 2),
         (COL_W, PED_Y1 - PED_Y0, PED_TOP - BASE_TOP), paint, bevel=0.18, seg=2)
     box(f"{g['g']}_Panel", (0, (PANEL_Y0 + PANEL_Y1) / 2, (BASE_TOP + PANEL_TOP) / 2),
         (COL_W - 0.6, PANEL_Y1 - PANEL_Y0, PANEL_TOP - BASE_TOP), paint, bevel=0.18, seg=2)
 
-    # البطاقات البيضاء
+    # white label cards
     cy = PED_Y0
     prism(f"{g['g']}_YearCard_Border", rrect(10.6, 4.4, 0.35), 0.1, (0, cy - 0.05, 29.85),
           M["border"])
@@ -739,14 +733,14 @@ def build_column(M, root, i, g):
           M["border"])
     prism(f"{g['g']}_DescCard", rrect(10.3, 6.8, 0.25), 0.1, (0, cy - 0.12, 23.75), M["white"],
           bevel=0.02)
-    text(f"{g['g']}_Desc_1", AR[g["a"]], 1.55, (0, cy - 0.2, 25.95), M["ink"], maxw=9.5,
+    text(f"{g['g']}_Desc_1", TEXT[g["a"]], 1.55, (0, cy - 0.2, 25.95), M["ink"], maxw=9.5,
          depth=0.04, bold=0.025)
-    text(f"{g['g']}_Desc_2", AR[g["b"]], 1.55, (0, cy - 0.2, 23.85), M["ink"], maxw=9.5,
+    text(f"{g['g']}_Desc_2", TEXT[g["b"]], 1.55, (0, cy - 0.2, 23.85), M["ink"], maxw=9.5,
          depth=0.04, bold=0.025)
     text(f"{g['g']}_Desc_EN", g["en"], 1.2, (0, cy - 0.2, 21.65), M["ink"], maxw=9.5,
          depth=0.04, bold=0.02)
 
-    # رمز الإشارة على اللوح الخلفي ((  ))
+    # signal symbol on the back panel ((  ))
     white = M["white"]
     wz = 46.3
     for side in (-1, 1):
@@ -755,7 +749,7 @@ def build_column(M, root, i, g):
             tube(f"{g['g']}_Signal_{'R' if side > 0 else 'L'}_{k}", arc_pts(r, a0, a1, 18), 0.38,
                  (side * 0.9, PANEL_Y0 - 0.2, wz), white)
 
-    # الدائرة العلوية
+    # top disc sign
     py = (PANEL_Y0 + PANEL_Y1) / 2
     prism(f"{g['g']}_Sign_Post", circle(0.55, 32), SIGN_Z - SIGN_R - PANEL_TOP + 0.8,
           (0, py, (PANEL_TOP + SIGN_Z - SIGN_R) / 2), paint, plane="XY", bevel=0.05)
@@ -769,7 +763,7 @@ def build_column(M, root, i, g):
     text(f"{g['g']}_Sign_Text_Back", g["g"], 4.1, (0, py + 0.6, SIGN_Z), M["ink"], depth=0.1,
          flip=True, bold=0.035)
 
-    # الهاتف — يقف على القاعدة ومائل قليلاً على اللوح الخلفي
+    # phone - stands on the pedestal, leaning slightly against the back panel
     tilt = math.radians(6.0)
     ph = empty(f"{g['g']}_Phone", (0, 0, PED_TOP))
     Ctx.parent = ph
@@ -839,7 +833,7 @@ def build_environment(root):
     w = bpy.data.objects.new("Wall", me)
     _finish(w, wall, None)
 
-    # الإضاءة
+    # lighting
     Ctx.coll = get_coll("Lights_Camera", root)
 
     def area(name, loc, power, size, target=(0, 0, 0.3), color=(1, 1, 1)):
@@ -942,7 +936,7 @@ def build():
     Ctx.parent = None
     bpy.context.view_layer.update()
 
-    # التحقق من الارتفاع الكلي
+    # verify total height
     zmax = 0.0
     for ob in get_coll("Telecom_Generations_60cm").all_objects:
         if ob.type in {"MESH", "CURVE", "FONT"} and ob.users_collection[0].name != "Environment":

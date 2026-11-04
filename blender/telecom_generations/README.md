@@ -1,46 +1,45 @@
-# مجسم «الأجيال من الاتصالات» — بلندر
+# "Generations of Communication" display — Blender model
 
-مجسم ثلاثي الأبعاد للجيل الأول حتى الجيل الخامس من الاتصالات، بالأبعاد الحقيقية:
+A 3D model of the 1G → 5G mobile communication display, built at real-world scale:
 
-| البُعد | القيمة |
+| Dimension | Value |
 |---|---|
-| الارتفاع الكلي | **60 سم** (من أسفل القاعدة إلى أعلى دائرة 5G) |
-| العرض | 70 سم |
-| العمق | 22 سم |
+| Total height | **60 cm** (bottom of the base to the top of the 5G disc) |
+| Width | 70 cm |
+| Depth | 22 cm |
 
-![أمامي](render_front.png)
-![زاوية](render_3-4.png)
+![Front](render_front.png)
+![3/4 view](render_3-4.png)
 
-## الملفات
+## Files
 
-| الملف | الوصف |
+| File | Description |
 |---|---|
-| `telecom_generations_60cm.blend` | الملف الجاهز (الخط مدمج داخله) — يُفتح في بلندر 4.5 أو أحدث |
-| `telecom_generations.py` | السكربت الذي يبني المجسم كاملاً — يعمل على بلندر 3.6 و4.x و5.x |
-| `DejaVuSans-Bold.ttf` | خط يدعم العربية، يستعمله السكربت (رخصة حرة: DejaVu Fonts License) |
+| `telecom_generations_60cm.blend` | Ready-to-open scene (font packed inside), saved with Blender 5.0 |
+| `telecom_generations.py` | Script that builds the whole model — written for Blender 3.6, 4.x and 5.x |
+| `DejaVuSans-Bold.ttf` | Font used for all labels (free licence, see `DejaVuSans-LICENSE.txt`) |
 
-## إن كانت نسخة بلندر عندك أقدم من 4.5
+## If your Blender is older than 5.0
 
-1. افتح بلندر ثم تبويب **Scripting**
-2. **Text › Open** واختر `telecom_generations.py` (اترك ملف الخط بجانبه)
-3. اضغط **Run Script** — يُبنى المجسم كاملاً خلال ثوانٍ
+1. Open Blender and switch to the **Scripting** workspace
+2. **Text › Open** and choose `telecom_generations.py` (keep the font file next to it)
+3. Press **Run Script** — the full model is built in a few seconds
 
-## تنظيم المشهد
+## Scene layout
 
-- كل جيل في Collection خاصة به (`1G` … `5G`)، وكل أجزائه مربوطة بـ Empty اسمه `1G_Root` …
-  حرّك أو دوّر الـ Empty فيتحرك العمود كاملاً.
-- كل هاتف مربوط بـ Empty خاص (`1G_Phone` …) ومائل 6° على اللوح الخلفي.
-- `Base` : القاعدة السوداء، شريط LED الأزرق، الأيقونات والأسهم، واللوحة الأمامية.
-- `Environment` و `Lights_Camera` : طاولة خشب، جدار، 4 إضاءات Area، وكاميرتان
-  (`Camera_Front` و `Camera_3-4`). أخفِ `Environment` إن أردت المجسم وحده.
-- كل الأجسام بقياسات حقيقية (الوحدة متر والعرض بالسنتيمتر)، والحواف مشطوفة
-  بـ Bevel modifier (غير مطبّق، يمكنك تعديله).
-- محرك الرندر Cycles بـ 256 عينة و Denoise. للسرعة بدّل إلى EEVEE.
+- Each generation is in its own collection (`1G` … `5G`) and parented to an Empty
+  (`1G_Root` …). Move or rotate the Empty to move the whole column.
+- Each phone has its own Empty (`1G_Phone` …) and leans 6° against the back panel.
+- `Base`: black stepped base, blue LED strip, icons and arrows, front title sign.
+- `Environment` and `Lights_Camera`: wooden table, wall, 4 area lights and two cameras
+  (`Camera_Front`, `Camera_3-4`). Hide `Environment` to get the model on its own.
+- Everything is at real size (scene unit metre, displayed in centimetres). Edges use a
+  non-applied Bevel modifier, so you can still tweak it.
+- Render engine: Cycles, 256 samples with denoising. Switch to EEVEE for speed.
 
-## تعديل النصوص العربية
+## Editing
 
-بلندر لا يوصل الحروف العربية ولا يرتبها من اليمين لليسار، لذلك النصوص في السكربت
-مُشكّلة مسبقاً (قاموس `AR`). لتغيير نص: شكّله أولاً بأداة مثل `arabic_reshaper`
-و `python-bidi` ثم ضع الناتج في القاموس وشغّل السكربت.
-
-لتغيير الارتفاع الكلي غيّر `TOTAL_HEIGHT_CM` في أعلى السكربت — كل الأبعاد تتناسب معه.
+- All label text is in the `TEXT` dictionary (and the `GENERATIONS` list) at the top of
+  the script. Edit it and run the script again.
+- To change the overall size, change `TOTAL_HEIGHT_CM` at the top of the script — every
+  dimension scales with it.
