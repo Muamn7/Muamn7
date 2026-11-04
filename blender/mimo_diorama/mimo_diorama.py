@@ -180,6 +180,32 @@ def add_bevel(ob, width, segments=3, angle=40.0):
     return m
 
 
+def print_bevel(ob, width, segments=2, angle=40.0, skip_bottom=True, skip_top=False):
+    """Bevel only sharp edges, but never the bottom (and optionally top) edges.
+    A rounded bottom edge where a part sits on another part leaves a thin
+    overhang that slicers put supports under."""
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    lay = bm.edges.layers.float.get("bevel_weight_edge") or \
+        bm.edges.layers.float.new("bevel_weight_edge")
+    zs = [v.co.z for v in bm.verts]
+    z0, z1 = min(zs), max(zs)
+    lim = angle * DEG
+    for e in bm.edges:
+        a, b = e.verts
+        w = 1.0 if (len(e.link_faces) == 2 and e.calc_face_angle(0.0) > lim) else 0.0
+        if skip_bottom and abs(a.co.z - z0) < 1e-6 and abs(b.co.z - z0) < 1e-6:
+            w = 0.0
+        if skip_top and abs(a.co.z - z1) < 1e-6 and abs(b.co.z - z1) < 1e-6:
+            w = 0.0
+        e[lay] = w
+    bm.to_mesh(ob.data)
+    bm.free()
+    m = add_bevel(ob, width, segments, angle)
+    m.limit_method = 'WEIGHT'
+    return m
+
+
 def bm_box(bm, center, size, rot=None):
     mat = Matrix.Translation(Vector(center))
     if rot is not None:
@@ -217,6 +243,22 @@ def bm_cyl(bm, p1, p2, r, seg=8, r2=None):
     bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=seg,
                           radius1=r, radius2=r if r2 is None else r2,
                           depth=L, matrix=mat)
+
+
+def bm_lathe(bm, center, prof, seg=16):
+    """Closed solid of revolution around Z. prof = [(radius, dz), ...] bottom->top."""
+    c = Vector(center)
+    rings = []
+    for r, dz in prof:
+        rings.append([bm.verts.new(c + Vector((r * math.cos(2 * math.pi * i / seg),
+                                               r * math.sin(2 * math.pi * i / seg), dz)))
+                      for i in range(seg)])
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    for a, b in zip(rings, rings[1:]):
+        for i in range(seg):
+            j = (i + 1) % seg
+            bm.faces.new((a[i], a[j], b[j], b[i]))
 
 
 def bm_sphere(bm, center, r, seg=12):
@@ -730,10 +772,14 @@ def build_tower(C, M):
 def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True):
     z0 = G
     pod = 0.006
-    box(name + "_Podium", (w + 0.010, d + 0.010, pod), (cx, cy, z0 + pod / 2), C,
-        M["building_trim"], bevel=0.0012)
+    podium = box(name + "_Podium", (w + 0.010, d + 0.010, pod), (cx, cy, z0 + pod / 2), C,
+                 M["building_trim"])
+    print_bevel(podium, 0.0012, 2)
     zb = z0 + pod
-    body = box(name + "_Body", (w, d, h), (cx, cy, zb + h / 2), C, M["building"])
+    # Walls + parapet are ONE solid (roof is recessed into it) so nothing
+    # overhangs at the roof edge when 3D printing.
+    t, ph = 0.004, 0.007
+    body = box(name + "_Body", (w, d, h + ph), (cx, cy, zb + (h + ph) / 2), C, M["building"])
 
     ww, wh = 0.018, 0.024
     depth = 0.003
@@ -787,11 +833,13 @@ def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True)
             bm_prism(sills, p, n, along, door_w + 0.012, [
                 (-0.001, ct), (cd, ct), (cd, ct - 0.001),
                 (-0.001, ct - 0.002 - cd)])
+    # recessed roof inside the parapet
+    bm_box(cut, (cx, cy, zb + h + ph / 2 + 0.001), (w - 2 * t, d - 2 * t, ph + 0.002))
     # make cutter local to the body
     for v in cut.verts:
         v.co -= body.location
     boolean_cut(body, cut, name + "_Cutter")
-    add_bevel(body, 0.0012, 2, angle=40)
+    print_bevel(body, 0.0012, 2)
 
     gp = obj_from_bm(name + "_Windows", panes, C, M["glass"])
     obj_from_bm(name + "_Sills", sills, C, M["building"])
@@ -806,32 +854,25 @@ def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True)
              [(-0.0024, tz), (-0.0009, tz), (-0.0024, tz - 0.0015)])
     obj_from_bm(name + "_DoorFrame", bm, C, M["building"])
 
-    # Roof: parapet, roof box (stair housing) and vents
+    # Roof: roof box (stair housing) and vents (parapet is part of the body)
     zt = zb + h
-    bm = bmesh.new()
-    t = 0.004
-    ph = 0.007
-    bm_box(bm, (cx, cy - d / 2 + t / 2, zt + ph / 2), (w, t, ph))
-    bm_box(bm, (cx, cy + d / 2 - t / 2, zt + ph / 2), (w, t, ph))
-    bm_box(bm, (cx - w / 2 + t / 2, cy, zt + ph / 2), (t, d - 2 * t, ph))
-    bm_box(bm, (cx + w / 2 - t / 2, cy, zt + ph / 2), (t, d - 2 * t, ph))
-    par = obj_from_bm(name + "_Parapet", bm, C, M["building"])
-    add_bevel(par, 0.0008, 2)
-    box(name + "_RoofBox", (w * 0.42, d * 0.38, 0.020), (cx, cy, zt + 0.010), C,
-        M["building"], bevel=0.0012)
+    rb = box(name + "_RoofBox", (w * 0.42, d * 0.38, 0.020), (cx, cy, zt + 0.010), C,
+             M["building"])
+    print_bevel(rb, 0.0012, 2, skip_top=True)
     cap = box(name + "_RoofBoxCap", (w * 0.46, d * 0.42, 0.004), (cx, cy, zt + 0.022), C,
-              M["building_trim"], bevel=0.0008)
+              M["building_trim"])
     # taper the underside so the cap overhang is 45 degrees or less
     sx, sy = (w * 0.42) / (w * 0.46), (d * 0.38) / (d * 0.42)
     for v in cap.data.vertices:
         if v.co.z < 0:
             v.co.x *= sx
             v.co.y *= sy
+    print_bevel(cap, 0.0008, 2)
     bm = bmesh.new()
     for vx, vy in ((-w * 0.32, d * 0.3), (w * 0.33, -d * 0.3)):
-        bm_cyl(bm, (cx + vx, cy + vy, zt), (cx + vx, cy + vy, zt + 0.008), 0.0035, seg=14)
-        bm_cyl(bm, (cx + vx, cy + vy, zt + 0.008), (cx + vx, cy + vy, zt + 0.0095), 0.0035,
-               seg=14, r2=0.0048)   # flared cap: 41 deg overhang, printable
+        # one solid: pipe + flared cap (41 deg overhang, printable)
+        bm_lathe(bm, (cx + vx, cy + vy, zt), [(0.0035, 0.0), (0.0035, 0.008),
+                                              (0.0048, 0.0095), (0.0048, 0.0105)], seg=16)
     obj_from_bm(name + "_Vents", bm, C, M["building_trim"], smooth=40)
     return body
 
