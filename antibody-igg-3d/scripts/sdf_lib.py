@@ -186,6 +186,12 @@ def smin(a, b, k):
     return m - F32(k) * np.log1p(np.exp(-np.abs(a - b) / F32(k)))
 
 
+def smin_poly(a, b, k):
+    """Quadratic smooth minimum - blends only where the shapes meet (max k/4 swelling)."""
+    h = np.maximum(F32(k) - np.abs(a - b), 0.0) / F32(k)
+    return np.minimum(a, b) - h * h * F32(k / 4.0)
+
+
 def smin_all(fields, k):
     out = fields[0]
     for f in fields[1:]:
