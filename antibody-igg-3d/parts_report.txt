@@ -1,0 +1,16 @@
+part            triangles  non-manifold-edges  volume_cm3  size_mm (X x Y x Z)  qty
+Base                90000                   0      230.45   128.0 x  128.0 x   26.0  1
+Plaque               6000                   0        0.86    59.9 x    8.5 x   10.0  1
+Fc_Left            170000                   0       30.83    26.3 x   26.1 x   75.1  1
+Fc_Right           170000                   0       31.02    26.7 x   27.3 x   75.2  1
+Fc_Bond_1            6000                   0        0.21    13.9 x    4.4 x    4.4  1
+Fc_Bond_2            6000                   0        0.22    14.9 x    4.4 x    4.4  1
+Fc_Bond_3            6000                   0        0.19    12.8 x    4.4 x    4.4  1
+Hinge               90000                   0        3.26    56.6 x   10.8 x   39.5  1
+Fab_Heavy_L        190000                   0       36.67    51.5 x   29.4 x   74.7  1
+Fab_Heavy_R        190000                   0       35.64    51.1 x   28.5 x   74.3  1
+Light_L             95000                   0       12.99    42.3 x   22.6 x   42.0  1
+Light_R             95000                   0       12.81    41.9 x   22.3 x   42.3  1
+VDomain_L          105000                   0       14.58    35.9 x   28.2 x   37.0  1
+VDomain_R          105000                   0       14.67    36.9 x   28.5 x   36.8  1
+Pin_3x12             3000                   0        0.08     3.0 x    3.0 x   12.0  8
