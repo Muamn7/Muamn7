@@ -40,6 +40,7 @@ SIGN_LINES = ["1. Higher data rates",
               "2. Better reliability",
               "3. Spectral efficiency"]
 SHOW_BEAMS = False                       # True = add the coloured MIMO beams back
+SILL_D = 0.003                           # how far sills stick out (3 mm)
 BEAM_STRENGTH = 2.6                      # emission strength of the beams
 
 # Key heights (metres)
@@ -185,6 +186,24 @@ def bm_box(bm, center, size, rot=None):
         mat = mat @ rot.to_matrix().to_4x4()
     mat = mat @ Matrix.Diagonal((size[0], size[1], size[2], 1.0))
     bmesh.ops.create_cube(bm, size=1.0, matrix=mat)
+
+
+def bm_prism(bm, base, n, along, length, prof):
+    """Extrude a 2D profile along `along`. Profile points are (u, z):
+    u = distance along the wall normal `n` from `base`, z = absolute height."""
+    base = Vector((base.x, base.y, 0.0))
+    loops = []
+    for s in (-0.5, 0.5):
+        o = base + along * (s * length)
+        loops.append([bm.verts.new(o + n * u + Vector((0, 0, z))) for u, z in prof])
+    a, b = loops
+    k = len(prof)
+    bm.faces.new(a)
+    bm.faces.new(list(reversed(b)))
+    for i in range(k):
+        j = (i + 1) % k
+        bm.faces.new((a[j], a[i], b[i], b[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
 
 
 def bm_cyl(bm, p1, p2, r, seg=8, r2=None):
@@ -363,6 +382,12 @@ def boolean_cut(target, cutter_bm, name="Cutter"):
     mod.solver = 'EXACT'
     mod.object = cutter
     bake_modifiers(target)
+    bm = bmesh.new()
+    bm.from_mesh(target.data)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-6)
+    auto_smooth_bm(bm, 35.0)
+    bm.to_mesh(target.data)
+    bm.free()
     bpy.data.objects.remove(cutter, do_unlink=True)
     bpy.data.meshes.remove(me)
 
@@ -734,24 +759,34 @@ def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True)
                 if door and is_front and ri == 0 and ci == (cols - 1) // 2:
                     continue
                 p = centre + n * hd + along * off + Vector((0, 0, z))
-                sz = Vector((abs(along.x) * ww + abs(n.x) * depth * 2,
-                             abs(along.y) * ww + abs(n.y) * depth * 2, wh))
-                bm_box(cut, p, sz)
-                pp = p - n * (depth * 0.7)
+                zb_w, zt_w = z - wh / 2, z + wh / 2
+                # recess with a 45-degree chamfered top -> prints without supports
+                # (the 45-degree line crosses the wall at zt_w; no vertex sits
+                #  exactly on the wall plane, which keeps the Boolean clean)
+                bm_prism(cut, p, n, along, ww, [
+                    (depth, zb_w), (depth, zt_w + depth),
+                    (-depth, zt_w - depth), (-depth, zb_w)])
+                pp = p - n * (depth * 0.7) - Vector((0, 0, depth / 2))
                 psz = Vector((abs(along.x) * ww + abs(n.x) * 0.001,
-                              abs(along.y) * ww + abs(n.y) * 0.001, wh))
+                              abs(along.y) * ww + abs(n.y) * 0.001, wh - depth))
                 bm_box(panes, pp, psz)
-                sp = p + n * 0.0012 - Vector((0, 0, wh / 2 + 0.001))
-                ssz = Vector((abs(along.x) * (ww + 0.005) + abs(n.x) * 0.0035,
-                              abs(along.y) * (ww + 0.005) + abs(n.y) * 0.0035, 0.002))
-                bm_box(sills, sp, ssz)
+                # sill: flat top, 45-degree underside back to the wall
+                bm_prism(sills, p, n, along, ww + 0.005, [
+                    (-0.001, zb_w), (SILL_D, zb_w), (SILL_D, zb_w - 0.0008),
+                    (-0.001, zb_w - 0.0018 - SILL_D)])
         if door and is_front:
-            p = centre + n * hd + Vector((0, 0, zb + door_h / 2 - 0.0005))
-            bm_box(cut, p, Vector((door_w, depth * 2, door_h + 0.001)))
-            bm_box(panes, p - n * depth * 0.7, Vector((door_w, 0.001, door_h)))
-            # canopy above the door
-            bm_box(sills, p + n * 0.004 + Vector((0, 0, door_h / 2 + 0.003)),
-                   Vector((door_w + 0.012, 0.009, 0.0025)))
+            p = centre + n * hd
+            zt_d = zb + door_h
+            bm_prism(cut, p, n, along, door_w, [
+                (depth, zb - 0.001), (depth, zt_d + depth),
+                (-depth, zt_d - depth), (-depth, zb - 0.001)])
+            bm_box(panes, p - n * depth * 0.7 + Vector((0, 0, zb + (door_h - depth) / 2)),
+                   Vector((door_w, 0.001, door_h - depth)))
+            # canopy above the door: 45-degree wedge (no supports needed)
+            ct, cd = zt_d + 0.0075, 0.006
+            bm_prism(sills, p, n, along, door_w + 0.012, [
+                (-0.001, ct), (cd, ct), (cd, ct - 0.001),
+                (-0.001, ct - 0.002 - cd)])
     # make cutter local to the body
     for v in cut.verts:
         v.co -= body.location
@@ -764,8 +799,11 @@ def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True)
     # door mullions
     bm = bmesh.new()
     p = Vector((cx, cy - d / 2 - 0.0018, zb + door_h / 2))
-    bm_box(bm, p, (0.0015, 0.0012, door_h))
-    bm_box(bm, p + Vector((0, 0, 0.004)), (door_w, 0.0012, 0.0015))
+    bm_box(bm, p - Vector((0, 0, depth / 2)), (0.0015, 0.0012, door_h - depth))
+    # transom bar as a 45-degree wedge (no flat underside)
+    tz = zb + door_h / 2 + 0.0047
+    bm_prism(bm, Vector((cx, cy - d / 2, 0)), Vector((0, -1, 0)), Vector((1, 0, 0)), door_w,
+             [(-0.0024, tz), (-0.0009, tz), (-0.0024, tz - 0.0015)])
     obj_from_bm(name + "_DoorFrame", bm, C, M["building"])
 
     # Roof: parapet, roof box (stair housing) and vents
@@ -781,12 +819,19 @@ def build_building(C, M, name, cx, cy, w, d, h, rows, cols_f, cols_s, door=True)
     add_bevel(par, 0.0008, 2)
     box(name + "_RoofBox", (w * 0.42, d * 0.38, 0.020), (cx, cy, zt + 0.010), C,
         M["building"], bevel=0.0012)
-    box(name + "_RoofBoxCap", (w * 0.46, d * 0.42, 0.004), (cx, cy, zt + 0.022), C,
-        M["building_trim"], bevel=0.0008)
+    cap = box(name + "_RoofBoxCap", (w * 0.46, d * 0.42, 0.004), (cx, cy, zt + 0.022), C,
+              M["building_trim"], bevel=0.0008)
+    # taper the underside so the cap overhang is 45 degrees or less
+    sx, sy = (w * 0.42) / (w * 0.46), (d * 0.38) / (d * 0.42)
+    for v in cap.data.vertices:
+        if v.co.z < 0:
+            v.co.x *= sx
+            v.co.y *= sy
     bm = bmesh.new()
     for vx, vy in ((-w * 0.32, d * 0.3), (w * 0.33, -d * 0.3)):
         bm_cyl(bm, (cx + vx, cy + vy, zt), (cx + vx, cy + vy, zt + 0.008), 0.0035, seg=14)
-        bm_cyl(bm, (cx + vx, cy + vy, zt + 0.008), (cx + vx, cy + vy, zt + 0.0095), 0.0048, seg=14)
+        bm_cyl(bm, (cx + vx, cy + vy, zt + 0.008), (cx + vx, cy + vy, zt + 0.0095), 0.0035,
+               seg=14, r2=0.0048)   # flared cap: 41 deg overhang, printable
     obj_from_bm(name + "_Vents", bm, C, M["building_trim"], smooth=40)
     return body
 
