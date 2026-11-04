@@ -298,7 +298,12 @@ def find_font(bold=True):
     for p in cands:
         if os.path.exists(p):
             try:
-                return bpy.data.fonts.load(p, check_existing=True)
+                f = bpy.data.fonts.load(p, check_existing=True)
+                # Pack the font into the .blend so the text does not turn
+                # into squares when the file is opened on another computer.
+                if f.packed_file is None:
+                    f.pack()
+                return f
             except Exception:
                 pass
     return None
@@ -1224,6 +1229,15 @@ def build():
     return scene
 
 
+def pack_fonts():
+    for f in bpy.data.fonts:
+        if f.filepath != '<builtin>' and f.packed_file is None:
+            try:
+                f.pack()
+            except Exception as ex:
+                print("Could not pack font", f.name, ex)
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
@@ -1234,6 +1248,7 @@ def main():
     samples = int(arg("--samples", 256))
     scene.cycles.samples = samples
     scene.render.resolution_percentage = int(arg("--percent", 100))
+    pack_fonts()
     save = arg("--save")
     if save:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(save))
