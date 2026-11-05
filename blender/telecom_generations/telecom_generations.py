@@ -470,11 +470,72 @@ def smartphone_shell(M, tag, screen_color):
     return H, T, fy - 0.045   # height, thickness, screen surface
 
 
+APP_COLORS = ["#ff5a4e", "#ffb02e", "#3ddc84", "#2fa8ff", "#a463f2", "#ff6fae",
+              "#00c2b8", "#ffd84a", "#5b7cff", "#ff8a3d", "#44d07b", "#e94b8a"]
+GOOGLE = {"blue": "#4285f4", "red": "#ea4335", "yellow": "#fbbc05", "green": "#34a853"}
+
+
+def google_wordmark(tag, y, z, size):
+    """Multi-coloured "Google" word, one text object per letter"""
+    cols = ["blue", "red", "yellow", "blue", "green", "red"]
+    objs = []
+    for i, ch in enumerate("Google"):
+        m = mat(f"Google_{cols[i]}", GOOGLE[cols[i]], rough=0.3, emit=2.2)
+        ob = text(f"{tag}_Google_{i}_{ch}", ch, size, (0, y, z), m, depth=0.01)
+        ob.data.align_x = "LEFT"
+        objs.append(ob)
+    bpy.context.view_layer.update()
+    widths = [ob.dimensions.x / S for ob in objs]
+    gap = 0.04 * size
+    x = -(sum(widths) + gap * 5) / 2
+    for ob, w in zip(objs, widths):
+        ob.location.x = x * S
+        x += w + gap
+
+
+def google_g(tag, y, x, z, r=0.27, t=0.1):
+    """Google "G" icon built from four coloured arcs"""
+    for name, a0, a1 in (("red", 42, 160), ("yellow", 160, 215), ("green", 215, 325),
+                         ("blue", 325, 360)):
+        m = mat(f"Google_{name}", GOOGLE[name], rough=0.3, emit=2.2)
+        tube(f"{tag}_GoogleG_{name}", arc_pts(r, a0, a1, 16), t, (x, y, z), m)
+    tube(f"{tag}_GoogleG_bar", [(0.02, 0.0), (r, 0.0)], t, (x, y, z),
+         mat("Google_blue", GOOGLE["blue"], rough=0.3, emit=2.2))
+
+
 def smartphone(M, tag, screen_color, text_color="#ffffff"):
-    """Smartphone whose screen shows only the network type (3G / 4G / 5G)"""
+    """Smartphone screen: big network type, Google logo + search bar, app icons"""
     H, T, sy = smartphone_shell(M, tag, screen_color)
+    fy = sy - 0.006
     fg = mat(f"{tag}_Screen_Text", text_color, rough=0.3, emit=2.4)
-    text(f"{tag}_Screen_Text", tag, 3.2, (0, sy - 0.01, H / 2), fg, maxw=4.6, depth=0.01)
+    white = mat("UI_White", "#ffffff", rough=0.3, emit=2.0)
+    # network type
+    text(f"{tag}_Screen_Text", tag, 1.9, (0, fy - 0.01, 9.95), fg, maxw=4.0, depth=0.01)
+    # Google logo and search bar
+    google_wordmark(tag, fy - 0.01, 8.65, 1.0)
+    bar = mat("UI_SearchBar", "#f1f3f4", rough=0.3, emit=1.6)
+    prism(f"{tag}_SearchBar", rrect(4.8, 0.82, 0.41), 0.01, (0, fy, 7.55), bar)
+    google_g(tag, fy - 0.03, -1.95, 7.55)
+    hint = mat("UI_SearchHint", "#9aa0a6", rough=0.3, emit=1.2)
+    prism(f"{tag}_SearchHint", rrect(2.4, 0.12, 0.06), 0.01, (-0.2, fy - 0.004, 7.55), hint)
+    # app icons (4 x 3)
+    k = 0
+    for r in range(3):
+        for c in range(4):
+            m = mat(f"App_{k}", APP_COLORS[k], rough=0.3, emit=1.6)
+            x = (c - 1.5) * 1.22
+            z = 6.25 - r * 1.3
+            prism(f"{tag}_App_{k}", rrect(0.95, 0.95, 0.26), 0.01, (x, fy, z), m)
+            prism(f"{tag}_AppGlyph_{k}", circle(0.19, 20) if k % 2 else rrect(0.44, 0.32, 0.07),
+                  0.01, (x, fy - 0.004, z), white)
+            k += 1
+    # dock
+    dock = mat(f"{tag}_Dock", "#ffffff", rough=0.3, emit=0.35)
+    prism(f"{tag}_Dock", rrect(4.9, 1.35, 0.5), 0.01, (0, fy, 1.45), dock)
+    for c in range(4):
+        m = mat(f"App_{(c * 3) % 12}", APP_COLORS[(c * 3) % 12], rough=0.3, emit=1.6)
+        prism(f"{tag}_DockApp_{c}", rrect(0.9, 0.9, 0.25), 0.01,
+              ((c - 1.5) * 1.15, fy - 0.004, 1.45), m)
 
 
 def phone_3g(M):
