@@ -77,6 +77,14 @@ class Model:
     def __init__(self, name):
         self.name = name
         self.parts = []          # (verts, faces, material)
+        self.cutters = []        # closed meshes subtracted after the union (holes, grooves)
+        self.loose = []          # (group, Model, down) parts printed separately; down = side on the bed
+
+    def cut(self):
+        """Primitives added to the returned Model become holes in this one."""
+        c = Model(self.name + "_cut")
+        c.parts = self.cutters
+        return c
 
     def add(self, verts, faces, mat):
         self.parts.append(([tuple(v) for v in verts], faces, mat))
@@ -177,14 +185,16 @@ class Model:
 # ----------------------------------------------------------------------------
 # Reusable telecom equipment
 # ----------------------------------------------------------------------------
-def panel_antenna(m, center, outward, w=3.4, d=1.6, h=16.0, mat="white"):
-    """Sector panel antenna with end caps and bottom connectors."""
+def panel_antenna(m, center, outward, w=3.4, d=1.6, h=16.0, mat="white", flush_front=False):
+    """Sector panel antenna with end caps and bottom connectors.
+    flush_front: caps flush with the front face, so the panel lies flat on the bed."""
     n = V(outward).normalized()
     tang = UP.cross(n)
-    M = frame(V(center), UP, tang)   # local x = tangent, y = outward
+    M = frame(V(center), UP, tang)   # local x = tangent, y = inward (UP x tangent = -n)
     m.box(M, w, d, h, mat=mat)
+    cy = 0.15 if flush_front else 0.0
     for s in (-1, 1):
-        m.box(M @ Matrix.Translation((0, 0, s * (h / 2 - 0.3))), w + 0.3, d + 0.3, 0.9, mat="dark")
+        m.box(M @ Matrix.Translation((0, cy, s * (h / 2 - 0.3))), w + 0.3, d + 0.3, 0.9, mat="dark")
     for s in (-0.25, 0.25):
         p = M @ Vector((s * w, 0, -h / 2 - 0.2))
         m.rod(p, p - UP * 1.5, 1.0, seg=8, mat="dark")
@@ -194,12 +204,20 @@ def mount_pipe(m, p, z0, z1, d=1.2):
     m.rod(V(p.x, p.y, z0), V(p.x, p.y, z1), d, seg=10)
 
 
-def antenna_on_pipe(m, pipe_xy, outward, zc, w, d, h, pipe_d=1.2, mat="white"):
+def antenna_on_pipe(m, pipe_xy, outward, zc, w, d, h, pipe_d=1.2, mat="white", separate=False):
+    """separate: the panel becomes its own print part (m.loose) with a groove in
+    its back that seats on the mount pipe; only the pipe stays on the tower."""
     n = V(outward).normalized()
     n.z = 0
     n.normalize()
     pipe = V(pipe_xy[0], pipe_xy[1], zc)
     c = pipe + n * (t(pipe_d) / 2 + d / 2 - EPS)
+    if separate:
+        p = Model("panel")
+        panel_antenna(p, c, n, w, d, h, mat, flush_front=True)
+        p.cut().cyl(pipe - UP * (h / 2 + 1), pipe + UP * (h / 2 + 1), t(pipe_d) / 2 + 0.1, seg=16)
+        m.loose.append(("panels", p, n))
+        return
     panel_antenna(m, c, n, w, d, h, mat)
     for s in (-0.3, 0.3):
         m.beam(pipe + UP * (s * h), c + UP * (s * h), 0.9, 1.0, x_hint=UP, ext=0)
@@ -218,13 +236,31 @@ def rru(m, pipe_xy, inward, zc, w=2.6, d=1.8, h=5.0):
         m.box(M @ Matrix.Translation((x, d / 2 + 0.25, 0)), t(0.6), 0.8, h * 0.85, mat="dark")
 
 
-def microwave_dish(m, base, direction, R, arm=2.5, mat="white"):
-    """Shrouded microwave dish with radome cover, hub, arm and support strut."""
+def microwave_dish(m, base, direction, R, arm=2.5, mat="white", separate=False):
+    """Shrouded microwave dish with radome cover, hub, arm and support strut.
+
+    separate: the dish becomes its own print part (m.loose), flat front so it
+    prints face down, with a socket in the hub; the tower keeps the arm, which
+    ends in a peg that plugs into that socket."""
     d = V(direction).normalized()
     base = V(base)
     depth = R * 0.5
     arm_r = max(0.65, R * 0.13, t(1.0) / 2)
     back = base + d * arm
+    if separate:
+        peg = 1.2
+        m.cyl(base - d * 0.8, back + d * peg, arm_r, seg=12)
+        p = Model("dish")
+        hole_r = arm_r + 0.15
+        hub_r = max(R * 0.28, hole_r + 0.9)
+        center = back + d * depth
+        p.cyl(back, back + d * (R * 0.25 + 0.2), hub_r, hub_r * 1.1, seg=24, mat="steel")
+        prof = [(0, -depth), (R * 0.35, -depth * 0.93), (R * 0.7, -depth * 0.62),
+                (R * 0.95, -depth * 0.15), (R, 0), (R + 0.35, 0), (R + 0.35, R * 0.22), (0, R * 0.22)]
+        p.revolve(prof, frame(center, d), seg=40, mat=mat)
+        p.cut().cyl(back - d * 0.5, back + d * (peg + 0.25), hole_r, seg=16)
+        m.loose.append(("dishes", p, d))
+        return
     m.cyl(base - d * 0.8, back + d * 0.5, arm_r, seg=12)
     hub = back + d * (R * 0.25)
     m.cyl(back - d * 0.2, hub + d * 0.2, R * 0.28, R * 0.32, seg=20, mat="steel")
@@ -327,11 +363,12 @@ def top_mast(m, ztop, base_r=1.4, mast_h=10.0, rod_h=8.0, light=True):
 # ----------------------------------------------------------------------------
 # 1) أبراج شبكية - Lattice (self-supporting, 4-legged) tower
 # ----------------------------------------------------------------------------
-def tower_lattice(name="01_Lattice_Tower", x_bays=None):
+def tower_lattice(name="01_Lattice_Tower", x_bays=None, split=False):
     """x_bays: print mode. Same tower (levels, horizontals, head), but each X
     brace spans as many panels as needed to climb at >= PRINT_MIN_ANGLE, with
     x_bays X braces side by side across the face; the lattice body then
-    prints without supports."""
+    prints without supports.
+    split: dishes and panel antennas are separate print parts (Model.loose)."""
     steep_x = x_bays is not None
     m = Model(name)
     m.loft_rects((0, 0), [(58, 58, 0), (58, 58, 2.2), (55, 55, 3.0)], "concrete")
@@ -464,12 +501,13 @@ def tower_lattice(name="01_Lattice_Tower", x_bays=None):
             mount_pipe(m, pipe, zp - 3, zu + 3)
             for zz in (zp, zu):
                 m.beam(mid + tang * s + UP * zz, pipe + UP * zz, 1.0, x_hint=UP, ext=0.3)
-            antenna_on_pipe(m, pipe, nrm, (zp + zu) / 2 + 0.5, 3.6, 1.7, 18.0)
+            antenna_on_pipe(m, pipe, nrm, (zp + zu) / 2 + 0.5, 3.6, 1.7, 18.0, separate=split)
             rru(m, pipe, -nrm, zp + 4.5) if s > 0 else None
 
     # --- microwave dishes on the legs and faces
     for c, R in (((1, -1), 5.0), ((-1, 1), 4.5)):
-        microwave_dish(m, P(c, zt + 9), Vector((c[0], c[1], 0)), R, arm=2.2)
+        # split: mount below the platform struts (which start at zt + 9) so the dish can be fitted
+        microwave_dish(m, P(c, zt - 5 if split else zt + 9), Vector((c[0], c[1], 0)), R, arm=2.2, separate=split)
 
     def face_cross(j):
         za, zc = lv[j], lv[j + 1]
@@ -482,9 +520,9 @@ def tower_lattice(name="01_Lattice_Tower", x_bays=None):
         return lv[j + 1] if steep_x else face_cross(j)
 
     zc = face_mount(4)
-    microwave_dish(m, V(0, -half(zc), zc), V(0, -1, 0), 6.5, arm=2.2)
+    microwave_dish(m, V(0, -half(zc), zc), V(0, -1, 0), 6.5, arm=2.2, separate=split)
     zc = face_mount(3)
-    microwave_dish(m, V(half(zc), 0, zc), V(1, 0, 0), 5.5, arm=2.2)
+    microwave_dish(m, V(half(zc), 0, zc), V(1, 0, 0), 5.5, arm=2.2, separate=split)
 
     # --- top cap, mast with omni antennas, aviation light, lightning rod
     m.box_at((0, 0, ztop + 0.6), (2 * b1 + 3.5, 2 * b1 + 3.5, 1.3))
@@ -504,8 +542,9 @@ PRINT_MIN_ANGLE = 45.0    # أقل زاوية لحدايد X عن الأفقي (
 
 
 def tower_lattice_print_a():
-    """خيار A: X واحد عريض في كل وجه مثل القديم، كل X يغطي عدة مستويات."""
-    return tower_lattice("07_Lattice_PrintX_A", x_bays=1)
+    """خيار A: X واحد عريض في كل وجه مثل القديم، كل X يغطي عدة مستويات.
+    الأطباق والهوائيات المستطيلة قطع منفصلة تُطبع وحدها وتُركّب."""
+    return tower_lattice("07_Lattice_PrintX_A", x_bays=1, split=True)
 
 
 def tower_lattice_print_b():
@@ -921,6 +960,34 @@ def union_model(model, target_coll, solver="MANIFOLD"):
     return main
 
 
+def subtract_cutters(ob, model):
+    """Boolean-difference the model's cutters (holes, grooves) out of ob."""
+    if not model.cutters:
+        return
+    coll = bpy.data.collections.new(model.name + "_cutters")
+    bpy.context.scene.collection.children.link(coll)
+    cut = Model(model.name + "_cut")
+    cut.parts = model.cutters
+    objs = make_part_objects(cut, coll)
+    mod = ob.modifiers.new("Cut", 'BOOLEAN')
+    mod.operation = 'DIFFERENCE'
+    mod.operand_type = 'COLLECTION'
+    mod.collection = coll
+    mod.solver = 'MANIFOLD'
+    dg = bpy.context.evaluated_depsgraph_get()
+    new_me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    old_me = ob.data
+    ob.modifiers.clear()
+    ob.data = new_me
+    new_me.name = old_me.name
+    bpy.data.meshes.remove(old_me)
+    for o in objs:
+        me = o.data
+        bpy.data.objects.remove(o)
+        bpy.data.meshes.remove(me)
+    bpy.data.collections.remove(coll)
+
+
 def assign_materials(ob, model):
     """The union drops per-part materials; recover them from the nearest source part."""
     groups = {}
@@ -1171,6 +1238,55 @@ def export_stl(ob, out_dir):
     return path
 
 
+def build_loose_parts(model, coll, offset_x, out_dir):
+    """Separate print parts: shown assembled on the tower in the scene, and
+    exported as one print plate per group, each part turned to its print side."""
+    groups = {}
+    for i, (group, piece, down) in enumerate(model.loose):
+        piece.name = f"{model.name}_{group}_{len(groups.get(group, [])) + 1}"
+        ob = union_model(piece, coll, "MANIFOLD")
+        subtract_cutters(ob, piece)
+        clean_for_print(ob)
+        assign_materials(ob, piece)
+        bad, shells, _ = check_manifold(ob)
+        ob.location.x = offset_x
+        groups.setdefault(group, []).append((ob, down, bad, shells))
+    for group, items in groups.items():
+        bad = sum(b for _, _, b, _ in items)
+        shells = sum(sh for _, _, _, sh in items)
+        print(f"    + {model.name}_{group}: {len(items)} parts  non-manifold={bad}  shells={shells}")
+        if not (EXPORT_STL and out_dir):
+            continue
+        plate = bpy.data.meshes.new(f"{model.name}_{group}")
+        bm = bmesh.new()
+        cols = max(1, math.ceil(math.sqrt(len(items) * 2)) // 2 * 2) if len(items) > 4 else len(items)
+        x = y = row_h = 0.0
+        for k, (ob, down, _, _) in enumerate(items):
+            tmp = ob.data.copy()
+            tmp.transform(V(down).normalized().rotation_difference(Vector((0, 0, -1))).to_matrix().to_4x4())
+            xs = [v.co.x for v in tmp.vertices]
+            ys = [v.co.y for v in tmp.vertices]
+            if max(xs) - min(xs) > max(ys) - min(ys):     # long side along Y
+                tmp.transform(Matrix.Rotation(math.pi / 2, 4, 'Z'))
+            xs = [v.co.x for v in tmp.vertices]
+            ys = [v.co.y for v in tmp.vertices]
+            zs = [v.co.z for v in tmp.vertices]
+            if k and k % cols == 0:
+                x, y, row_h = 0.0, y + row_h + 3.0, 0.0
+            tmp.transform(Matrix.Translation((x - min(xs), y - min(ys), -min(zs))))
+            x += max(xs) - min(xs) + 3.0
+            row_h = max(row_h, max(ys) - min(ys))
+            bm.from_mesh(tmp)
+            bpy.data.meshes.remove(tmp)
+        bm.to_mesh(plate)
+        bm.free()
+        tmp_ob = bpy.data.objects.new(plate.name, plate)
+        bpy.context.scene.collection.objects.link(tmp_ob)
+        export_stl(tmp_ob, out_dir)
+        bpy.data.objects.remove(tmp_ob)
+        bpy.data.meshes.remove(plate)
+
+
 def build_all(out_dir=None):
     if CLEAR_SCENE:
         clear_scene()
@@ -1203,6 +1319,8 @@ def build_all(out_dir=None):
               "non-manifold={bad_edges}  shells={shells}  volume={volume_cm3:.1f} cm3".format(**info))
         if EXPORT_STL and out_dir:
             export_stl(ob, out_dir)
+        if model.loose:
+            build_loose_parts(model, coll, ob.location.x, out_dir)
     return results
 
 
