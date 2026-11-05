@@ -17,6 +17,7 @@ Telecom towers set - print-ready procedural models for Blender 4.2+ (tested on 5
 
 import bpy
 import bmesh
+import itertools
 import math
 import os
 import sys
@@ -33,6 +34,7 @@ TOWER_SPACING = 75.0      # المسافة بين الأبراج في المشه
 EXPORT_STL = True
 CLEAR_SCENE = True
 EPS = 0.25                # تداخل بسيط بين القطع لضمان دمج سليم
+FIT_SCALE = 1.0           # set while building a scaled print so fit clearances stay in real mm
 
 UP = Vector((0, 0, 1))
 
@@ -215,7 +217,7 @@ def antenna_on_pipe(m, pipe_xy, outward, zc, w, d, h, pipe_d=1.2, mat="white", s
     if separate:
         p = Model("panel")
         panel_antenna(p, c, n, w, d, h, mat, flush_front=True)
-        p.cut().cyl(pipe - UP * (h / 2 + 1), pipe + UP * (h / 2 + 1), t(pipe_d) / 2 + 0.1, seg=16)
+        p.cut().cyl(pipe - UP * (h / 2 + 1), pipe + UP * (h / 2 + 1), t(pipe_d) / 2 + 0.1 / FIT_SCALE, seg=16)
         m.loose.append(("panels", p, n))
         return
     panel_antenna(m, c, n, w, d, h, mat)
@@ -251,7 +253,7 @@ def microwave_dish(m, base, direction, R, arm=2.5, mat="white", separate=False):
         peg = 1.2
         m.cyl(base - d * 0.8, back + d * peg, arm_r, seg=12)
         p = Model("dish")
-        hole_r = arm_r + 0.15
+        hole_r = arm_r + 0.15 / FIT_SCALE
         hub_r = max(R * 0.28, hole_r + 0.9)
         center = back + d * depth
         p.cyl(back, back + d * (R * 0.25 + 0.2), hub_r, hub_r * 1.1, seg=24, mat="steel")
@@ -396,9 +398,12 @@ def tower_lattice(name="01_Lattice_Tower", x_bays=None, split=False):
     lv.append(zt)
     top = [zt + 9 * i for i in range(1, 5)]
     levels = lv + top
+    m.cut_info = dict(levels=list(levels), avoid=[], max_cut=zt + 7,
+                      leg_xy=lambda z: [(c[0] * half(z), c[1] * half(z)) for c in corners])
 
     def r_leg(z):
         return 1.7 - 0.55 * (z - z0) / (ztop - z0)
+    m.cut_info["leg_r"] = r_leg
 
     for c in corners:   # legs + splice flanges
         a, b = P(c, z0 - 1.0), P(c, zt)
@@ -508,6 +513,7 @@ def tower_lattice(name="01_Lattice_Tower", x_bays=None, split=False):
     for c, R in (((1, -1), 5.0), ((-1, 1), 4.5)):
         # split: mount below the platform struts (which start at zt + 9) so the dish can be fitted
         microwave_dish(m, P(c, zt - 5 if split else zt + 9), Vector((c[0], c[1], 0)), R, arm=2.2, separate=split)
+        m.cut_info["avoid"].append(zt - 5 if split else zt + 9)
 
     def face_cross(j):
         za, zc = lv[j], lv[j + 1]
@@ -520,6 +526,7 @@ def tower_lattice(name="01_Lattice_Tower", x_bays=None, split=False):
         return lv[j + 1] if steep_x else face_cross(j)
 
     zc = face_mount(4)
+    m.cut_info["avoid"] += [face_mount(4), face_mount(3)]
     microwave_dish(m, V(0, -half(zc), zc), V(0, -1, 0), 6.5, arm=2.2, separate=split)
     zc = face_mount(3)
     microwave_dish(m, V(half(zc), 0, zc), V(1, 0, 0), 5.5, arm=2.2, separate=split)
@@ -1238,26 +1245,28 @@ def export_stl(ob, out_dir):
     return path
 
 
-def build_loose_parts(model, coll, offset_x, out_dir):
+def build_loose_parts(model, coll, offset_x, out_dir, scale=1.0, suffix=""):
     """Separate print parts: shown assembled on the tower in the scene, and
     exported as one print plate per group, each part turned to its print side."""
     groups = {}
     for i, (group, piece, down) in enumerate(model.loose):
-        piece.name = f"{model.name}_{group}_{len(groups.get(group, [])) + 1}"
+        piece.name = f"{model.name}{suffix}_{group}_{len(groups.get(group, [])) + 1}"
         ob = union_model(piece, coll, "MANIFOLD")
         subtract_cutters(ob, piece)
         clean_for_print(ob)
         assign_materials(ob, piece)
+        if scale != 1.0:
+            ob.data.transform(Matrix.Scale(scale, 4))
         bad, shells, _ = check_manifold(ob)
         ob.location.x = offset_x
         groups.setdefault(group, []).append((ob, down, bad, shells))
     for group, items in groups.items():
         bad = sum(b for _, _, b, _ in items)
         shells = sum(sh for _, _, _, sh in items)
-        print(f"    + {model.name}_{group}: {len(items)} parts  non-manifold={bad}  shells={shells}")
+        print(f"    + {model.name}{suffix}_{group}: {len(items)} parts  non-manifold={bad}  shells={shells}")
         if not (EXPORT_STL and out_dir):
             continue
-        plate = bpy.data.meshes.new(f"{model.name}_{group}")
+        plate = bpy.data.meshes.new(f"{model.name}{suffix}_{group}")
         bm = bmesh.new()
         cols = max(1, math.ceil(math.sqrt(len(items) * 2)) // 2 * 2) if len(items) > 4 else len(items)
         x = y = row_h = 0.0
@@ -1285,6 +1294,135 @@ def build_loose_parts(model, coll, offset_x, out_dir):
         export_stl(tmp_ob, out_dir)
         bpy.data.objects.remove(tmp_ob)
         bpy.data.meshes.remove(plate)
+
+
+# ----------------------------------------------------------------------------
+# برج كبير مقسّم إلى أجزاء تدخل الطابعة - Big tower split into printable sections
+# ----------------------------------------------------------------------------
+BIG_TOWER_HEIGHT = 600.0  # الارتفاع الكلي (مم)
+MAX_SECTION = 220.0       # أقصى ارتفاع لكل جزء (مم) - حسب ارتفاع الطابعة
+PIN_LEN = 6.0             # طول وتد التوصيل في كل رجل (مم)
+PIN_FIT = 0.15            # فراغ الوتد داخل الفتحة (مم)
+
+
+def mesh_boolean(ob, model, op):
+    """Apply a Manifold boolean of ob with the closed meshes in model.parts."""
+    coll = bpy.data.collections.new(ob.name + "_op")
+    bpy.context.scene.collection.children.link(coll)
+    objs = make_part_objects(model, coll)
+    mod = ob.modifiers.new("Op", 'BOOLEAN')
+    mod.operation = op
+    mod.operand_type = 'COLLECTION'
+    mod.collection = coll
+    mod.solver = 'MANIFOLD'
+    dg = bpy.context.evaluated_depsgraph_get()
+    new_me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    old_me = ob.data
+    ob.modifiers.clear()
+    ob.data = new_me
+    new_me.name = old_me.name
+    bpy.data.meshes.remove(old_me)
+    for o in objs:
+        me = o.data
+        bpy.data.objects.remove(o)
+        bpy.data.meshes.remove(me)
+    bpy.data.collections.remove(coll)
+
+
+def choose_cuts(info, top, scale, max_section):
+    """Cut heights (model units): between horizontal levels, clear of the leg
+    flanges and dish arms, below the head. Fewest sections that each fit
+    max_section, then the most even split among those."""
+    lv = info["levels"]
+    cands = [(a + b) / 2 for a, b in zip(lv, lv[1:])]
+    cands = [z for z in cands if z <= info["max_cut"]
+             and min(abs(z - l) for l in lv) >= 1.6
+             and all(abs(z - a) >= 2.5 for a in info["avoid"])]
+    for n_cuts in range(math.ceil(top * scale / max_section) - 1, len(cands) + 1):
+        best = None
+        for cuts in itertools.combinations(cands, n_cuts):
+            edges = [0.0, *cuts, top]
+            tallest = max(b - a for a, b in zip(edges, edges[1:])) * scale
+            if tallest <= max_section and (best is None or tallest < best[0]):
+                best = (tallest, list(cuts))
+        if best:
+            return best[1]
+    raise RuntimeError(f"cannot split the tower into sections of at most {max_section} mm")
+
+
+def build_big_tower(fn, out_dir, height=BIG_TOWER_HEIGHT, max_section=MAX_SECTION):
+    """Build fn() at `height`, cut it into sections that fit the printer, add a
+    pin/socket in every leg at each cut, and export sections + loose parts."""
+    global FIT_SCALE
+    if CLEAR_SCENE:
+        clear_scene()
+    setup_scene()
+    coll = bpy.data.collections.new("Big_Tower")
+    bpy.context.scene.collection.children.link(coll)
+    probe = fn()
+    natural = max(v[2] for verts, _, _ in probe.parts for v in verts)
+    scale = height / natural
+    FIT_SCALE = scale
+    try:
+        model = fn()
+        tag = f"_{height / 10:.0f}cm"
+        body = union_model(model, coll, "MANIFOLD")
+        clean_for_print(body)
+        assign_materials(body, model)
+        body.data.transform(Matrix.Scale(scale, 4))
+        info = model.cut_info
+        cuts = choose_cuts(info, natural, scale, max_section)
+        bounds = [0.0] + [c * scale for c in cuts] + [height + 1.0]
+        print(f"  {model.name}{tag}: scale x{scale:.3f}, cuts at " + ", ".join(f"{c * scale:.1f}" for c in cuts) + " mm")
+        sections = []
+        for k in range(len(bounds) - 1):
+            lo, hi = bounds[k], bounds[k + 1]
+            ob = body.copy()
+            ob.data = body.data.copy()
+            ob.name = f"{model.name}{tag}_part{k + 1}"
+            ob.data.name = ob.name
+            coll.objects.link(ob)
+            box = Model("box")
+            box.box(Matrix.Translation((0, 0, (lo + hi) / 2)), 1000, 1000, hi - lo)
+            mesh_boolean(ob, box, 'INTERSECT')
+            joints = Model("joints")
+            if k > 0:          # socket for the pins of the section below
+                zc = cuts[k - 1]
+                for x, y in info["leg_xy"](zc):
+                    c = V(x * scale, y * scale, lo)
+                    joints.cyl(c - UP * 1.0, c + UP * (PIN_LEN + 0.5), PIN_R(info, zc, scale) + PIN_FIT, seg=24)
+                mesh_boolean(ob, joints, 'DIFFERENCE')
+            if k < len(cuts):  # pins on top, into the section above
+                zc = cuts[k]
+                pins = Model("pins")
+                for x, y in info["leg_xy"](zc):
+                    c = V(x * scale, y * scale, hi)
+                    pins.cyl(c - UP * 3.0, c + UP * PIN_LEN, PIN_R(info, zc, scale), seg=24)
+                mesh_boolean(ob, pins, 'UNION')
+            clean_for_print(ob)
+            assign_materials(ob, model)
+            sections.append(ob)
+        bpy.data.objects.remove(body)
+        for k, ob in enumerate(sections):
+            bad, shells, vol = check_manifold(ob)
+            d = ob.dimensions
+            print(f"    part{k + 1}: {d.x:6.1f} x {d.y:6.1f} x {d.z:6.1f} mm  non-manifold={bad}  shells={shells}  "
+                  f"volume={vol / 1000:.1f} cm3")
+            if EXPORT_STL and out_dir:
+                zmin = min(v.co.z for v in ob.data.vertices)
+                ob.data.transform(Matrix.Translation((0, 0, -zmin)))
+                export_stl(ob, out_dir)
+                ob.data.transform(Matrix.Translation((0, 0, zmin)))
+        if model.loose:
+            build_loose_parts(model, coll, 0.0, out_dir, scale=scale, suffix=tag)
+        return sections, cuts, scale
+    finally:
+        FIT_SCALE = 1.0
+
+
+def PIN_R(info, zc, scale):
+    """Pin radius: 40% of the leg radius at the cut, at most 2 mm."""
+    return min(2.0, 0.4 * info["leg_r"](zc) * scale)
 
 
 def build_all(out_dir=None):
@@ -1403,7 +1541,7 @@ def setup_render(path=None):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    out_dir = render = save = None
+    out_dir = render = save = big = None
     for i, a in enumerate(argv):
         if a == "--out":
             out_dir = argv[i + 1]
@@ -1411,8 +1549,16 @@ def main():
             render = argv[i + 1]
         elif a == "--save":
             save = argv[i + 1]
+        elif a == "--big":
+            big = argv[i + 1]
     if out_dir is None:
         out_dir = bpy.path.abspath("//stl") if bpy.data.filepath else os.path.join(os.path.expanduser("~"), "telecom_towers_stl")
+    if big:     # 60 cm option A, cut into sections: --big <file.blend>
+        print("Building the big segmented tower ->", out_dir)
+        build_big_tower(tower_lattice_print_a, out_dir)
+        setup_render(None)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(big))
+        return
     print("Building telecom towers ->", out_dir)
     build_all(out_dir)
     setup_render(os.path.abspath(render) if render else None)
