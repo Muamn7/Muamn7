@@ -615,80 +615,129 @@ def build_backboard(C, M):
     return e
 
 
-def build_tower(C, M):
+def bm_frustum(bm, center, bottom, top, height, rot=None):
+    """Box whose bottom footprint (x, y) differs from the top one."""
+    tmp = bmesh.new()
+    bmesh.ops.create_cube(tmp, size=1.0)
+    mat = Matrix.Translation(Vector(center))
+    if rot is not None:
+        mat = mat @ rot.to_matrix().to_4x4()
+    for v in tmp.verts:
+        sx, sy = (bottom if v.co.z < 0 else top)
+        v.co = mat @ Vector((v.co.x * sx, v.co.y * sy, v.co.z * height))
+    me = bpy.data.meshes.new("tmp")
+    tmp.to_mesh(me)
+    tmp.free()
+    bm.from_mesh(me)
+    bpy.data.meshes.remove(me)
+
+
+def build_tower(C, M, C_white=None):
+    """Lattice cell tower that 3D-prints WITHOUT supports.
+
+    * Every brace is steeper than 45 degrees: each face has a centre post and
+      an X in each half, so the bays stay short (same look as before).
+    * No horizontal bars, no floating parts: the mast stands on four 45-degree
+      struts, pipes have pointed bottoms carried by 45-degree struts, brackets
+      and radio units grow out of the pipes.
+    * The white antenna panels (with their caps) are SEPARATE parts
+      (collection "Antenna_Parts_White") to print standing and glue on.
+    """
+    C_white = C_white or C
     tx, ty = -0.30, 0.075
     z_pad = G + 0.008
     z_top = 0.40
-    box("Tower_Pad", (0.15, 0.15, 0.010), (tx, ty, G + 0.003), C, M["concrete"], bevel=0.0015)
+    pad = box("Tower_Pad", (0.15, 0.15, 0.010), (tx, ty, G + 0.003), C, M["concrete"])
+    print_bevel(pad, 0.0015, 2)
 
     bm = bmesh.new()
     a0, a1 = 0.058, 0.017
-    nseg = 8
-    # segment heights shrink towards the top (classic tower look)
-    ws = [1.0 * (0.88 ** i) for i in range(nseg)]
-    tot = sum(ws)
-    levels = [z_pad]
-    for w in ws:
-        levels.append(levels[-1] + (z_top - z_pad) * w / tot)
+    STEEP = 1.2            # rise / run of every brace (> 1 means steeper than 45 deg)
 
     def half(z):
         return a0 + (a1 - a0) * (z - z_pad) / (z_top - z_pad)
 
-    def corners(z):
-        a = half(z)
+    def corners(z, a=None):
+        a = half(z) if a is None else a
         return [Vector((tx + sx * a, ty + sy * a, z))
                 for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
 
+    def mids(z, a=None):
+        c = corners(z, a)
+        return [(c[i] + c[(i + 1) % 4]) * 0.5 for i in range(4)]
+
+    # bay heights: run of a half-face X is ~ half-width -> bay = 1.2 x half-width
+    levels = [z_pad]
+    while True:
+        h = half(levels[-1]) * STEEP
+        if levels[-1] + h > z_top - half(levels[-1]) * STEEP * 0.75:
+            levels.append(z_top)
+            break
+        levels.append(levels[-1] + h)
+
     R_LEG, R_H, R_D = 0.0034, 0.0018, 0.0014
-    for k in range(nseg):
+    for c0, c1 in zip(corners(z_pad), corners(z_top)):
+        bm_cyl(bm, c0, c1, R_LEG, seg=12)                          # legs (one piece)
+    for m0, m1 in zip(mids(z_pad), mids(z_top)):
+        bm_cyl(bm, m0, m1, R_H, seg=8)                             # face centre posts
+    for k in range(len(levels) - 1):
         c0, c1 = corners(levels[k]), corners(levels[k + 1])
+        m0, m1 = mids(levels[k]), mids(levels[k + 1])
         for i in range(4):
             j = (i + 1) % 4
-            bm_cyl(bm, c0[i], c1[i], R_LEG, seg=10)               # legs
-            bm_cyl(bm, c1[i], c1[j], R_H, seg=6)                  # horizontals
-            bm_cyl(bm, c0[i], c1[j], R_D, seg=6)                  # X bracing
-            bm_cyl(bm, c0[j], c1[i], R_D, seg=6)
-        if k % 2 == 0:                                            # plan bracing
-            bm_cyl(bm, c1[0], c1[2], R_D, seg=6)
-            bm_cyl(bm, c1[1], c1[3], R_D, seg=6)
-    for i, c in enumerate(corners(z_pad)):                         # bottom ring + feet
-        bm_cyl(bm, c, corners(z_pad)[(i + 1) % 4], R_H, seg=6)
+            bm_cyl(bm, c0[i], m1[i], R_D, seg=6)                   # X in left half
+            bm_cyl(bm, m0[i], c1[i], R_D, seg=6)
+            bm_cyl(bm, m0[i], c1[j], R_D, seg=6)                   # X in right half
+            bm_cyl(bm, c0[j], m1[i], R_D, seg=6)
+    cb = corners(z_pad)
+    for i, c in enumerate(cb):                                     # ground ring + feet
+        bm_cyl(bm, c - Vector((0, 0, 0.0016)), cb[(i + 1) % 4] - Vector((0, 0, 0.0016)), R_H, seg=6)
         bm_box(bm, c + Vector((0, 0, 0.004)), (0.014, 0.014, 0.008))
         bm_box(bm, c + Vector((0, 0, 0.0005)), (0.02, 0.02, 0.001))
-    # Head frame above the lattice
-    head_levels = [z_top, 0.432, 0.470, 0.505, 0.522]
-    for k in range(len(head_levels) - 1):
-        c0 = [Vector((tx + sx * a1, ty + sy * a1, head_levels[k]))
-              for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
-        c1 = [Vector((tx + sx * a1, ty + sy * a1, head_levels[k + 1]))
-              for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
+    # Head frame above the lattice: posts + X bracing (bays taller than wide)
+    head = [z_top, 0.441, 0.482, 0.522]
+    for c0, c1 in zip(corners(z_top, a1), corners(head[-1], a1)):
+        bm_cyl(bm, c0 - Vector((0, 0, 0.0006)), c1, R_LEG * 0.85, seg=10)   # sunk into the leg top
+    for k in range(len(head) - 1):
+        c0, c1 = corners(head[k], a1), corners(head[k + 1], a1)
         for i in range(4):
             j = (i + 1) % 4
-            bm_cyl(bm, c0[i], c1[i], R_LEG * 0.85, seg=8)
-            bm_cyl(bm, c1[i], c1[j], R_H, seg=6)
             bm_cyl(bm, c0[i], c1[j], R_D, seg=6)
-    # Platform deck at lattice top
-    bm_box(bm, (tx, ty, z_top + 0.001), (0.055, 0.055, 0.0025))
-    for i, c in enumerate(corners(z_top)):
-        p = c + Vector((math.copysign(0.012, c.x - tx), math.copysign(0.012, c.y - ty), 0))
-        bm_cyl(bm, c, p, R_H, seg=6)
-        bm_cyl(bm, p, p + Vector((0, 0, 0.012)), R_H * 0.8, seg=6)
-    # Central mast + lightning rod
-    bm_cyl(bm, (tx, ty, z_top), (tx, ty, 0.580), 0.0055, seg=16)
-    bm_cyl(bm, (tx, ty, 0.580), (tx, ty, 0.5925), 0.0012, seg=8, r2=0.0004)
-    # Ladder on the left face of the head frame
-    for z in [0.405 + i * 0.012 for i in range(10)]:
-        bm_cyl(bm, (tx - a1 - 0.006, ty - 0.006, z), (tx - a1 - 0.006, ty + 0.006, z), 0.0008, seg=5)
-    for s in (-0.006, 0.006):
-        bm_cyl(bm, (tx - a1 - 0.006, ty + s, 0.40), (tx - a1 - 0.006, ty + s, 0.52), 0.001, seg=6)
-    lattice = obj_from_bm("Tower_Lattice", bm, C, M["steel"], smooth=40)
+            bm_cyl(bm, c0[j], c1[i], R_D, seg=6)
+    # Central mast: stands on four 45-degree struts from the leg tops
+    run = a1 * math.sqrt(2)
+    z_m = z_top + run * STEEP
+    for c in corners(z_top, a1):
+        bm_cyl(bm, c, (tx, ty, z_m), R_D * 1.2, seg=6)
+    bm_lathe(bm, (tx, ty, z_m), [(0.0008, 0.0), (0.0055, 0.0050), (0.0055, 0.580 - z_m)], seg=16)
+    bm_cyl(bm, (tx, ty, 0.580), (tx, ty, 0.5925), 0.0012, seg=8, r2=0.0004)  # lightning rod
+    obj_from_bm("Tower_Lattice", bm, C, M["steel"], smooth=40)
 
     # Aviation light on the mast
     bm = bmesh.new()
     bm_sphere(bm, (tx, ty, 0.5815), 0.0035, seg=12)
     obj_from_bm("Tower_AviationLight", bm, C, M["led_red"], smooth=80)
 
-    # Antenna panels -----------------------------------------------------
+    # Anchor finder: highest point on the mast / head posts / legs from which a
+    # straight strut reaches `T` at least 45 degrees (x STEEP) steep.
+    def anchor(T):
+        best = None
+        z = T.z
+        while z > z_pad + 0.01:
+            cands = []
+            if z >= z_m + 0.006:
+                cands.append(Vector((tx, ty, z)))
+            a = a1 if z >= z_top else half(z)
+            if z <= head[-1]:
+                cands += corners(z, a)
+            for p in cands:
+                hd = (Vector((T.x, T.y, 0)) - Vector((p.x, p.y, 0))).length
+                if z <= T.z - hd * STEEP + 1e-9:
+                    return p
+            z -= 0.0005
+        return best
+
+    # Antenna panels (white, separate parts) + mounts (part of the tower) -----
     panels = []
     specs = [  # (azimuth deg, centre z, height, width, radius)
         (-15, 0.465, 0.096, 0.038, 0.056),
@@ -698,74 +747,52 @@ def build_tower(C, M):
         (200, 0.548, 0.062, 0.030, 0.046),
     ]
     arm_bm = bmesh.new()
-    cap_bm = bmesh.new()
-    cable_pts = []
+    depth = 0.016
     for i, (az, zc, h, w, R) in enumerate(specs):
         a = az * DEG
         n = Vector((math.cos(a), math.sin(a), 0))
-        depth = 0.016
+        side = Vector((-n.y, n.x, 0))
         c = Vector((tx, ty, zc)) + n * R
         rot = Euler((0, 0, a), 'XYZ')
+        # --- white panel: only vertical edges rounded (prints standing up)
         bm = bmesh.new()
         bm_box(bm, (0, 0, 0), (depth, w, h))
-        ob = obj_from_bm("Antenna_Panel_%d" % i, bm, C, M["radome"])
+        ob = obj_from_bm("Antenna_Panel_%d" % i, bm, C_white, M["radome"])
         ob.location = c
         ob.rotation_euler = rot
-        add_bevel(ob, 0.0055, 5, angle=30)
+        print_bevel(ob, 0.0055, 5, angle=30, skip_top=True)
+        # caps belong to the panel part: flat bottom cap, chamfered top cap
+        bm = bmesh.new()
+        bm_box(bm, (c.x, c.y, zc - h / 2 - 0.0015), (depth + 0.002, w + 0.002, 0.004), rot)
+        obj_from_bm("Antenna_PanelCapBottom_%d" % i, bm, C_white, M["cap"])
+        bm = bmesh.new()
+        bm_frustum(bm, (c.x, c.y, zc + h / 2 + 0.0015), (depth, w), (depth + 0.002, w + 0.002), 0.004, rot)
+        obj_from_bm("Antenna_PanelCapTop_%d" % i, bm, C_white, M["cap"])
         panels.append((c, n, h, w, depth))
-        rm = rot.to_matrix()
-        # end caps
-        for s in (1, -1):
-            cc = c + Vector((0, 0, s * (h / 2 + 0.0015)))
-            bm_box(cap_bm, cc - n * 0.001, (depth + 0.002, w + 0.002, 0.004), rot)
-        # mounting pipe, brackets and arms
-        pipe = c - n * (depth / 2 + 0.006)
-        bm_cyl(arm_bm, pipe - Vector((0, 0, h / 2 + 0.012)), pipe + Vector((0, 0, h / 2 + 0.012)), 0.0024, seg=10)
-        for s in (0.32, -0.32):
-            bp = c - n * (depth / 2 + 0.003) + Vector((0, 0, s * h))
-            bm_box(arm_bm, bp, (0.007, 0.012, 0.004), rot)
-        for s in (0.3, -0.3):
-            za = zc + s * h
-            mast = Vector((tx, ty, za))
-            bm_cyl(arm_bm, mast, Vector((pipe.x, pipe.y, za)), 0.0019, seg=8)
-            bm_box(arm_bm, Vector((pipe.x, pipe.y, za)), (0.006, 0.006, 0.006), rot)
-        # RRU box behind lower panels
-        if R > 0.045:
-            bm_box(arm_bm, pipe - n * 0.008 + Vector((0, 0, -h * 0.15)), (0.012, 0.018, 0.028), rot)
-        # connectors under the panel
-        side = Vector((-n.y, n.x, 0))
-        for s in (-0.007, 0.007):
-            p = c + side * s + Vector((0, 0, -h / 2 - 0.003))
-            bm_cyl(arm_bm, p, p - Vector((0, 0, 0.007)), 0.0016, seg=8)
-            cable_pts.append((p - Vector((0, 0, 0.007)), n, side * s))
-    obj_from_bm("Antenna_Caps", cap_bm, C, M["cap"])
-    obj_from_bm("Antenna_Mounts", arm_bm, C, M["steel_dark"], smooth=40)
 
-    # Jumper cables from the connectors down along the mast
-    cu = bpy.data.curves.new("Tower_Cables", 'CURVE')
-    cu.dimensions = '3D'
-    cu.bevel_depth = 0.0011
-    cu.bevel_resolution = 2
-    for (p, n, off) in cable_pts:
-        sp = cu.splines.new('BEZIER')
-        mast = Vector((tx, ty, 0)) + n * 0.009 + off * 0.5
-        drop = p.z - 0.403
-        pts = [p,
-               p - n * 0.006 - Vector((0, 0, drop * 0.35)),
-               mast + Vector((0, 0, 0.403 + drop * 0.25)),
-               mast + Vector((0, 0, 0.403))]
-        sp.bezier_points.add(len(pts) - 1)
-        for k, (bp, co) in enumerate(zip(sp.bezier_points, pts)):
-            prv = pts[max(k - 1, 0)]
-            nxt = pts[min(k + 1, len(pts) - 1)]
-            tan = (nxt - prv) * 0.25
-            bp.handle_left_type = bp.handle_right_type = 'FREE'
-            bp.co = co
-            bp.handle_left = co - tan
-            bp.handle_right = co + tan
-    cob = bpy.data.objects.new("Tower_Cables", cu)
-    cu.materials.append(M["cable"])
-    link_obj(cob, C)
+        # --- mounts (tower part): pointed pipe, 45-degree struts, wedge brackets
+        pipe = c - n * (depth / 2 + 0.006)
+        pb = zc - h / 2 - 0.012
+        bm_lathe(arm_bm, (pipe.x, pipe.y, pb),
+                 [(0.0005, 0.0), (0.0024, 0.0019 * STEEP), (0.0024, h + 0.024)], seg=12)
+        for T in (Vector((pipe.x, pipe.y, pb + 0.0003)), Vector((pipe.x, pipe.y, zc + 0.3 * h))):
+            A = anchor(T)
+            if A is not None:
+                bm_cyl(arm_bm, A, T, 0.0019, seg=8)
+        u_pipe, u_back = -(depth / 2 + 0.006), -depth / 2       # brackets end flush on the
+        gap = u_back - u_pipe                                     # panel back (glue face)
+        for s in (0.32, -0.32):
+            zz = zc + s * h
+            bm_prism(arm_bm, c, n, side, 0.012, [
+                (u_pipe, zz - 0.002 - gap * STEEP), (u_back, zz - 0.002),
+                (u_back, zz + 0.002), (u_pipe, zz + 0.002)])
+        # radio unit clamped on the pipe, with a pointed (45 deg) underside
+        if R > 0.045:
+            zr = zc - h * 0.15
+            bm_frustum(arm_bm, (pipe.x, pipe.y, zr - 0.014 + 0.005), (0.0015, 0.0015),
+                       (0.010, 0.018), 0.010, rot)
+            bm_box(arm_bm, Vector((pipe.x, pipe.y, zr + 0.005)), (0.010, 0.018, 0.018), rot)
+    obj_from_bm("Antenna_Mounts", arm_bm, C, M["steel_dark"], smooth=40)
     return panels
 
 
@@ -1292,7 +1319,8 @@ def build():
 
     build_base(C_base, M)
     build_backboard(C_board, M)
-    panels = build_tower(C_tower, M)
+    C_white = new_collection("Antenna_Parts_White", C_tower)
+    panels = build_tower(C_tower, M, C_white)
     build_road(C_city, M)
     ax, ay, aw, ah = 0.0, 0.105, 0.12, 0.21
     build_building(C_city, M, "BuildingA", ax, ay, aw, 0.12, ah, rows=4, cols_f=3, cols_s=3)
