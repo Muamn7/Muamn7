@@ -378,7 +378,7 @@ def phone_brick(M):
     prism("1G_LCD_Frame", rrect(3.3, 1.55, 0.2), 0.12, (0, fy - 0.08, 8.85), M["ink"],
           bevel=0.03)
     prism("1G_LCD", rrect(2.95, 1.2, 0.12), 0.06, (0, fy - 0.14, 8.85), lcd)
-    text("1G_LCD_Digits", "555-0198", 0.62, (0, fy - 0.19, 8.85), led, maxw=2.6, depth=0.02)
+    text("1G_LCD_Text", "1G", 1.0, (0, fy - 0.19, 8.85), led, maxw=2.6, depth=0.02)
     # function keys
     for x, m in ((-1.25, key_g), (0, key), (1.25, key_r)):
         box(f"1G_FnKey_{x:+.0f}", (x, fy - 0.2, 7.35), (1.05, 0.4, 0.5), m, bevel=0.12, seg=3)
@@ -422,14 +422,8 @@ def phone_candybar(M):
           bevel=0.2, seg=3)
     prism("2G_Bezel", rrect(3.7, 3.6, 0.7), 0.12, (0, fy - 0.2, 7.95), bezel, bevel=0.05)
     prism("2G_LCD", rrect(2.85, 2.35, 0.18), 0.06, (0, fy - 0.27, 8.05), lcd)
-    # screen content: signal bars + clock + 2G
-    for i in range(4):
-        hgt = 0.18 + i * 0.12
-        prism(f"2G_Bar_{i}", rrect(0.13, hgt, 0.02, 2), 0.02,
-              (-1.15 + i * 0.2, fy - 0.31, 8.95 - 0.33 + hgt / 2), pix)
-    text("2G_LCD_Clock", "12:45", 0.55, (0.5, fy - 0.31, 8.05), pix, depth=0.01)
-    text("2G_LCD_Net", "2G", 0.38, (0.85, fy - 0.31, 8.85), pix, depth=0.01)
-    text("2G_LCD_Menu", "Menu", 0.32, (0, fy - 0.31, 7.2), pix, depth=0.01)
+    # screen content: network type only
+    text("2G_LCD_Text", "2G", 1.9, (0, fy - 0.31, 8.05), pix, maxw=2.5, depth=0.01)
     # navigation key
     prism("2G_Nav", rrect(2.7, 0.95, 0.47), 0.3, (0, fy - 0.2, 5.55), nav, bevel=0.1, seg=3)
     prism("2G_Nav_C", circle(0.33, 32), 0.3, (-1.75, fy - 0.15, 5.55), key, bevel=0.1)
@@ -476,77 +470,23 @@ def smartphone_shell(M, tag, screen_color):
     return H, T, fy - 0.045   # height, thickness, screen surface
 
 
-def screen_status(tag, sy, net, fg):
-    text(f"{tag}_Status_Time", "9:41", 0.34, (-2.0, sy, 10.95), fg, depth=0.01)
-    text(f"{tag}_Status_Net", net, 0.32, (1.55, sy, 10.95), fg, depth=0.01)
-    for i in range(4):
-        hgt = 0.1 + i * 0.07
-        prism(f"{tag}_Status_Bar_{i}", rrect(0.08, hgt, 0.02, 2), 0.01,
-              (1.95 + i * 0.13, sy, 10.82 + hgt / 2), fg)
+def smartphone(M, tag, screen_color, text_color="#ffffff"):
+    """Smartphone whose screen shows only the network type (3G / 4G / 5G)"""
+    H, T, sy = smartphone_shell(M, tag, screen_color)
+    fg = mat(f"{tag}_Screen_Text", text_color, rough=0.3, emit=2.4)
+    text(f"{tag}_Screen_Text", tag, 3.2, (0, sy - 0.01, H / 2), fg, maxw=4.6, depth=0.01)
 
 
 def phone_3g(M):
-    H, T, sy = smartphone_shell(M, "3G", "#14315f")
-    fy = sy - 0.006
-    white = mat("3G_UI_White", "#ffffff", rough=0.3, emit=2.0)
-    screen_status("3G", fy, "3G", white)
-    cols = ["#ff5a4e", "#ffb02e", "#3ddc84", "#2fa8ff", "#a463f2", "#ff6fae",
-            "#00c2b8", "#ffd84a", "#5b7cff", "#ff8a3d", "#44d07b", "#e94b8a"]
-    k = 0
-    for r in range(4):
-        for c in range(3):
-            m = mat(f"3G_App_{k}", cols[k], rough=0.3, emit=1.6)
-            x = (c - 1) * 1.55
-            z = 9.6 - r * 1.75
-            prism(f"3G_App_{k}", rrect(1.1, 1.1, 0.3), 0.01, (x, fy, z), m)
-            prism(f"3G_AppGlyph_{k}", circle(0.22, 20) if k % 2 else rrect(0.5, 0.36, 0.08),
-                  0.01, (x, fy - 0.004, z), white)
-            k += 1
-    dock = mat("3G_Dock", "#2c4f86", rough=0.3, emit=1.2)
-    prism("3G_Dock", rrect(4.9, 1.45, 0.5), 0.01, (0, fy, 1.45), dock)
-    for c in range(4):
-        m = mat(f"3G_DockApp_{c}", cols[(c * 3) % 12], rough=0.3, emit=1.6)
-        prism(f"3G_DockApp_{c}", rrect(0.95, 0.95, 0.26), 0.01, ((c - 1.5) * 1.15, fy - 0.004,
-                                                                  1.45), m)
+    smartphone(M, "3G", "#0f3d22")
 
 
 def phone_4g(M):
-    H, T, sy = smartphone_shell(M, "4G", "#1c6fe6")
-    fy = sy - 0.006
-    white = mat("4G_UI_White", "#ffffff", rough=0.3, emit=2.2)
-    glow = mat("4G_Screen_Glow", "#57a4ff", rough=0.3, emit=1.6)
-    prism("4G_Glow", circle(2.3, 64), 0.01, (0, fy, 7.2), glow)
-    screen_status("4G", fy - 0.004, "LTE", white)
-    text("4G_Big", "4G", 2.5, (0, fy - 0.01, 7.25), white, depth=0.01)
-    for i in range(4):
-        hgt = 0.6 + i * 0.45
-        prism(f"4G_Bar_{i}", rrect(0.55, hgt, 0.1), 0.01, ((i - 1.5) * 0.85, fy - 0.004,
-                                                           3.3 + hgt / 2), white)
+    smartphone(M, "4G", "#5a240a")
 
 
 def phone_5g(M):
-    H, T, sy = smartphone_shell(M, "5G", "#081233")
-    fy = sy - 0.006
-    white = mat("5G_UI_White", "#ffffff", rough=0.3, emit=2.2)
-    cyan = mat("5G_UI_Cyan", "#36d6ff", rough=0.3, emit=3.0)
-    screen_status("5G", fy, "5G", white)
-    text("5G_Big", "5G", 1.9, (-0.7, fy - 0.01, 8.6), white, depth=0.01)
-    for i in range(4):
-        hgt = 0.35 + i * 0.3
-        prism(f"5G_Bar_{i}", rrect(0.32, hgt, 0.06), 0.01, (1.0 + i * 0.45, fy - 0.004,
-                                                            8.0 + hgt / 2), cyan)
-    # globe icon
-    gz = 4.6
-    tube("5G_Globe_Ring", circle(1.45, 64), 0.12, (0, fy - 0.03, gz), cyan, cyclic=True)
-    tube("5G_Globe_Meridian", circle(1.45, 64, rx=0.62), 0.1, (0, fy - 0.03, gz), cyan,
-         cyclic=True)
-    tube("5G_Globe_Axis", [(0, -1.45), (0, 1.45)], 0.1, (0, fy - 0.03, gz), cyan)
-    tube("5G_Globe_Equator", [(-1.45, 0), (1.45, 0)], 0.1, (0, fy - 0.03, gz), cyan)
-    for z in (-0.75, 0.75):
-        hw = math.sqrt(1.45 ** 2 - z ** 2)
-        tube(f"5G_Globe_Lat_{z:+.1f}", [(-hw, z), (hw, z)], 0.1, (0, fy - 0.03, gz), cyan)
-    halo = mat("5G_Halo", "#1b3f9a", rough=0.3, emit=1.4)
-    prism("5G_Halo", circle(2.05, 64), 0.01, (0, fy, gz), halo)
+    smartphone(M, "5G", "#24104a")
 
 
 # ---------------------------------------------------------------------------
