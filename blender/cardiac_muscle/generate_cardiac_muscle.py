@@ -39,11 +39,12 @@ STRIATION_PITCH = 0.30      # distance between striations (fibre-radius units)
 STRIATION_DEPTH = 0.035     # deep enough to show on a 3D print
 DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
-BRANCH_CLEARANCE = 0.05     # gap between a separate branch piece and the fibre it rests on (~0.5 mm)
+BRANCH_CLEARANCE = -0.03    # negative = branch sinks ~0.3 mm into the fibre, so the model prints as one solid
 NUCLEUS_HEIGHT = 0.24       # how far each nucleus grain sticks out of the fibre (fibre-radius units)
-NUCLEUS_SINK = 0.05         # grain sits slightly into its socket
-NUCLEUS_CLEARANCE = 0.025   # gap between grain and socket (~0.25 mm at 20 cm) for gluing in
+NUCLEUS_SINK = 0.05         # grain sits slightly into its seat
+NUCLEUS_CLEARANCE = -0.02   # negative = grain overlaps its seat ~0.2 mm (prints attached, no floating parts)
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
+EXPORT_DIR = ""             # e.g. "//print" -> writes the STL files for 3D printing
 RENDER_PATH = "//cardiac_muscle_render.png"
 
 random.seed(SEED)
@@ -707,6 +708,79 @@ def setup_stage(height):
 
 
 # --------------------------------------------------------------------------
+# 3D-print export
+# --------------------------------------------------------------------------
+def export_print_files(folder):
+    """One-piece STL (everything fused) + one STL per part for multi-colour printing.
+    All files share the same coordinates (mm), so the parts line up when loaded together."""
+    import os
+    folder = bpy.path.abspath(folder)
+    os.makedirs(folder, exist_ok=True)
+    fib = bpy.data.objects["Cardiac_Fibres"]
+    parts = list(bpy.data.collections["Branches"].objects) + list(bpy.data.collections["Nuclei"].objects)
+
+    def stl(objs, name):
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        bpy.ops.wm.stl_export(filepath=os.path.join(folder, name), global_scale=1000.0,
+                              export_selected_objects=True, apply_modifiers=True)
+
+    def tri_copy(me):
+        c = me.copy()
+        bm = bmesh.new()
+        bm.from_mesh(c)
+        bmesh.ops.triangulate(bm, faces=bm.faces[:])
+        bm.to_mesh(c)
+        bm.free()
+        return c
+
+    # fused single solid (inputs triangulated first -> clean, watertight union)
+    tmp = bpy.data.collections.new("_union")
+    tmp_objs = []
+    for o in parts:
+        to = bpy.data.objects.new("_u_" + o.name, tri_copy(o.data))
+        to.matrix_world = o.matrix_world
+        tmp.objects.link(to)
+        tmp_objs.append(to)
+    one = bpy.data.objects.new("Cardiac_OnePiece", tri_copy(fib.data))
+    bpy.context.scene.collection.objects.link(one)
+    mod = one.modifiers.new("Union", 'BOOLEAN')
+    mod.operation = 'UNION'
+    mod.operand_type = 'COLLECTION'
+    mod.collection = tmp
+    solvers = mod.bl_rna.properties['solver'].enum_items.keys()
+    mod.solver = 'MANIFOLD' if 'MANIFOLD' in solvers else 'EXACT'
+    dg = bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    fused = bpy.data.meshes.new_from_object(one.evaluated_get(dg))
+    old = one.data
+    one.modifiers.clear()
+    one.data = fused
+    bpy.data.meshes.remove(old)
+    for to in tmp_objs:
+        m_ = to.data
+        bpy.data.objects.remove(to, do_unlink=True)
+        bpy.data.meshes.remove(m_)
+    bpy.data.collections.remove(tmp)
+    bm = bmesh.new()
+    bm.from_mesh(fused)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    bm.to_mesh(fused)
+    bm.free()
+    stl([one], "cardiac_muscle_ONE_PIECE_20cm.stl")
+    bpy.data.objects.remove(one, do_unlink=True)
+    bpy.data.meshes.remove(fused)
+
+    # separate parts (same coordinates)
+    stl([fib], "part1_fibres.stl")
+    stl(list(bpy.data.collections["Branches"].objects), "part2_branches.stl")
+    stl(list(bpy.data.collections["Nuclei"].objects), "part3_nuclei.stl")
+
+
+# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
 def main():
@@ -780,6 +854,9 @@ def main():
     print("Cardiac muscle built: %d fibre verts, %d branches, %d nuclei"
           % (len(fibre_me.vertices), len(branch_meshes), sculpt_detail.n_nuclei))
     print("Size (cm): X=%.1f  Y=%.1f  Z=%.1f" % (dims.x * 100, dims.y * 100, dims.z * 100))
+
+    if EXPORT_DIR:
+        export_print_files(EXPORT_DIR)
 
     if DO_RENDER:
         bpy.context.scene.render.filepath = RENDER_PATH
