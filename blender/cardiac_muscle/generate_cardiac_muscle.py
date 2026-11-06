@@ -10,7 +10,8 @@ What it builds / ماذا يبني:
   * Branching striated fibres fused into one smooth mesh (voxel remesh)
   * Real geometric striations (cross stripes) following each fibre
   * Intercalated discs (zig-zag step grooves) between cells
-  * Purple oval nuclei, one per cell, raised from the fibre as part of the same solid
+  * Purple oval nuclei as SEPARATE grains (one object each), one per cell,
+    each sitting in a matching socket carved into the fibre
   * Materials (Cycles / EEVEE), lights and a camera
   * Fibres stand vertically, cut flat and level at top and bottom
   * Real-world size: total HEIGHT = 20 cm (change TARGET_HEIGHT_M)
@@ -39,7 +40,9 @@ DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
 SEAM_DEPTH = 0.09           # groove that separates diagonal (branch) and straight striations
 SEAM_WIDTH = 0.05
-NUCLEUS_HEIGHT = 0.24       # how far each nucleus bulges out of the fibre (fibre-radius units)
+NUCLEUS_HEIGHT = 0.24       # how far each nucleus grain sticks out of the fibre (fibre-radius units)
+NUCLEUS_SINK = 0.05         # grain sits slightly into its socket
+NUCLEUS_CLEARANCE = 0.025   # gap between grain and socket (~0.25 mm at 20 cm) for gluing in
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
 RENDER_PATH = "//cardiac_muscle_render.png"
 
@@ -368,28 +371,53 @@ def sculpt_detail(me, lines, n_main):
             nuclei.append((f_i, un, th,
                            r * random.uniform(0.68, 0.80), r * random.uniform(0.36, 0.42),
                            NUCLEUS_HEIGHT * random.uniform(0.9, 1.1)))
-    dome = np.zeros(n)
     qmin = np.full(n, 9.0)
+    best = []                          # vertex closest to each nucleus centre
     r_loc = S_r[idx]
     for (f_i, un, th, A, Bn, H) in nuclei:
         sel = np.nonzero((fid == f_i) & (np.abs(uu - un) < A * 1.3))[0]
         if len(sel) == 0:
+            best.append(-1)
             continue
         dth = (theta[sel] - th + np.pi) % (2 * np.pi) - np.pi
         q = ((uu[sel] - un) / A) ** 2 + (dth * r_loc[sel] / Bn) ** 2
         qmin[sel] = np.minimum(qmin[sel], q)
-        dome[sel] = np.maximum(dome[sel], H * np.sqrt(np.clip(1.0 - q, 0.0, 1.0)))
-    # no stripes / discs on top of a nucleus, clean rim around it
+        best.append(int(sel[np.argmin(q)]))
+    # no stripes / discs under a nucleus: smooth seat with a clean rim
     clear = np.clip((qmin - 0.8) / 0.35, 0.0, 1.0)
     clear = clear * clear * (3 - 2 * clear)
     g = g * clear
     dc = dc * clear
-    nuc_a = np.clip(dome / (NUCLEUS_HEIGHT * 0.15), 0.0, 1.0)
-    sculpt_detail.n_nuclei = len(nuclei)
+    nuc_a = np.clip((1.0 - qmin) * 4.0, 0.0, 1.0)
 
-    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam + dome) + organic
-    dc = np.maximum(dc, seam)   # seam gets the same dark colour as the discs
+    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam) + organic
     co = co + nrm * disp[:, None]
+
+    # ---- separate nucleus "grains" + matching sockets carved in the fibre ----
+    grains = []
+    for (f_i, un, th, A, Bn, H), kv in zip(nuclei, best):
+        if kv < 0:
+            continue
+        t_k = t[kv] / np.linalg.norm(t[kv])
+        n_k = nrm[kv] - np.dot(nrm[kv], t_k) * t_k
+        n_k /= np.linalg.norm(n_k)
+        b_k = np.cross(n_k, t_k)                 # (t, b, n) right-handed
+        P = co[kv] - n_k * (NUCLEUS_SINK * r_loc[kv])
+        grains.append((P.copy(), t_k, b_k, n_k, A, Bn, H))
+        # socket = the grain's lower half, enlarged by the fit clearance
+        Ae, Be, Ce = A + NUCLEUS_CLEARANCE, Bn + NUCLEUS_CLEARANCE, H + NUCLEUS_CLEARANCE
+        dv = co - P
+        x = dv @ t_k
+        y = dv @ b_k
+        zz = dv @ n_k
+        qq = (x / Ae) ** 2 + (y / Be) ** 2
+        m = (qq < 1.0) & (np.abs(zz) < Ce * 1.5) & (np.abs(x) < Ae) & (np.abs(y) < Be)
+        ze = -Ce * np.sqrt(np.clip(1.0 - qq[m], 0.0, 1.0))
+        push = np.clip(zz[m] - ze, 0.0, None)
+        co[m] -= np.outer(push, n_k)
+    sculpt_detail.grains = grains
+    sculpt_detail.n_nuclei = len(grains)
+    dc = np.maximum(dc, seam)   # seam gets the same dark colour as the discs
     me.vertices.foreach_set("co", co.ravel())
 
     stria = g * w
@@ -435,6 +463,25 @@ def cut_flat_ends(me):
     bm.to_mesh(me)
     bm.free()
     me.update()
+
+
+# --------------------------------------------------------------------------
+# Nuclei - separate grains (one object each)
+# --------------------------------------------------------------------------
+def make_grain_meshes(grains):
+    meshes = []
+    for i, (P, t_k, b_k, n_k, A, Bn, H) in enumerate(grains):
+        bm = bmesh.new()
+        rot = Matrix((Vector(t_k), Vector(b_k), Vector(n_k))).transposed().to_4x4()
+        mat = Matrix.Translation(Vector(P)) @ rot @ Matrix.Diagonal((A, Bn, H, 1.0))
+        bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=24, radius=1.0, matrix=mat)
+        for f in bm.faces:
+            f.smooth = True
+        me = bpy.data.meshes.new("Nucleus_%02d" % (i + 1))
+        bm.to_mesh(me)
+        bm.free()
+        meshes.append(me)
+    return meshes
 
 
 # --------------------------------------------------------------------------
@@ -514,6 +561,35 @@ def material_fibre():
     _set(bsdf, 'Coat Weight', 0.04)
     _set(bsdf, 'Coat Roughness', 0.25)
     _set(bsdf, 'Sheen Weight', 0.0)
+    return m
+
+
+def material_nucleus():
+    m = bpy.data.materials.new("Nucleus")
+    m.use_nodes = True
+    nt = m.node_tree
+    bsdf = _principled(nt)
+    L = nt.links
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    nz = nt.nodes.new('ShaderNodeTexNoise')
+    nz.inputs['Scale'].default_value = 400.0
+    nz.inputs['Detail'].default_value = 4.0
+    L.new(tc.outputs['Object'], nz.inputs['Vector'])
+    mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'
+    mix.inputs['A'].default_value = (0.30, 0.16, 0.42, 1)
+    mix.inputs['B'].default_value = (0.19, 0.09, 0.29, 1)
+    L.new(nz.outputs['Fac'], mix.inputs['Factor'])
+    L.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+    bump = nt.nodes.new('ShaderNodeBump')
+    bump.inputs['Strength'].default_value = 0.3
+    bump.inputs['Distance'].default_value = 0.0003
+    L.new(nz.outputs['Fac'], bump.inputs['Height'])
+    L.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
+    _set(bsdf, 'Roughness', 0.35)
+    _set(bsdf, 'Subsurface Weight', 0.2)
+    _set(bsdf, 'Subsurface Radius', (0.6, 0.4, 1.0))
+    _set(bsdf, 'Subsurface Scale', 0.002)
+    _set(bsdf, 'Coat Weight', 0.3)
     return m
 
 
@@ -606,6 +682,16 @@ def main():
     bpy.context.scene.collection.children.link(coll)
     ob_f = bpy.data.objects.new("Cardiac_Fibres", fibre_me)
     coll.objects.link(ob_f)
+
+    # nuclei: separate grains, each its own object, seated in its socket
+    coll_n = bpy.data.collections.new("Nuclei")
+    coll.children.link(coll_n)
+    mat_n = material_nucleus()
+    for me in make_grain_meshes(sculpt_detail.grains):
+        me.transform(M)
+        me.materials.append(mat_n)
+        ob = bpy.data.objects.new(me.name, me)
+        coll_n.objects.link(ob)
 
     setup_stage(TARGET_HEIGHT_M)
 
