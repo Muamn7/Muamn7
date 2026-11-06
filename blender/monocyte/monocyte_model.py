@@ -60,11 +60,11 @@ FLOOR_Z = -6.0            # pocket floor (= cytoplasm plate thickness)
 # =====================================================================
 COLORS = {
     "White":      (0.90, 0.91, 0.93),
-    "LightBlue":  (0.16, 0.48, 0.95),
-    "Purple":     (0.25, 0.04, 0.62),
+    "LightBlue":  (0.20, 0.46, 0.82),
+    "Purple":     (0.28, 0.03, 0.70),
     "Blue":       (0.03, 0.22, 0.95),
-    "Cyan":       (0.30, 0.70, 1.00),
-    "Yellow":     (1.00, 0.55, 0.03),
+    "Cyan":       (0.35, 0.68, 0.95),
+    "Yellow":     (1.00, 0.45, 0.02),
     "Red":        (0.90, 0.07, 0.02),
     "Orange":     (1.00, 0.30, 0.05),
     "Violet":     (0.40, 0.10, 0.85),
@@ -346,16 +346,63 @@ def arc_path(cx, cy, r, a0, a1, wobble=0.0, wfreq=0.0, wphase=0.0):
 # =====================================================================
 # Organelles (relief, local frame)
 # =====================================================================
-def make_nucleus(s=1.0, bump_amp=1.5, bump_cell=3.6, res=1.0, hfac=0.82):
-    """Kidney / bean shaped nucleus with chromatin cobblestone texture."""
-    path = arc_path(0, 0, 27 * s, 205, 25)
+NUCLEUS_LINE = [  # x, y (design mm), radius - measured from the reference photo
+    (-4.0, 30.0, 12.0), (-16.0, 37.0, 15.0), (-31.0, 36.0, 16.5), (-39.0, 27.0, 19.5),
+    (-40.0, 12.0, 23.0), (-35.0, -4.0, 19.5), (-23.0, -9.0, 17.0), (-8.0, -8.0, 15.0),
+    (4.0, -5.0, 12.5)]
+NUC_CX = sum(p[0] for p in NUCLEUS_LINE) / len(NUCLEUS_LINE)
+NUC_CY = sum(p[1] for p in NUCLEUS_LINE) / len(NUCLEUS_LINE)
 
-    def rad(t):
-        # fat left lobe, slimmer right lobe, soft waist in the middle
-        return s * (24.0 - 4.0 * t + 1.6 * math.sin(math.pi * t) - 1.6 * math.exp(-((t - 0.55) / 0.2) ** 2))
-    g = sweep_relief(path, rad, n_along=int(230 * res), n_around=int(96 * res),
-                     hfac=hfac, cap_rings=int(26 * res))
-    bm = g.to_bm()
+
+def catmull_path(pts):
+    """Catmull-Rom through 2D points, t in [0, 1]."""
+    n = len(pts)
+
+    def f(t):
+        g = min(max(t, 0.0), 1.0) * (n - 1)
+        i = min(int(g), n - 2)
+        u = g - i
+        p0, p1, p2, p3 = pts[max(i - 1, 0)], pts[i], pts[i + 1], pts[min(i + 2, n - 1)]
+        q = 0.5 * ((2 * p1) + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u
+                   + (-p0 + 3 * p1 - 3 * p2 + p3) * u ** 3)
+        return (q.x, q.y)
+    return f
+
+
+def make_nucleus(s=1.0, bump_amp=1.15, bump_cell=3.4, res=1.0, hfac=0.68):
+    """Fat kidney-shaped nucleus (shallow notch opening to the right) with a
+    cobbled chromatin surface.  Metaball blob along the measured centre-line,
+    textured, then cut flat at z = 0."""
+    pts = [Vector(((x - NUC_CX) * s, (y - NUC_CY) * s)) for x, y, _ in NUCLEUS_LINE]
+    rads = [r * s for _, _, r in NUCLEUS_LINE]
+    path = catmull_path(pts)
+    mb = bpy.data.metaballs.new("mb_nucleus")
+    mb.resolution = mb.render_resolution = max(0.25, 0.5 * s) / res
+    mb.threshold = 0.6
+    ob = bpy.data.objects.new("mb_nucleus", mb)
+    bpy.context.scene.collection.objects.link(ob)
+    n = 90
+    for i in range(n + 1):
+        t = i / n
+        f = t * (len(rads) - 1)
+        j = min(int(f), len(rads) - 2)
+        u = f - j
+        u = u * u * (3 - 2 * u)
+        r = rads[j] * (1 - u) + rads[j + 1] * u
+        x, y = path(t)
+        e = mb.elements.new(type="ELLIPSOID")
+        e.co = (x, y, 0.0)
+        e.radius = r * 0.82 / 0.572
+        e.size_x = e.size_y = 1.0
+        e.size_z = hfac
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bpy.data.objects.remove(ob)
+    bpy.data.metaballs.remove(mb)
+    bpy.data.meshes.remove(me)
     bm.normal_update()
     cell = bump_cell * s
     for v in bm.verts:
@@ -368,6 +415,14 @@ def make_nucleus(s=1.0, bump_amp=1.5, bump_cell=3.6, res=1.0, hfac=0.82):
         fine = noise.noise(v.co * (2.2 / s)) * 0.18
         w = smoothstep(0.0, 4.0 * s, v.co.z)
         v.co += v.normal * (bump_amp * s * (bump + fine) * w)
+    res_ = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-5,
+                                  plane_co=(0, 0, 0), plane_no=(0, 0, 1), clear_inner=True)
+    cut = [e for e in res_["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
+    for v in bm.verts:
+        if abs(v.co.z) < 1e-4:
+            v.co.z = 0.0
+    filled = bmesh.ops.holes_fill(bm, edges=cut, sides=0)
+    bmesh.ops.triangulate(bm, faces=filled["faces"])
     return bm
 
 
@@ -426,19 +481,20 @@ def make_ser(s=1.0, res=1.0):
     return g
 
 
-def make_golgi(s=1.0, n=5, res=1.0, vesicles=True, arch=False, tube=2.05):
+def make_golgi(s=1.0, n=5, res=1.0, vesicles=True, arch=False, tube=2.05, yscale=1.0, r0=13.0, dr=5.4):
     """arch=True: stacked rainbow arcs (like the reference)."""
     body, ves = Geo(), Geo()
     for k in range(n):
-        R = (13 + k * 5.4) * s
-        half = 52 - k * 2.5
+        R = (r0 + k * dr) * s
+        half = (52 - k * 2.5) if not arch else (68 - k * 3.0)
         mid = 90 if arch else 270
         a0, a1 = mid - half, mid + half
 
         def rad(t):
             # bulbous ends like real cisternae
             return s * tube * (1.0 + 0.55 * math.exp(-((t - 0.0) / 0.07) ** 2) + 0.55 * math.exp(-((t - 1.0) / 0.07) ** 2) - 0.1 * math.sin(math.pi * t))
-        path = arc_path(0, 0, R, a0, a1, wobble=0.5 * s, wfreq=1.5, wphase=k)
+        ap = arc_path(0, 0, R, a0, a1, wobble=0.5 * s, wfreq=1.5, wphase=k)
+        path = (lambda t, ap=ap: (ap(t)[0], ap(t)[1] * yscale))
         body.extend(sweep_relief(path, rad, n_along=int(90 * res), n_around=int(18 * res), hfac=1.15, cap_rings=6))
     if vesicles:
         pts = [(-36, -12, 2.2), (-40, -20, 1.8), (37, -10, 2.3), (42, -18, 1.9),
@@ -473,16 +529,21 @@ def make_rer_stack(n=3, length=32.0, spacing=7.5, sag=4.0, tube=3.0, rib_r=0.95,
     return body, ribo
 
 
-def make_ser_loops(s=1.0, res=1.0, tube=3.2):
-    """Smooth ER: wide, flat meandering tubes that fold back on themselves."""
+SER_STRANDS = [  # design mm (absolute positions in the pocket)
+    [(2.8, 18.6), (18.2, 25.0), (23.7, 22.4), (26.9, 5.9), (30.2, -1.8), (35.7, 8.4),
+     (39.0, 19.9), (46.6, 22.4), (53.2, 13.5), (56.5, -4.3)],
+    [(7.2, 10.4), (16.0, 9.6), (20.5, 3.5)],
+]
+
+
+def make_ser_loops(s=1.0, res=1.0, tube=4.0, strands=None):
+    """Smooth ER: thick, flat-topped tubes meandering in U-turns."""
     g = Geo()
-    for k, (y0, L, amp, per) in enumerate(((8.0, 38.0, 6.0, 2.2), (-7.5, 34.0, 5.5, 2.0))):
-        def path(t, y0=y0, L=L, amp=amp, per=per, k=k):
-            u = t * per * TAU
-            # trochoid-like path -> real loops / U-turns
-            return (s * (-L / 2 + L * t + 3.2 * math.sin(u + k)), s * (y0 + amp * math.cos(u + k)))
-        g.extend(sweep_relief(path, lambda t: s * tube, n_along=int(220 * res), n_around=int(18 * res),
-                              hfac=0.75, cap_rings=6))
+    for pts in (strands or SER_STRANDS):
+        path = catmull_path([Vector((x * s, y * s)) for x, y in pts])
+        g.extend(sweep_relief(path, lambda t: s * tube * (1 + 0.06 * math.sin(TAU * 3 * t)),
+                              n_along=int(30 * len(pts) * res), n_around=int(20 * res),
+                              hfac=0.9, cap_rings=8))
     return g
 
 
@@ -513,8 +574,27 @@ def revolve(profile, cx, cy, seg=24):
     return g
 
 
-def barrel(cx, cy, r, h):
-    return revolve([(r, 0.0), (r, h * 0.78), (r * 0.9, h * 0.95), (r * 0.6, h), (0.0, h)], cx, cy, seg=28)
+def barrel(cx, cy, r, h, hole=True):
+    """Short cylinder; with a hole on top like the reference granules."""
+    if hole:
+        ri = r * 0.45
+        prof = [(r, 0.0), (r, h * 0.8), (r * 0.93, h * 0.97), (r * 0.8, h), (ri * 1.25, h),
+                (ri, h * 0.9), (ri, h * 0.45), (0.0, h * 0.45)]
+    else:
+        prof = [(r, 0.0), (r, h * 0.78), (r * 0.9, h * 0.95), (r * 0.6, h), (0.0, h)]
+    return revolve(prof, cx, cy, seg=28)
+
+
+def sitting_sphere(cx, cy, r, lift=0.62, seg=28, rings=14):
+    """Sphere whose centre is lift*r above the cytoplasm, cut flat at z=0."""
+    zc = lift * r
+    a0 = math.asin(-zc / r)                  # latitude of the cut
+    prof = []
+    for i in range(rings + 1):
+        a = a0 + (math.pi / 2 - a0) * i / rings
+        prof.append((r * math.cos(a), zc + r * math.sin(a)))
+    prof[-1] = (0.0, zc + r)
+    return revolve(prof, cx, cy, seg=seg)
 
 
 def make_mito(s=1.0, L=27.0, W=12.4, res=1.0):
@@ -601,10 +681,10 @@ def frill_amplitude(theta):
     left = max(0.0, -math.cos(theta - 0.12)) ** 1.3
     bottom = max(0.0, -math.sin(theta)) ** 2
     top = max(0.0, math.sin(theta))
-    return 5.0 + 40.0 * left + 11.0 * bottom * (1 - left) + 4.0 * top * (1 - left)
+    return 4.0 + 40.0 * left + 13.0 * bottom * (1 - left)
 
 
-def build_membrane(res=0.85, n_frills=22):
+def build_membrane(res=0.85, n_frills=26):
     """Thick glossy white disc built from metaballs:
     - rolled lip around the cytoplasm pocket (with folds over it)
     - side wall made of pleats/frills that taper to curled points
@@ -635,15 +715,22 @@ def build_membrane(res=0.85, n_frills=22):
         th = TAU * i / 140
         rp = pocket_radius(th)
         ball((rp - 8) * math.cos(th), (rp - 8) * math.sin(th), -14, 10)
+    # smooth side band (the right/top side of the reference is a plain
+    # thick rounded edge)
+    for z in (-2.0, -16.0, -30.0, -44.0):
+        for i in range(160):
+            th = TAU * i / 160
+            rs = pocket_radius(th) + 10
+            ball(rs * math.cos(th), rs * math.sin(th), z, 10.5)
     # rolled lip, a bit wavy
     n = 300
     for i in range(n):
         th = TAU * i / n
         rp = pocket_radius(th)
         left = max(0.0, -math.cos(th)) ** 1.2
-        rr = 8.6 + 1.6 * left + 0.4 * noise.noise(Vector((math.cos(th) * 3, math.sin(th) * 3, 2.0)))
+        rr = 8.6 + 1.6 * left + 0.25 * noise.noise(Vector((math.cos(th) * 3, math.sin(th) * 3, 2.0)))
         rc = rp + rr * 0.92
-        z = 1.0 + 0.8 * math.sin(9 * th + 0.5) + 1.0 * left
+        z = 1.2 + 0.5 * math.sin(7 * th + 0.5) + 1.0 * left
         ball(rc * math.cos(th), rc * math.sin(th), z, rr)
 
     # pleats: fat folds packed side by side around the whole rim; each one
@@ -651,9 +738,11 @@ def build_membrane(res=0.85, n_frills=22):
     levels = ((-3.0, 1.00), (-19.0, 0.92), (-35.0, 0.72), (-51.0, 0.45))
     for i in range(n_frills):
         th = TAU * (i + rnd.uniform(-0.25, 0.25)) / n_frills
-        A = frill_amplitude(th) * rnd.uniform(0.8, 1.15)
+        A = frill_amplitude(th) * rnd.uniform(0.85, 1.12)
+        if A < 9.0:
+            continue                    # right / top: smooth lip, no pleats
         curl = rnd.uniform(0.18, 0.38)
-        rroot = rnd.uniform(13.5, 16.0)
+        rroot = min(15.5, 8.0 + 0.22 * A) * rnd.uniform(0.95, 1.05)
         rp = pocket_radius(th)
         d = Vector((math.cos(th), math.sin(th)))
         tg = Vector((-d.y, d.x))
@@ -1015,50 +1104,59 @@ def build_model():
                 occupied.append((v.co.x, v.co.y))
         return bm_object(name, bm, c_cell, color, sharp_angle=sharp, matrix=M)
 
-    # Layout below is in "design mm" for a ~74 x 81 mm half-size pocket and
-    # follows the reference photo (positions measured from it).
+    # Layout below is in "design mm" for a ~74 x 81 mm half-size pocket.
+    # Every position / angle / size was measured from the reference photo.
     # ---------------- nucleus ---------------------------------------
-    nb = make_nucleus(hfac=0.95)
-    bmesh.ops.scale(nb, verts=nb.verts, vec=(0.86, 0.86, 1.0))
-    bmesh.ops.rotate(nb, verts=nb.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(45), 3, "Z"))
-    bmesh.ops.translate(nb, verts=nb.verts, vec=(-24.0, 16.0, 0.0))
+    nb = make_nucleus()
+    bmesh.ops.translate(nb, verts=nb.verts, vec=(NUC_CX, NUC_CY, 0.0))
     add_part("Nucleus_Purple", nb, "Purple")
 
     # ---------------- rough ER: two stacks top-right ----------------
     rer, ribo = Geo(), Geo()
-    for (cx, cy, n, L, ang) in ((2.0, 61.0, 3, 32.0, -10.0), (31.0, 39.0, 4, 38.0, -28.0)):
-        b_, r_ = make_rer_stack(n=n, length=L, spacing=8.6, tube=3.6, rib_r=1.05)
+    for (cx, cy, n, L, ang, sp) in ((1.0, 66.0, 3, 29.0, -18.0, 7.6), (27.0, 44.0, 3, 37.0, -28.0, 8.5)):
+        b_, r_ = make_rer_stack(n=n, length=L, spacing=sp, tube=3.6, rib_r=1.0)
         rer.extend(transform_geo(b_, cx, cy, ang))
         ribo.extend(transform_geo(r_, cx, cy, ang))
     add_part("RoughER_Blue", rer, "Blue")
     add_part("RoughER_Ribosomes_Yellow", ribo, "RiboYellow")
 
-    # ---------------- smooth ER: loops right-middle -----------------
-    add_part("SmoothER_Cyan", transform_geo(make_ser_loops(), 37.0, 11.0, -8.0), "Cyan")
+    # ---------------- smooth ER: thick meander right-middle ----------
+    add_part("SmoothER_Cyan", make_ser_loops(), "Cyan")
 
-    # ---------------- golgi: rainbow stack below centre-right --------
-    gb, gv = make_golgi(s=0.98, n=4, arch=True, tube=2.5)
-    add_part("Golgi_Yellow", transform_geo(gb, 21.0, -52.0, 0.0), "Yellow")
-    add_part("Golgi_Vesicles_Yellow", transform_geo(gv, 21.0, -52.0, 0.0), "Yellow")
+    # ---------------- golgi: flat rainbow stack + legs ---------------
+    gb, gv = make_golgi(s=1.0, n=4, arch=True, tube=2.4, yscale=0.8, r0=12.0, dr=5.0, vesicles=False)
+    golgi = transform_geo(gb, 20.4, -50.2, 0.0)
+    for (x, y) in ((10.5, -55.5), (26.9, -55.5), (3.5, -52.5)):
+        golgi.extend(sweep_relief(lambda t, x=x, y=y: (x, y + 2.5 - 5.0 * t), lambda t: 2.0,
+                                  n_along=10, n_around=16, hfac=1.1, cap_rings=6))
+    add_part("Golgi_Yellow", golgi, "Yellow")
+    ves = Geo()
+    for (x, y, r) in ((10.5, -60.0, 2.6), (27.5, -60.0, 2.6), (-0.5, -44.0, 2.3), (43.0, -45.0, 2.3)):
+        ves.extend(sitting_sphere(x, y, r, lift=0.4, seg=20, rings=8))
+    add_part("Golgi_Vesicles_Yellow", ves, "Yellow")
 
     # ---------------- mitochondria ----------------------------------
     mito_body = Geo()
-    for (x, y, rot, sc) in ((-48, -36, -35, 1.0), (48, -17, -25, 0.95),
-                            (46, -48, 25, 0.95), (25, -68, -5, 0.95)):
-        mito_body.extend(transform_geo(make_mito(s=sc), x, y, rot))
+    for (x, y, rot) in ((-47.0, -30.3, -47.5), (44.0, -17.1, -39.4), (49.3, -52.7, 43.7), (27.4, -67.5, -18.3)):
+        mito_body.extend(transform_geo(make_mito(L=27.0, W=15.0), x, y, rot))
     add_part("Mitochondria_Red", mito_body, "Red")
 
-    # ---------------- lysosomes -------------------------------------
+    # ---------------- lysosomes (spheres) ----------------------------
     lyso = Geo()
-    for x, y, r in ((-16, -40, 6.0), (57, -32, 3.6), (-27, 62, 3.4), (-31, -46, 2.6), (67, -4, 2.6)):
-        lyso.extend(dome(x, y, r, r * 1.05, seg=28, rings=12))
+    for x, y, r in ((-16.9, -42.5, 7.6), (55.4, -33.6, 5.0), (-28.2, 61.4, 4.0), (-31.1, -46.4, 2.8),
+                    (65.9, -18.3, 3.0)):
+        lyso.extend(sitting_sphere(x, y, r))
     add_part("Lysosomes_Violet", lyso, "Violet")
 
-    # ---------------- granule "barrels" (short cylinders) ------------
+    # ---------------- hollow blue barrels ---------------------------
     bar = Geo()
-    for x, y in ((-15, -53), (-6, -60), (-19, -63), (2, -67), (6, -57), (-10, -71), (-26, -56)):
-        bar.extend(barrel(x, y, 2.8, 3.6))
+    for x, y in ((-25.6, -54.0), (-15.1, -57.3), (-6.4, -52.2), (-1.5, -60.9), (-10.7, -67.5), (-22.3, -63.1)):
+        bar.extend(barrel(x, y, 3.0, 4.2))
     add_part("Granules_Barrels_Blue", bar, "Blue")
+    lbar = Geo()
+    for x, y in ((14.9, -24.5), (21.0, -17.5)):
+        lbar.extend(barrel(x, y, 3.0, 4.2))
+    add_part("Granules_Barrels_LightCyan", lbar, "Cyan")
 
     # ---------------- granules (scatter) ----------------------------
     kd = kdtree.KDTree(len(occupied))
@@ -1068,19 +1166,19 @@ def build_model():
     gran = Geo()
     placed = []
     tries = 0
-    while len(placed) < int(260 * k * k) and tries < 40000:
+    while len(placed) < int(150 * k * k) and tries < 40000:
         tries += 1
         x, y = cx_off + rng.uniform(-80, 80) * k, cy_off + rng.uniform(-85, 85) * k
-        r = rng.uniform(1.1, 2.0) * k
+        r = (rng.uniform(1.3, 2.0) if rng.random() < 0.75 else rng.uniform(2.0, 2.9)) * k
         if not ok(x, y, r + 2.2):
             continue
         _, _, d = kd.find((x, y, 0.0))
         if d is not None and d < r + 1.6:
             continue
-        if any((x - px) ** 2 + (y - py) ** 2 < (r + pr + 1.8) ** 2 for px, py, pr in placed):
+        if any((x - px) ** 2 + (y - py) ** 2 < (r + pr + 3.2) ** 2 for px, py, pr in placed):
             continue
         placed.append((x, y, r))
-        gran.extend(dome(x, y, r, r * 0.95, seg=14, rings=5))
+        gran.extend(sitting_sphere(x, y, r, lift=0.35, seg=16, rings=6))
     bm_object("Granules_DarkBlue", gran.to_bm(), c_cell, "DarkBlue", matrix=M)
 
     # ---------------- base ------------------------------------------
@@ -1201,7 +1299,7 @@ def build_info_card():
     idx = {v: i for i, v in enumerate(nb.verts)}
     g.add([v.co.copy() for v in nb.verts], [tuple(idx[v] for v in f.verts) for f in nb.faces])
     nb.free()
-    add("Purple", transform_geo(g, icon_x - 1.0, ys[0] + 1.0, 8))
+    add("Purple", transform_geo(g, icon_x, ys[0], 0))
     # rough ER
     rer, ribo = make_rer_stack(n=3, length=34.0, spacing=8.0, sag=4.0, tube=3.0, rib_r=1.3, res=0.6, s=0.5)
     add("Blue", transform_geo(rer, icon_x, ys[1] - 1.0))
@@ -1326,6 +1424,7 @@ def render_previews(out_dir, samples=96, res=(1600, 1200)):
     sc.view_settings.look = "AgX - Punchy"
     cam = sc.camera
     shots = [
+        ("preview_reference_angle.png", (-250, -470, 205), (-2, -20, 150), 75),
         ("preview_front_34.png", (-300, -640, 300), (60, 0, 125), 50),
         ("preview_front.png", (0, -760, 140), (0, 0, 140), 50),
         ("preview_cell_closeup.png", (-90, -420, 230), (-5, -40, 150), 50),
