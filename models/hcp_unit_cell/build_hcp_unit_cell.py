@@ -11,7 +11,7 @@ exactly by the hexagonal prism, like the SolidWorks reference image.
   * 12 corner atoms (1/6 each) + 2 face atoms (1/2 each) + 3 middle atoms
 
 Run inside Blender:   Scripting tab -> Open -> Run Script
-or from a terminal:   blender -b -P build_hcp_unit_cell.py
+or from a terminal:   blender -b -P build_hcp_unit_cell.py -- --mode=all_full
 """
 import math
 import os
@@ -22,10 +22,27 @@ from mathutils import Euler, Vector
 # --------------------------------------------------------------------------
 # Parameters
 # --------------------------------------------------------------------------
-HEIGHT = 0.20                       # metres  (20 cm)
+# MODE (pass on the command line as  --mode=<name>):
+#   middle_full : corner + face atoms trimmed by the prism, the 3 middle
+#                 atoms are COMPLETE spheres (default)
+#   all_full    : every atom is a complete, uncut sphere (ball model)
+#   all_cut     : every atom trimmed by the prism (SolidWorks reference)
+MODE = "middle_full"
+for _arg in sys.argv:
+    if _arg.startswith("--mode="):
+        MODE = _arg.split("=", 1)[1]
+assert MODE in ("middle_full", "all_full", "all_cut"), MODE
+
+TOTAL_HEIGHT = 0.20                 # metres  (20 cm) - overall model height
 C_OVER_A = math.sqrt(8.0 / 3.0)     # ideal HCP ratio
+if MODE == "all_full":
+    # uncut top/bottom atoms stick out by r, so shrink the cell to keep 20 cm
+    HEIGHT = TOTAL_HEIGHT / (1.0 + 1.0 / C_OVER_A)   # c + 2r = 20 cm
+else:
+    HEIGHT = TOTAL_HEIGHT           # cell height c
 A = HEIGHT / C_OVER_A               # hexagon edge = circumradius
 R = A / 2.0                         # atom radius (touching spheres)
+Z0 = R if MODE == "all_full" else 0.0   # lift so the model stands on z = 0
 SEGMENTS, RINGS = 192, 96           # sphere resolution (high quality)
 # small odd rotation so sphere edge-loops never coincide with prism faces
 # (keeps the exact boolean clean and the cut circles perfectly round)
@@ -67,7 +84,7 @@ hex_angles = [math.radians(30 + 60 * k) for k in range(6)]
 hex_xy = [(A * math.cos(t), A * math.sin(t)) for t in hex_angles]
 
 def make_prism(name):
-    verts = [(x, y, 0.0) for x, y in hex_xy] + [(x, y, HEIGHT) for x, y in hex_xy]
+    verts = [(x, y, Z0) for x, y in hex_xy] + [(x, y, Z0 + HEIGHT) for x, y in hex_xy]
     faces = [tuple(range(5, -1, -1)), tuple(range(6, 12))]
     for i in range(6):
         j = (i + 1) % 6
@@ -85,7 +102,7 @@ cutter = make_prism("HCP_Prism_Cutter")
 # Atom positions
 # --------------------------------------------------------------------------
 atoms = []
-for z, tag in ((0.0, "Bottom"), (HEIGHT, "Top")):
+for z, tag in ((Z0, "Bottom"), (Z0 + HEIGHT, "Top")):
     for k, (x, y) in enumerate(hex_xy):
         atoms.append((f"Atom_{tag}_Corner_{k+1}", Vector((x, y, z))))
     atoms.append((f"Atom_{tag}_Center", Vector((0.0, 0.0, z))))
@@ -94,12 +111,12 @@ for z, tag in ((0.0, "Bottom"), (HEIGHT, "Top")):
 d = A / math.sqrt(3.0)
 for k, deg in enumerate((60, 180, 300)):
     t = math.radians(deg)
-    atoms.append((f"Atom_Middle_{k+1}", Vector((d * math.cos(t), d * math.sin(t), HEIGHT / 2))))
+    atoms.append((f"Atom_Middle_{k+1}", Vector((d * math.cos(t), d * math.sin(t), Z0 + HEIGHT / 2))))
 if INCLUDE_NEIGHBOR_CAPS:
     for k, deg in enumerate((0, 120, 240)):
         t = math.radians(deg)
         atoms.append((f"Atom_Neighbor_Cap_{k+1}",
-                      Vector((2 * d * math.cos(t), 2 * d * math.sin(t), HEIGHT / 2))))
+                      Vector((2 * d * math.cos(t), 2 * d * math.sin(t), Z0 + HEIGHT / 2))))
 
 # --------------------------------------------------------------------------
 # Build: sphere  ∩  prism   (exact boolean, applied)
@@ -114,12 +131,14 @@ for name, loc in atoms:
                                          radius=R, location=loc, rotation=SPHERE_ROT)
     ob = bpy.context.active_object
     ob.name = ob.data.name = name
-    mod = ob.modifiers.new("Cut", 'BOOLEAN')
-    mod.operation = 'INTERSECT'
-    mod.solver = 'EXACT'
-    mod.object = cutter
-    bpy.context.view_layer.objects.active = ob
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    full = MODE == "all_full" or (MODE == "middle_full" and "Middle" in name)
+    if not full:
+        mod = ob.modifiers.new("Cut", 'BOOLEAN')
+        mod.operation = 'INTERSECT'
+        mod.solver = 'EXACT'
+        mod.object = cutter
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.modifier_apply(modifier=mod.name)
 
     # smooth spheres, crisp flat cut faces
     for p in ob.data.polygons:
@@ -139,7 +158,7 @@ bpy.data.objects.remove(cutter, do_unlink=True)
 # --------------------------------------------------------------------------
 # Camera, lights, world  (studio look like the reference)
 # --------------------------------------------------------------------------
-target = Vector((0, 0, HEIGHT / 2))
+target = Vector((0, 0, TOTAL_HEIGHT / 2))
 cam_data = bpy.data.cameras.new("Camera")
 cam_data.lens = 60
 cam = bpy.data.objects.new("Camera", cam_data)
@@ -203,17 +222,20 @@ for ob in col.objects:
         w = ob.matrix_world @ v.co
         mins = Vector(map(min, mins, w)); maxs = Vector(map(max, maxs, w))
 size = maxs - mins
-print(f"a = {A*100:.3f} cm, r = {R*100:.3f} cm, c = {HEIGHT*100:.3f} cm")
+print(f"mode = {MODE}  a = {A*100:.3f} cm, r = {R*100:.3f} cm, c = {HEIGHT*100:.3f} cm")
 print(f"Bounding box: X {size.x*100:.3f} cm  Y {size.y*100:.3f} cm  Z {size.z*100:.3f} cm")
 print(f"Atoms: {len(atoms)}   Triangles: {tris}")
 
 if "--no-save" not in sys.argv:
-    blend_path = os.path.join(OUT_DIR, "hcp_unit_cell_20cm.blend")
+    BASE = {"middle_full": "hcp_unit_cell_20cm",
+            "all_full": "hcp_full_spheres_20cm",
+            "all_cut": "hcp_unit_cell_cut_20cm"}[MODE]
+    blend_path = os.path.join(OUT_DIR, BASE + ".blend")
     bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
     print("Saved", blend_path)
 
     # STL export (one joined, watertight-per-atom mesh, units = millimetres)
-    stl_path = os.path.join(OUT_DIR, "hcp_unit_cell_20cm.stl")
+    stl_path = os.path.join(OUT_DIR, BASE + ".stl")
     bpy.ops.object.select_all(action='DESELECT')
     for ob in col.objects:
         if ob.type == 'MESH':
