@@ -485,10 +485,10 @@ def smartphone(M, tag, screen_color, accent, icon):
     prism(f"{tag}_Icon_Disc", circle(1.75, 64), 0.01, (0, fy, 8.55), halo)
     if icon == "globe":
         icon_globe(f"{tag}_Screen_Icon", white, fy - 0.03, 8.55, k=0.85)
-    elif icon == "hd":
-        icon_hd(f"{tag}_Screen_Icon", white, halo, fy - 0.01, 8.55, k=0.85, d=0.01)
+    elif icon == "play":
+        icon_play(f"{tag}_Screen_Icon", white, halo, fy - 0.01, 8.55, k=0.85, d=0.01)
     else:
-        icon_cloud(f"{tag}_Screen_Icon", white, halo, fy - 0.01, 8.65, k=0.9, d=0.01)
+        icon_network(f"{tag}_Screen_Icon", white, fy - 0.01, 8.55, k=0.95, d=0.01)
     # network type
     text(f"{tag}_Screen_Text", tag, 2.7, (0, fy - 0.01, 5.0), white, maxw=4.6, depth=0.01)
     # signal bars
@@ -501,11 +501,11 @@ def phone_3g(M):
 
 
 def phone_4g(M):
-    smartphone(M, "4G", "#5a240a", "#f2751b", "hd")
+    smartphone(M, "4G", "#5a240a", "#f2751b", "play")
 
 
 def phone_5g(M):
-    smartphone(M, "5G", "#24104a", "#7b3fc4", "cloud")
+    smartphone(M, "5G", "#24104a", "#7b3fc4", "network")
 
 
 # ---------------------------------------------------------------------------
@@ -553,53 +553,49 @@ def icon_globe(pre, fg, y, z, x=0.0, k=1.0):
         tube(f"{pre}_Lat_{zz / k:+.1f}", [(-hw, zz), (hw, zz)], 0.14 * k, (x, y, z), fg)
 
 
-def icon_hd(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
-    prism(f"{pre}_Screen", rrect(2.8 * k, 2.05 * k, 0.38 * k), d, (x, y, z), fg,
+def rounded_poly(centers, rr, seg=8):
+    """Outline of a convex CCW polygon whose corners are rounded with radius rr
+    (centers = the corner-circle centres)"""
+    n = len(centers)
+    out = []
+    for i in range(n):
+        px, py = centers[i - 1]
+        cx, cy = centers[i]
+        nx, ny = centers[(i + 1) % n]
+        a0 = math.atan2(-(cx - px), cy - py)      # outward normal of incoming edge
+        a1 = math.atan2(-(nx - cx), ny - cy)      # outward normal of outgoing edge
+        while a1 < a0:
+            a1 += 2 * math.pi
+        for t in range(seg + 1):
+            a = a0 + (a1 - a0) * t / seg
+            out.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+    return out
+
+
+def icon_play(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
+    """4G: video player - rounded screen with a big play triangle"""
+    prism(f"{pre}_Screen", rrect(3.0 * k, 2.15 * k, 0.5 * k), d, (x, y, z), fg,
           bevel=0.03 if d > 0.05 else 0)
     yd, dd = _detail(y, d)
-    text(f"{pre}_HD", "HD", 1.0 * k, (x - 0.42 * k, yd, z + 0.05 * k), bg, depth=dd)
-    tri = [(0.42 * k, -0.5 * k), (1.12 * k, 0.0), (0.42 * k, 0.5 * k)]
-    prism(f"{pre}_Play", tri, dd, (x, yd, z + 0.05 * k), bg)
+    tri = rounded_poly([(-0.36 * k, -0.52 * k), (0.6 * k, 0.0), (-0.36 * k, 0.52 * k)],
+                       0.11 * k)
+    prism(f"{pre}_Play", tri, max(dd, 0.01), (x, yd, z), bg)
 
 
-def cloud_outline():
-    """Cloud outline: union of three circles and a rounded bar (one clean shape)"""
-    circles = ((-0.8, -0.1, 0.62), (0.05, 0.33, 0.85), (0.85, -0.05, 0.6))
-    rx0, rx1, rz0, rz1 = -1.3, 1.3, -0.75, -0.1
-
-    def inside(px, pz):
-        if any((px - cx) ** 2 + (pz - cz) ** 2 <= r * r for cx, cz, r in circles):
-            return True
-        if rx0 + 0.375 <= px <= rx1 - 0.375 and rz0 <= pz <= rz1:
-            return True
-        for cx in (rx0 + 0.375, rx1 - 0.375):   # rounded corners of the bar
-            if (px - cx) ** 2 + (pz - (rz0 + 0.375)) ** 2 <= 0.375 ** 2:
-                return True
-        return rx0 <= px <= rx1 and rz0 + 0.375 <= pz <= rz1
-    pts = []
-    for i in range(160):
-        th = 2 * math.pi * i / 160
-        lo, hi = 0.0, 2.5
-        for _ in range(30):
-            mid = (lo + hi) / 2
-            if inside(mid * math.cos(th), -0.15 + mid * math.sin(th)):
-                lo = mid
-            else:
-                hi = mid
-        pts.append((lo * math.cos(th), -0.15 + lo * math.sin(th)))
-    return pts
-
-
-def icon_cloud(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
-    pts = [(u * k, v * k) for u, v in cloud_outline()]
-    prism(f"{pre}_Cloud", pts, d, (x, y, z), fg, bevel=0.03 if d > 0.05 else 0)
-    yy, dd = _detail(y, d)
-    tube(f"{pre}_Net_H", [(-0.6 * k, -0.45 * k), (0.6 * k, -0.45 * k)], 0.1 * k, (x, yy, z), bg)
-    for i, (px, top) in enumerate(((-0.6, 0.05), (0.0, 0.42), (0.6, 0.0))):
-        tube(f"{pre}_Net_V_{i}", [(px * k, -0.45 * k), (px * k, top * k)], 0.1 * k,
-             (x, yy, z), bg)
-        prism(f"{pre}_Node_{i}", circle(0.14 * k, 20), max(dd, 0.01),
-              (x + px * k, yy, z + top * k), bg)
+def icon_network(pre, fg, y, z, x=0.0, k=1.0, d=0.12):
+    """5G: smart network - a hub linked to six connected devices"""
+    R = 1.3 * k
+    nodes = [(R * math.cos(math.radians(90 + 60 * i)), R * math.sin(math.radians(90 + 60 * i)))
+             for i in range(6)]
+    yt = y - 0.01 if d <= 0.05 else y
+    for i, (nx, nz) in enumerate(nodes):
+        tube(f"{pre}_Link_{i}", [(0, 0), (nx, nz)], 0.15 * k, (x, yt, z), fg)
+        mx, mz = nodes[(i + 1) % 6]
+        tube(f"{pre}_Ring_{i}", [(nx, nz), (mx, mz)], 0.09 * k, (x, yt, z), fg)
+        prism(f"{pre}_Node_{i}", circle(0.3 * k, 32), d, (x + nx, y, z + nz), fg,
+              bevel=0.03 if d > 0.05 else 0)
+    prism(f"{pre}_Hub", circle(0.55 * k, 48), d, (x, y, z), fg,
+          bevel=0.03 if d > 0.05 else 0)
 
 
 def signal_bars(pre, y, z, x, mat_, n=4, w=0.5, h0=0.5, dh=0.4, gap=0.25, d=0.01):
@@ -662,8 +658,8 @@ def build_base(M, root):
         lambda fg, bg, y: icon_handset("Icon_1G", fg, y, iz),
         lambda fg, bg, y: icon_envelope("Icon_2G", fg, bg, y, iz),
         lambda fg, bg, y: icon_globe("Icon_3G", fg, y, iz),
-        lambda fg, bg, y: icon_hd("Icon_4G", fg, bg, y, iz),
-        lambda fg, bg, y: icon_cloud("Icon_5G", fg, bg, y, iz),
+        lambda fg, bg, y: icon_play("Icon_4G", fg, bg, y, iz),
+        lambda fg, bg, y: icon_network("Icon_5G", fg, y, iz),
     ]
     for i, g in enumerate(GENERATIONS):
         x = (i - 2) * PITCH
