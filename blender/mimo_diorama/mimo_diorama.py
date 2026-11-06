@@ -434,6 +434,38 @@ def boolean_cut(target, cutter_bm, name="Cutter"):
     bpy.data.meshes.remove(me)
 
 
+def self_union(ob):
+    """Fuse all overlapping pieces of `ob` into one clean solid (Boolean
+    union with itself), then re-apply smooth shading."""
+    me = bpy.data.meshes.new("union_dummy")
+    dummy = bpy.data.objects.new("union_dummy", me)
+    bpy.context.scene.collection.objects.link(dummy)
+    mod = ob.modifiers.new("SelfUnion", 'BOOLEAN')
+    mod.operation = 'UNION'
+    mod.object = dummy
+    solvers = mod.bl_rna.properties['solver'].enum_items.keys()
+    mod.solver = 'EXACT'
+    mod.use_self = True
+    mod.use_hole_tolerant = False
+    try:
+        bake_modifiers(ob)
+    finally:
+        bpy.data.objects.remove(dummy, do_unlink=True)
+        bpy.data.meshes.remove(me)
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-7)
+    loose = [e for e in bm.edges if not e.link_faces]
+    if loose:
+        bmesh.ops.delete(bm, geom=loose, context='EDGES')
+    loose_v = [v for v in bm.verts if not v.link_edges]
+    if loose_v:
+        bmesh.ops.delete(bm, geom=loose_v, context='VERTS')
+    auto_smooth_bm(bm, 40.0)
+    bm.to_mesh(ob.data)
+    bm.free()
+
+
 def look_at(ob, target):
     d = Vector(target) - ob.location
     ob.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
@@ -632,6 +664,21 @@ def bm_frustum(bm, center, bottom, top, height, rot=None):
     bpy.data.meshes.remove(me)
 
 
+def bm_rect_loft(bm, base, rot, rings):
+    """Closed solid through rectangles [(size_x, size_y, z), ...] bottom->top."""
+    R = rot.to_matrix()
+    loops = []
+    for sx, sy, z in rings:
+        loops.append([bm.verts.new(Vector((base.x, base.y, z)) + R @ Vector((qx * sx / 2, qy * sy / 2, 0)))
+                      for qx, qy in ((1, 1), (-1, 1), (-1, -1), (1, -1))])
+    bm.faces.new(list(reversed(loops[0])))
+    bm.faces.new(loops[-1])
+    for a, b in zip(loops, loops[1:]):
+        for i in range(4):
+            j = (i + 1) % 4
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+
+
 def build_tower(C, M, C_white=None):
     """Lattice cell tower that 3D-prints WITHOUT supports.
 
@@ -677,45 +724,54 @@ def build_tower(C, M, C_white=None):
 
     R_LEG, R_H, R_D = 0.0034, 0.0018, 0.0014
     for c0, c1 in zip(corners(z_pad), corners(z_top)):
-        bm_cyl(bm, c0, c1, R_LEG, seg=12)                          # legs (one piece)
+        bm_cyl(bm, c0 - Vector((0, 0, 0.0003)), c1, R_LEG, seg=32)  # legs (one piece, foot sunk)
     for m0, m1 in zip(mids(z_pad), mids(z_top)):
-        bm_cyl(bm, m0, m1, R_H, seg=8)                             # face centre posts
+        bm_cyl(bm, m0 - Vector((0, 0, 0.0003)), m1, R_H, seg=20)   # face centre posts (foot sunk into pad)
     for k in range(len(levels) - 1):
         c0, c1 = corners(levels[k]), corners(levels[k + 1])
         m0, m1 = mids(levels[k]), mids(levels[k + 1])
         for i in range(4):
             j = (i + 1) % 4
-            bm_cyl(bm, c0[i], m1[i], R_D, seg=6)                   # X in left half
-            bm_cyl(bm, m0[i], c1[i], R_D, seg=6)
-            bm_cyl(bm, m0[i], c1[j], R_D, seg=6)                   # X in right half
-            bm_cyl(bm, c0[j], m1[i], R_D, seg=6)
+            bm_cyl(bm, c0[i], m1[i], R_D, seg=16)                  # X in left half
+            bm_cyl(bm, m0[i], c1[i], R_D, seg=16)
+            bm_cyl(bm, m0[i], c1[j], R_D, seg=16)                  # X in right half
+            bm_cyl(bm, c0[j], m1[i], R_D, seg=16)
     cb = corners(z_pad)
     for i, c in enumerate(cb):                                     # ground ring + feet
-        bm_cyl(bm, c - Vector((0, 0, 0.0016)), cb[(i + 1) % 4] - Vector((0, 0, 0.0016)), R_H, seg=6)
+        bm_cyl(bm, c - Vector((0, 0, 0.0017)), cb[(i + 1) % 4] - Vector((0, 0, 0.0017)), R_H, seg=6)
         bm_box(bm, c + Vector((0, 0, 0.004)), (0.014, 0.014, 0.008))
         bm_box(bm, c + Vector((0, 0, 0.0005)), (0.02, 0.02, 0.001))
     # Head frame above the lattice: posts + X bracing (bays taller than wide)
     head = [z_top, 0.441, 0.482, 0.522]
     for c0, c1 in zip(corners(z_top, a1), corners(head[-1], a1)):
-        bm_cyl(bm, c0 - Vector((0, 0, 0.0006)), c1, R_LEG * 0.85, seg=10)   # sunk into the leg top
+        bm_cyl(bm, c0 - Vector((0, 0, 0.0006)), c1, R_LEG * 0.85, seg=28)   # sunk into the leg top
     for k in range(len(head) - 1):
         c0, c1 = corners(head[k], a1), corners(head[k + 1], a1)
         for i in range(4):
             j = (i + 1) % 4
-            bm_cyl(bm, c0[i], c1[j], R_D, seg=6)
-            bm_cyl(bm, c0[j], c1[i], R_D, seg=6)
+            bm_cyl(bm, c0[i], c1[j], R_D, seg=16)
+            bm_cyl(bm, c0[j], c1[i], R_D, seg=16)
+    # Smooth joints: a ball of the member's own radius where members meet or
+    # end (leg tops, centre-post tops, head-post tops) -> no cut ends showing.
+    for c in corners(z_top):
+        bm_sphere(bm, c, R_LEG, seg=32)
+    for m in mids(z_top):
+        bm_sphere(bm, m, R_H, seg=20)
+    for c in corners(head[-1], a1):
+        bm_sphere(bm, c, R_LEG * 0.85, seg=28)
     # Central mast: stands on four 45-degree struts from the leg tops
     run = a1 * math.sqrt(2)
     z_m = z_top + run * STEEP
-    for c in corners(z_top, a1):
-        bm_cyl(bm, c, (tx, ty, z_m), R_D * 1.2, seg=6)
-    bm_lathe(bm, (tx, ty, z_m), [(0.0008, 0.0), (0.0055, 0.0050), (0.0055, 0.580 - z_m)], seg=16)
-    bm_cyl(bm, (tx, ty, 0.580), (tx, ty, 0.5925), 0.0012, seg=8, r2=0.0004)  # lightning rod
-    obj_from_bm("Tower_Lattice", bm, C, M["steel"], smooth=40)
+    for c in corners(z_top, a1):            # struts end inside the mast foot (hidden ends)
+        bm_cyl(bm, c, (tx, ty, z_m + 0.0025), R_D * 1.2, seg=16)
+    bm_lathe(bm, (tx, ty, z_m), [(0.0008, 0.0), (0.0055, 0.0050), (0.0055, 0.580 - z_m)], seg=32)
+    bm_cyl(bm, (tx, ty, 0.580), (tx, ty, 0.5925), 0.0012, seg=16, r2=0.0004)  # lightning rod
+    lat = obj_from_bm("Tower_Lattice", bm, C, M["steel"], smooth=40)
+    self_union(lat)                          # one clean solid, joints really fused
 
     # Aviation light on the mast
     bm = bmesh.new()
-    bm_sphere(bm, (tx, ty, 0.5815), 0.0035, seg=12)
+    bm_sphere(bm, (tx, ty, 0.5815), 0.0035, seg=24)
     obj_from_bm("Tower_AviationLight", bm, C, M["led_red"], smooth=80)
 
     # Anchor finder: highest point on the mast / head posts / legs from which a
@@ -774,11 +830,14 @@ def build_tower(C, M, C_white=None):
         pipe = c - n * (depth / 2 + 0.006)
         pb = zc - h / 2 - 0.012
         bm_lathe(arm_bm, (pipe.x, pipe.y, pb),
-                 [(0.0005, 0.0), (0.0024, 0.0019 * STEEP), (0.0024, h + 0.024)], seg=12)
-        for T in (Vector((pipe.x, pipe.y, pb + 0.0003)), Vector((pipe.x, pipe.y, zc + 0.3 * h))):
+                 [(0.0005, 0.0), (0.0024, 0.0019 * STEEP), (0.0024, h + 0.024)], seg=20)
+        # struts start where they always did; the lower one now ends 2.2 mm up
+        # inside the pipe so its end is hidden and it wraps the pipe tip
+        for T, T_end in ((Vector((pipe.x, pipe.y, pb + 0.0003)), Vector((pipe.x, pipe.y, pb + 0.0025))),
+                         (Vector((pipe.x, pipe.y, zc + 0.3 * h)), None)):
             A = anchor(T)
             if A is not None:
-                bm_cyl(arm_bm, A, T, 0.0019, seg=8)
+                bm_cyl(arm_bm, A, T_end or T, 0.0019, seg=16)
         u_pipe, u_back = -(depth / 2 + 0.006), -depth / 2       # brackets end flush on the
         gap = u_back - u_pipe                                     # panel back (glue face)
         for s in (0.32, -0.32):
@@ -789,10 +848,11 @@ def build_tower(C, M, C_white=None):
         # radio unit clamped on the pipe, with a pointed (45 deg) underside
         if R > 0.045:
             zr = zc - h * 0.15
-            bm_frustum(arm_bm, (pipe.x, pipe.y, zr - 0.014 + 0.005), (0.0015, 0.0015),
-                       (0.010, 0.018), 0.010, rot)
-            bm_box(arm_bm, Vector((pipe.x, pipe.y, zr + 0.005)), (0.010, 0.018, 0.018), rot)
-    obj_from_bm("Antenna_Mounts", arm_bm, C, M["steel_dark"], smooth=40)
+            # one solid: pointed 45-degree bottom + box (no seam between them)
+            bm_rect_loft(arm_bm, Vector((pipe.x, pipe.y, 0)), rot, [
+                (0.0015, 0.0015, zr - 0.014), (0.010, 0.018, zr - 0.004), (0.010, 0.018, zr + 0.014)])
+    mounts = obj_from_bm("Antenna_Mounts", arm_bm, C, M["steel_dark"], smooth=40)
+    self_union(mounts)
     return panels
 
 
