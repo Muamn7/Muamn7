@@ -37,6 +37,8 @@ STRIATION_PITCH = 0.30      # distance between striations (fibre-radius units)
 STRIATION_DEPTH = 0.035     # deep enough to show on a 3D print
 DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
+SEAM_DEPTH = 0.09           # groove that separates diagonal (branch) and straight striations
+SEAM_WIDTH = 0.05
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
 RENDER_PATH = "//cardiac_muscle_render.png"
 
@@ -250,24 +252,34 @@ def build_axis_samples(lines):
     return samples, discs
 
 
-def sculpt_detail(me, lines):
+def sculpt_detail(me, lines, n_main):
     samples, discs = build_axis_samples(lines)
-    kd = kdtree.KDTree(len(samples))
-    for i, s in enumerate(samples):
-        kd.insert(s[2], i)
-    kd.balance()
+    # two trees: straight (main) fibres and diagonal branches
+    main_ids = [i for i, s in enumerate(samples) if s[0] < n_main]
+    br_ids = [i for i, s in enumerate(samples) if s[0] >= n_main]
+    kd_m = kdtree.KDTree(len(main_ids))
+    for i in main_ids:
+        kd_m.insert(samples[i][2], i)
+    kd_m.balance()
+    kd_b = kdtree.KDTree(max(1, len(br_ids)))
+    for i in br_ids:
+        kd_b.insert(samples[i][2], i)
+    kd_b.balance()
 
     n = len(me.vertices)
     co = np.empty(n * 3); me.vertices.foreach_get("co", co); co = co.reshape(n, 3)
     nrm = np.empty(n * 3); me.vertices.foreach_get("normal", nrm); nrm = nrm.reshape(n, 3)
 
     # nearest centre-line sample + organic noise (the only per-vertex python loop)
-    idx = np.empty(n, dtype=np.int64)
+    idx_m = np.empty(n, dtype=np.int64)
+    idx_b = np.empty(n, dtype=np.int64)
     organic = np.empty(n)
     nn = noise.noise
+    has_br = len(br_ids) > 0
     for i, v in enumerate(me.vertices):
         p = v.co
-        idx[i] = kd.find(p)[1]
+        idx_m[i] = kd_m.find(p)[1]
+        idx_b[i] = kd_b.find(p)[1] if has_br else idx_m[i]
         organic[i] = nn(p * 1.3) * 0.035 + nn(p * 4.0) * 0.008
 
     S_fid = np.array([s[0] for s in samples])
@@ -276,6 +288,19 @@ def sculpt_detail(me, lines):
     S_t = np.array([tuple(s[3]) for s in samples])
     S_N = np.array([tuple(s[4]) for s in samples])
     S_B = np.array([tuple(s[5]) for s in samples])
+    S_r = np.array([s[6] for s in samples])
+
+    # Owner = the tube whose SURFACE is closest (distance to axis minus radius).
+    # This gives a clean boundary curve where a branch leaves / joins a fibre,
+    # instead of a patchwork of mixed stripes.
+    d_m = np.linalg.norm(co - S_c[idx_m], axis=1) - S_r[idx_m]
+    d_b = np.linalg.norm(co - S_c[idx_b], axis=1) - S_r[idx_b]
+    if not has_br:
+        d_b = d_b + 1e9
+    on_branch = d_b < d_m
+    idx = np.where(on_branch, idx_b, idx_m)
+    seam = np.exp(-((d_b - d_m) / SEAM_WIDTH) ** 2)
+    seam[np.minimum(d_b, d_m) > 0.35] = 0.0      # only on the real surface crease
 
     fid = S_fid[idx]
     t = S_t[idx]
@@ -291,6 +316,7 @@ def sculpt_detail(me, lines):
     w = np.clip((side - 0.25) / 0.45, 0.0, 1.0)
 
     g = (0.5 - 0.5 * np.cos(2 * np.pi * uu / STRIATION_PITCH)) ** 1.6
+    g = g * (1.0 - seam)        # stripes stop cleanly at the seam
 
     dc = np.zeros(n)
     for f_i, dl in enumerate(discs):
@@ -303,7 +329,8 @@ def sculpt_detail(me, lines):
             dist = uu[s2] - (pu + off)
             dc[s2] = np.maximum(dc[s2], np.exp(-(dist / DISC_WIDTH) ** 2))
 
-    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc) + organic
+    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam) + organic
+    dc = np.maximum(dc, seam)   # seam gets the same dark colour as the discs
     co = co + nrm * disp[:, None]
     me.vertices.foreach_set("co", co.ravel())
 
@@ -566,7 +593,7 @@ def main():
 
     tubes = curve_tube_mesh(lines)
     fibre_me = fuse_and_smooth(tubes)
-    _, discs = sculpt_detail(fibre_me, lines)
+    _, discs = sculpt_detail(fibre_me, lines, len(fibres))
     cut_flat_ends(fibre_me)
     nuc_me, n_nuc = make_nuclei(lines, len(fibres), discs)
 
