@@ -4,7 +4,7 @@ Monocyte (Mononuclear Phagocyte) - 3D printable display model for Blender
 =========================================================================
 
 Builds the full relief model procedurally (no text-only placeholders):
-  * Thick pleated membrane disc, pointed curling folds, drips    (white)
+  * Membrane: raised lip + wide ruffled lobed flange (like photo) (white)
   * Cytoplasm plate that drops into the membrane pocket          (light blue)
   * Kidney-shaped nucleus with chromatin texture                 (purple)
   * Rough ER cisternae + ribosomes                               (blue / yellow)
@@ -41,7 +41,8 @@ from mathutils import Vector, Matrix, Quaternion, noise, kdtree
 TOTAL_HEIGHT = 250.0      # whole model incl. base
 CELL_WIDTH = 185.0        # 17-19 cm
 CELL_HEIGHT = 195.0
-CELL_DEPTH = 150.0        # 14-16 cm (front rim crest -> back of dome)
+CELL_DEPTH = 65.0         # front lip crest -> back (the reference photo is a
+                          # thin disc; the client brief said 140-160 mm)
 BASE_W = 210.0            # base footprint X
 BASE_D = 190.0            # base footprint Y
 BASE_H = 45.0
@@ -59,7 +60,7 @@ FLOOR_Z = -6.0            # pocket floor (= cytoplasm plate thickness)
 # Colours (linear RGB) - match the reference photo
 # =====================================================================
 COLORS = {
-    "White":      (0.90, 0.91, 0.93),
+    "White":      (0.95, 0.96, 0.98),
     "LightBlue":  (0.20, 0.46, 0.82),
     "Purple":     (0.28, 0.03, 0.70),
     "Blue":       (0.03, 0.22, 0.95),
@@ -675,20 +676,23 @@ def pocket_radius(theta):
     return POCKET_R * r_ell(theta) * (1 + 0.018 * n)
 
 
-def frill_amplitude(theta):
-    """How far the membrane pleats stick out: big flame-like ones on the
-    left, drips at the bottom, small waves top/right (like the reference)."""
-    left = max(0.0, -math.cos(theta - 0.12)) ** 1.3
-    bottom = max(0.0, -math.sin(theta)) ** 2
+def lobe_length(theta):
+    """Length of the flange lobes around the cell (measured from the
+    reference): long on the left, medium top/bottom, tiny on the right."""
+    left = max(0.0, -math.cos(theta - 0.1))
     top = max(0.0, math.sin(theta))
-    return 4.0 + 40.0 * left + 13.0 * bottom * (1 - left)
+    bottom = max(0.0, -math.sin(theta))
+    right = max(0.0, math.cos(theta))
+    return max(0.0, 3.0 + 40.0 * left + 17.0 * top * (1 - left) + 17.0 * bottom * (1 - left) - 3.0 * right)
 
 
-def build_membrane(res=0.85, n_frills=26):
-    """Thick glossy white disc built from metaballs:
-    - rolled lip around the cytoplasm pocket (with folds over it)
-    - side wall made of pleats/frills that taper to curled points
-    - rounded back body (dome) so the total depth is CELL_DEPTH."""
+def build_membrane(res=0.8, n_lobes=26):
+    """Glossy white membrane like the reference photo:
+    - raised rolled lip around the cytoplasm
+    - a wide front-facing flange whose outer edge is cut into thick lobes
+      with rounded points (a 'splash crown'), each lobe with a fold running
+      from the lip to its tip
+    - a shallow rounded back."""
     mb = bpy.data.metaballs.new("mb_membrane")
     mb.resolution = res
     mb.render_resolution = res
@@ -707,59 +711,56 @@ def build_membrane(res=0.85, n_frills=26):
             e.rotation = Quaternion((0, 0, 1), rot)
         return e
 
-    # back body
-    rb = POCKET_R + 16
-    ball(0, 0, -50, rb, sy=1.045, sz=86 / rb)
-    # solid ring under the pocket floor
+    # shallow rounded back body
+    rb = POCKET_R + 10
+    ball(0, 0, -12, rb, sy=1.045, sz=40 / rb)
     for i in range(140):
         th = TAU * i / 140
         rp = pocket_radius(th)
-        ball((rp - 8) * math.cos(th), (rp - 8) * math.sin(th), -14, 10)
-    # smooth side band (the right/top side of the reference is a plain
-    # thick rounded edge)
-    for z in (-2.0, -16.0, -30.0, -44.0):
-        for i in range(160):
-            th = TAU * i / 160
-            rs = pocket_radius(th) + 10
-            ball(rs * math.cos(th), rs * math.sin(th), z, 10.5)
-    # rolled lip, a bit wavy
+        ball((rp - 8) * math.cos(th), (rp - 8) * math.sin(th), -12, 10)
+
+    # flange band (front-facing ring behind the lobes)
+    for i in range(200):
+        th = TAU * i / 200
+        rp = pocket_radius(th)
+        rf = rp + 11 + 7.0 * max(0.0, -math.cos(th - 0.1))
+        wave = math.cos(n_lobes / 2 * th) * min(1.0, lobe_length(th) / 12.0)
+        ball(rf * math.cos(th), rf * math.sin(th), -3.0 + 3.0 * wave, 10.0, sz=0.72)
+
+    # raised rolled lip around the cytoplasm
     n = 300
     for i in range(n):
         th = TAU * i / n
         rp = pocket_radius(th)
-        left = max(0.0, -math.cos(th)) ** 1.2
-        rr = 8.6 + 1.6 * left + 0.25 * noise.noise(Vector((math.cos(th) * 3, math.sin(th) * 3, 2.0)))
-        rc = rp + rr * 0.92
-        z = 1.2 + 0.5 * math.sin(7 * th + 0.5) + 1.0 * left
+        rr = 8.6 + 0.3 * noise.noise(Vector((math.cos(th) * 3, math.sin(th) * 3, 2.0)))
+        rc = rp + rr * 0.88
+        z = 3.0 + 0.6 * math.sin(11 * th + 0.5)
         ball(rc * math.cos(th), rc * math.sin(th), z, rr)
 
-    # pleats: fat folds packed side by side around the whole rim; each one
-    # tapers to a curled point (long on the left, drips below, short right)
-    levels = ((-3.0, 1.00), (-19.0, 0.92), (-35.0, 0.72), (-51.0, 0.45))
-    for i in range(n_frills):
-        th = TAU * (i + rnd.uniform(-0.25, 0.25)) / n_frills
-        A = frill_amplitude(th) * rnd.uniform(0.85, 1.12)
-        if A < 9.0:
-            continue                    # right / top: smooth lip, no pleats
-        curl = rnd.uniform(0.18, 0.38)
-        rroot = min(15.5, 8.0 + 0.22 * A) * rnd.uniform(0.95, 1.05)
+    # lobes with a fold on each
+    for i in range(n_lobes):
+        th = TAU * (i + rnd.uniform(-0.08, 0.08)) / n_lobes
+        ruffle = (5.5 if i % 2 == 0 else -6.5) * min(1.0, lobe_length(th) / 12.0)
+        L = lobe_length(th) * rnd.uniform(0.85, 1.15)
         rp = pocket_radius(th)
         d = Vector((math.cos(th), math.sin(th)))
         tg = Vector((-d.y, d.x))
-        rot = th + math.pi / 2          # ellipsoid local X -> tangent
-        for (z0, af) in levels:
-            a_l = A * af
-            steps = max(6, int(a_l / 1.6))
-            for k in range(steps + 1):
-                t = k / steps
-                p = d * (rp + 10 + a_l * t) + tg * (curl * a_l * t * t)
-                rr = 2.4 + (rroot - 2.4) * (1 - t) ** 1.35
-                z = z0 + 2.5 * t * (1 if z0 > 0 else -1)
-                ball(p.x, p.y, z, rr, sx=0.8, sz=1.3, rot=rot)
-        # fold flowing from the pleat over the lip
-        for f in (0.0, 0.5, 1.0):
-            q = d * (rp + 11 - 8 * f) + tg * (2.0 * f)
-            ball(q.x, q.y, 5.5 + 2.0 * f, 4.0 - 1.2 * f, sx=0.7, rot=rot)
+        curl = rnd.uniform(-0.12, 0.22)
+        root = rp + 15.0 + 7.0 * max(0.0, -math.cos(th - 0.1))
+        rroot = 13.0 if L > 8 else 9.0 + 0.5 * L
+        steps = max(4, int(L / 1.2))
+        for k in range(steps + 1):
+            t = k / steps
+            p = d * (root + L * t) + tg * (curl * L * t * t)
+            rr = 5.0 + (rroot - 5.0) * (1 - t) ** 1.3
+            ball(p.x, p.y, -2.0 - 5.0 * t * min(1.0, L / 20.0) + ruffle * min(1.0, 1.6 * t), rr, sz=0.92)
+        # fold (crest) running from the lip to the lobe tip
+        fl = (root + 0.8 * L) - (rp + 7.0)
+        fsteps = max(4, int(fl / 1.4))
+        for k in range(fsteps + 1):
+            t = k / fsteps
+            q = d * (rp + 7.0 + fl * t) + tg * (curl * L * (t * 0.8) ** 2)
+            ball(q.x, q.y, 5.0 - 7.0 * t * min(1.0, L / 20.0) + ruffle * max(0.0, 1.6 * t - 0.4), 6.0 - 2.0 * t, sz=0.95)
 
     dg = bpy.context.evaluated_depsgraph_get()
     me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
@@ -917,10 +918,10 @@ def membrane_bottom_z(membrane, x, y):
     return (membrane.matrix_world @ loc).z
 
 
-def build_cradle(membrane, peg_y, peg_z, rx=26.0, ry=32.0, n_seg=96, n_ring=14, sink=4.0):
+def build_cradle(membrane, peg_y, peg_z, rx=30.0, ry=17.0, n_seg=96, n_ring=14, sink=4.0):
     """Pillar whose top follows the underside of the cell (height-field via
     ray casts) - the cell rests in it like in a saddle."""
-    cy = peg_y + 18.0
+    cy = peg_y
 
     def top_at(x, y):
         return membrane_bottom_z(membrane, x, y)
@@ -1189,7 +1190,7 @@ def build_model():
     mw = membrane.matrix_world
     low = min((mw @ v.co for v in membrane.data.vertices if abs(v.co.x) < 6), key=lambda p: p.z)
     # peg sits well behind the pocket floor (solid part of the dome)
-    stem_y = depth_mid - 0.5 * zmin
+    stem_y = depth_mid + 5.0   # under the bottom of the flange, below the pocket wall
     peg_bottom = membrane_bottom_z(membrane, 0.0, stem_y)
     stem = build_cradle(membrane, stem_y, peg_bottom)
     boolean(base, stem, "UNION")
@@ -1376,7 +1377,7 @@ def build_studio():
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
     bg.inputs["Color"].default_value = (0.30, 0.48, 0.85, 1)
-    bg.inputs["Strength"].default_value = 0.6
+    bg.inputs["Strength"].default_value = 0.8
 
     def light(name, loc, energy, size, rot, color=(1, 1, 1)):
         ld = bpy.data.lights.new(name, "AREA")
@@ -1392,7 +1393,7 @@ def build_studio():
         ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
         return ob
 
-    light("Key", (-420, -520, 560), 3.3e6, 300, (0, 0, 0))
+    light("Key", (-420, -520, 560), 4.0e6, 300, (0, 0, 0))
     light("Fill", (520, -380, 260), 1.6e6, 450, (0, 0, 0), (0.85, 0.92, 1.0))
     light("Rim", (120, 520, 520), 2.2e6, 300, (0, 0, 0), (0.75, 0.88, 1.0))
     light("Top", (0, -150, 700), 1.4e6, 250, (0, 0, 0))
@@ -1424,7 +1425,7 @@ def render_previews(out_dir, samples=96, res=(1600, 1200)):
     sc.view_settings.look = "AgX - Punchy"
     cam = sc.camera
     shots = [
-        ("preview_reference_angle.png", (-250, -470, 205), (-2, -20, 150), 75),
+        ("preview_reference_angle.png", (-215, -455, 215), (-6, -25, 150), 66),
         ("preview_front_34.png", (-300, -640, 300), (60, 0, 125), 50),
         ("preview_front.png", (0, -760, 140), (0, 0, 140), 50),
         ("preview_cell_closeup.png", (-90, -420, 230), (-5, -40, 150), 50),
