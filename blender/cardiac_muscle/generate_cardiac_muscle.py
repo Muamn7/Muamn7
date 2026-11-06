@@ -7,7 +7,8 @@ How to use / طريقة الاستخدام:
   (or headless:  blender -b -P generate_cardiac_muscle.py)
 
 What it builds / ماذا يبني:
-  * Branching striated fibres fused into one smooth mesh (voxel remesh)
+  * Straight striated fibres + diagonal branches as SEPARATE pieces that sit
+    on the fibres (each branch is cut to the fibre shape so they fit together)
   * Real geometric striations (cross stripes) following each fibre
   * Intercalated discs (zig-zag step grooves) between cells
   * Purple oval nuclei as SEPARATE grains (one object each), one per cell,
@@ -38,8 +39,7 @@ STRIATION_PITCH = 0.30      # distance between striations (fibre-radius units)
 STRIATION_DEPTH = 0.035     # deep enough to show on a 3D print
 DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
-SEAM_DEPTH = 0.09           # groove that separates diagonal (branch) and straight striations
-SEAM_WIDTH = 0.05
+BRANCH_CLEARANCE = 0.05     # gap between a separate branch piece and the fibre it rests on (~0.5 mm)
 NUCLEUS_HEIGHT = 0.24       # how far each nucleus grain sticks out of the fibre (fibre-radius units)
 NUCLEUS_SINK = 0.05         # grain sits slightly into its socket
 NUCLEUS_CLEARANCE = 0.025   # gap between grain and socket (~0.25 mm at 20 cm) for gluing in
@@ -177,8 +177,8 @@ def make_centerlines(fibres):
     return lines
 
 
-def curve_tube_mesh(lines):
-    """Bevelled poly curves -> one combined mesh."""
+def curve_tube_mesh(lines, r_add=0.0):
+    """Bevelled poly curves -> one combined mesh (r_add enlarges every radius)."""
     bm = bmesh.new()
     for idx, pts in enumerate(lines):
         cu = bpy.data.curves.new(f"_fibre_{idx}", 'CURVE')
@@ -191,7 +191,7 @@ def curve_tube_mesh(lines):
         sp.points.add(len(pts) - 1)
         for p, (co, r) in zip(sp.points, pts):
             p.co = (co.x, co.y, co.z, 1.0)
-            p.radius = r
+            p.radius = r + r_add
         ob = bpy.data.objects.new(cu.name, cu)
         bpy.context.scene.collection.objects.link(ob)
         dg = bpy.context.evaluated_depsgraph_get()
@@ -226,6 +226,57 @@ def fuse_and_smooth(me):
     return out
 
 
+def boolean_difference(me, cutter_me):
+    """me minus cutter (cutter mesh is kept)."""
+    ob = bpy.data.objects.new("_piece", me)
+    oc = bpy.data.objects.new("_cutter", cutter_me)
+    sc = bpy.context.scene.collection
+    sc.objects.link(ob)
+    sc.objects.link(oc)
+    mod = ob.modifiers.new("Bool", 'BOOLEAN')
+    mod.operation = 'DIFFERENCE'
+    mod.object = oc
+    solvers = mod.bl_rna.properties['solver'].enum_items.keys()
+    mod.solver = 'MANIFOLD' if 'MANIFOLD' in solvers else 'EXACT'
+    dg = bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    out = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    bpy.data.objects.remove(ob, do_unlink=True)
+    bpy.data.objects.remove(oc, do_unlink=True)
+    bpy.data.meshes.remove(me)
+    return out
+
+
+def keep_main_islands(me, min_share=0.03):
+    """Drop tiny loose fragments a boolean can leave behind."""
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    seen = set()
+    islands = []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, isl = [v], []
+        seen.add(v.index)
+        while stack:
+            x = stack.pop()
+            isl.append(x)
+            for e in x.link_edges:
+                o = e.other_vert(x)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        islands.append(isl)
+    total = len(bm.verts)
+    kill = [v for isl in islands if len(isl) < min_share * total for v in isl]
+    if kill:
+        bmesh.ops.delete(bm, geom=kill, context='VERTS')
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+
 # --------------------------------------------------------------------------
 # Surface detail: striations + intercalated discs
 # --------------------------------------------------------------------------
@@ -256,8 +307,8 @@ def build_axis_samples(lines):
     return samples, discs
 
 
-def sculpt_detail(me, lines, n_main):
-    samples, discs = build_axis_samples(lines)
+def sculpt_detail(me, samples, discs, n_main, mode):
+    """mode 'main': straight fibres (+ nucleus sockets); 'branch': a diagonal branch piece."""
     # two trees: straight (main) fibres and diagonal branches
     main_ids = [i for i, s in enumerate(samples) if s[0] < n_main]
     br_ids = [i for i, s in enumerate(samples) if s[0] >= n_main]
@@ -294,17 +345,17 @@ def sculpt_detail(me, lines, n_main):
     S_B = np.array([tuple(s[5]) for s in samples])
     S_r = np.array([s[6] for s in samples])
 
-    # Owner = the tube whose SURFACE is closest (distance to axis minus radius).
-    # This gives a clean boundary curve where a branch leaves / joins a fibre,
-    # instead of a patchwork of mixed stripes.
+    # distance to the straight-fibre / branch tube surfaces
     d_m = np.linalg.norm(co - S_c[idx_m], axis=1) - S_r[idx_m]
     d_b = np.linalg.norm(co - S_c[idx_b], axis=1) - S_r[idx_b]
     if not has_br:
         d_b = d_b + 1e9
-    on_branch = d_b < d_m
-    idx = np.where(on_branch, idx_b, idx_m)
-    seam = np.exp(-((d_b - d_m) / SEAM_WIDTH) ** 2)
-    seam[np.minimum(d_b, d_m) > 0.35] = 0.0      # only on the real surface crease
+    if mode == 'branch':
+        idx = idx_b
+        contact = d_m < BRANCH_CLEARANCE + 0.06      # face that rests on a fibre
+    else:
+        idx = idx_m
+        contact = d_b < 0.12                         # area a branch rests on
 
     fid = S_fid[idx]
     t = S_t[idx]
@@ -318,9 +369,12 @@ def sculpt_detail(me, lines, n_main):
     # only on the sides of the fibre, not on the cut end caps
     side = 1.0 - np.abs(np.einsum('ij,ij->i', nrm, t))
     w = np.clip((side - 0.25) / 0.45, 0.0, 1.0)
+    if mode == 'branch':
+        w[contact] = 0.0          # keep the fitting face exact
+    organic[contact] = np.minimum(organic[contact], 0.0)
+    organic[contact & (mode == 'branch')] = 0.0
 
     g = (0.5 - 0.5 * np.cos(2 * np.pi * uu / STRIATION_PITCH)) ** 1.6
-    g = g * (1.0 - seam)        # stripes stop cleanly at the seam
 
     dc = np.zeros(n)
     for f_i, dl in enumerate(discs):
@@ -335,7 +389,7 @@ def sculpt_detail(me, lines, n_main):
 
     # ---- Nuclei: one oval "grain" per cell, part of the same solid mesh ----
     nuclei = []
-    for f_i in range(n_main):
+    for f_i in (range(n_main) if mode == 'main' else []):
         sel_s = np.nonzero(S_fid == f_i)[0]
         su = S_u[sel_s]
         bounds = [0.0] + [dd[0] for dd in discs[f_i]] + [su.max()]
@@ -390,7 +444,7 @@ def sculpt_detail(me, lines, n_main):
     dc = dc * clear
     nuc_a = np.clip((1.0 - qmin) * 4.0, 0.0, 1.0)
 
-    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam) + organic
+    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc) + organic
     co = co + nrm * disp[:, None]
 
     # ---- separate nucleus "grains" + matching sockets carved in the fibre ----
@@ -415,9 +469,9 @@ def sculpt_detail(me, lines, n_main):
         ze = -Ce * np.sqrt(np.clip(1.0 - qq[m], 0.0, 1.0))
         push = np.clip(zz[m] - ze, 0.0, None)
         co[m] -= np.outer(push, n_k)
-    sculpt_detail.grains = grains
-    sculpt_detail.n_nuclei = len(grains)
-    dc = np.maximum(dc, seam)   # seam gets the same dark colour as the discs
+    if mode == 'main':
+        sculpt_detail.grains = grains
+        sculpt_detail.n_nuclei = len(grains)
     me.vertices.foreach_set("co", co.ravel())
 
     stria = g * w
@@ -659,11 +713,27 @@ def main():
     reset_scene()
     fibres = build_layout()
     lines = make_centerlines(fibres)
+    nm = len(fibres)
+    samples, discs = build_axis_samples(lines)
 
-    tubes = curve_tube_mesh(lines)
-    fibre_me = fuse_and_smooth(tubes)
-    _, discs = sculpt_detail(fibre_me, lines, len(fibres))
+    # straight fibres
+    fibre_me = fuse_and_smooth(curve_tube_mesh(lines[:nm]))
+    sculpt_detail(fibre_me, samples, discs, nm, 'main')
     cut_flat_ends(fibre_me)
+
+    # diagonal branches: separate pieces, shaped to sit on the fibres
+    cutter = curve_tube_mesh(lines[:nm], r_add=BRANCH_CLEARANCE)
+    branch_meshes = []
+    for k, bl in enumerate(lines[nm:]):
+        piece = fuse_and_smooth(curve_tube_mesh([bl]))
+        piece = boolean_difference(piece, cutter)
+        keep_main_islands(piece)
+        if len(piece.vertices) == 0:
+            continue
+        sculpt_detail(piece, samples, discs, nm, 'branch')
+        piece.name = "Branch_%02d" % (len(branch_meshes) + 1)
+        branch_meshes.append(piece)
+    bpy.data.meshes.remove(cutter)
 
     # Stand the fibres up (X -> Z), real size: height = TARGET_HEIGHT_M, base on z = 0
     ys = [v.co.y for v in fibre_me.vertices]
@@ -676,12 +746,23 @@ def main():
          Matrix.Translation((0, -cy, -cz)))
     fibre_me.transform(M)
 
-    fibre_me.materials.append(material_fibre())
+    mat_f = material_fibre()
+    fibre_me.materials.append(mat_f)
 
     coll = bpy.data.collections.new("Cardiac_Muscle")
     bpy.context.scene.collection.children.link(coll)
     ob_f = bpy.data.objects.new("Cardiac_Fibres", fibre_me)
     coll.objects.link(ob_f)
+
+    # diagonal branches: separate objects
+    coll_b = bpy.data.collections.new("Branches")
+    coll.children.link(coll_b)
+    for me in branch_meshes:
+        me.transform(M)
+        for p_ in me.polygons:
+            p_.use_smooth = True
+        me.materials.append(mat_f)
+        coll_b.objects.link(bpy.data.objects.new(me.name, me))
 
     # nuclei: separate grains, each its own object, seated in its socket
     coll_n = bpy.data.collections.new("Nuclei")
@@ -696,7 +777,8 @@ def main():
     setup_stage(TARGET_HEIGHT_M)
 
     dims = ob_f.dimensions
-    print("Cardiac muscle built: %d fibre verts, %d nuclei" % (len(fibre_me.vertices), sculpt_detail.n_nuclei))
+    print("Cardiac muscle built: %d fibre verts, %d branches, %d nuclei"
+          % (len(fibre_me.vertices), len(branch_meshes), sculpt_detail.n_nuclei))
     print("Size (cm): X=%.1f  Y=%.1f  Z=%.1f" % (dims.x * 100, dims.y * 100, dims.z * 100))
 
     if DO_RENDER:
