@@ -10,7 +10,7 @@ What it builds / ماذا يبني:
   * Branching striated fibres fused into one smooth mesh (voxel remesh)
   * Real geometric striations (cross stripes) following each fibre
   * Intercalated discs (zig-zag step grooves) between cells
-  * Purple oval central nuclei (separate object)
+  * Purple oval nuclei, one per cell, raised from the fibre as part of the same solid
   * Materials (Cycles / EEVEE), lights and a camera
   * Fibres stand vertically, cut flat and level at top and bottom
   * Real-world size: total HEIGHT = 20 cm (change TARGET_HEIGHT_M)
@@ -39,6 +39,7 @@ DISC_DEPTH = 0.12
 DISC_WIDTH = 0.05
 SEAM_DEPTH = 0.09           # groove that separates diagonal (branch) and straight striations
 SEAM_WIDTH = 0.05
+NUCLEUS_HEIGHT = 0.24       # how far each nucleus bulges out of the fibre (fibre-radius units)
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
 RENDER_PATH = "//cardiac_muscle_render.png"
 
@@ -329,7 +330,64 @@ def sculpt_detail(me, lines, n_main):
             dist = uu[s2] - (pu + off)
             dc[s2] = np.maximum(dc[s2], np.exp(-(dist / DISC_WIDTH) ** 2))
 
-    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam) + organic
+    # ---- Nuclei: one oval "grain" per cell, part of the same solid mesh ----
+    nuclei = []
+    for f_i in range(n_main):
+        sel_s = np.nonzero(S_fid == f_i)[0]
+        su = S_u[sel_s]
+        bounds = [0.0] + [dd[0] for dd in discs[f_i]] + [su.max()]
+        for b0, b1 in zip(bounds[:-1], bounds[1:]):
+            if b1 - b0 < 2.2:
+                continue
+            un = 0.5 * (b0 + b1) + random.uniform(-0.3, 0.3)
+            k = sel_s[np.argmin(np.abs(su - un))]
+            c = Vector(S_c[k])
+            if abs(c.x) > X_CUT - 0.9:
+                continue
+            r = S_r[k]
+            Nk, Bk = Vector(S_N[k]), Vector(S_B[k])
+            th = None
+            # face the outside of the bundle so the nuclei are visible
+            o = Vector((0.0, c.y, c.z))
+            th_out = math.atan2(o.dot(Bk), o.dot(Nk)) if o.length > 0.5 else None
+            for _try in range(10):           # pick a side that is clear of branches
+                if th_out is not None and _try < 7:
+                    cand = th_out + random.uniform(-0.9, 0.9)
+                else:
+                    cand = random.uniform(-math.pi, math.pi)
+                p_s = c + (Nk * math.cos(cand) + Bk * math.sin(cand)) * r
+                if not has_br:
+                    th = cand
+                    break
+                _, kb, db = kd_b.find(p_s)
+                if db - S_r[kb] > 0.6:
+                    th = cand
+                    break
+            if th is None:
+                continue
+            nuclei.append((f_i, un, th,
+                           r * random.uniform(0.68, 0.80), r * random.uniform(0.36, 0.42),
+                           NUCLEUS_HEIGHT * random.uniform(0.9, 1.1)))
+    dome = np.zeros(n)
+    qmin = np.full(n, 9.0)
+    r_loc = S_r[idx]
+    for (f_i, un, th, A, Bn, H) in nuclei:
+        sel = np.nonzero((fid == f_i) & (np.abs(uu - un) < A * 1.3))[0]
+        if len(sel) == 0:
+            continue
+        dth = (theta[sel] - th + np.pi) % (2 * np.pi) - np.pi
+        q = ((uu[sel] - un) / A) ** 2 + (dth * r_loc[sel] / Bn) ** 2
+        qmin[sel] = np.minimum(qmin[sel], q)
+        dome[sel] = np.maximum(dome[sel], H * np.sqrt(np.clip(1.0 - q, 0.0, 1.0)))
+    # no stripes / discs on top of a nucleus, clean rim around it
+    clear = np.clip((qmin - 0.8) / 0.35, 0.0, 1.0)
+    clear = clear * clear * (3 - 2 * clear)
+    g = g * clear
+    dc = dc * clear
+    nuc_a = np.clip(dome / (NUCLEUS_HEIGHT * 0.15), 0.0, 1.0)
+    sculpt_detail.n_nuclei = len(nuclei)
+
+    disp = w * (-STRIATION_DEPTH * g - DISC_DEPTH * dc - SEAM_DEPTH * seam + dome) + organic
     dc = np.maximum(dc, seam)   # seam gets the same dark colour as the discs
     co = co + nrm * disp[:, None]
     me.vertices.foreach_set("co", co.ravel())
@@ -338,6 +396,7 @@ def sculpt_detail(me, lines, n_main):
     disc_a = dc * w
     me.attributes.new("stria", 'FLOAT', 'POINT').data.foreach_set("value", stria)
     me.attributes.new("disc", 'FLOAT', 'POINT').data.foreach_set("value", disc_a)
+    me.attributes.new("nucleus", 'FLOAT', 'POINT').data.foreach_set("value", nuc_a)
 
     # baked vertex colour too (for GLB / viewport / other software)
     base = np.array((0.52, 0.07, 0.05))
@@ -345,6 +404,8 @@ def sculpt_detail(me, lines, n_main):
     pale = np.array((0.24, 0.06, 0.06))
     c = base + (dark - base) * stria[:, None]
     c = c + (pale - c) * disc_a[:, None]
+    purple = np.array((0.30, 0.16, 0.42))
+    c = c + (purple - c) * nuc_a[:, None]
     rgba = np.concatenate([c, np.ones((n, 1))], axis=1)
     me.color_attributes.new("Col", 'FLOAT_COLOR', 'POINT').data.foreach_set("color", rgba.ravel())
     me.update()
@@ -374,58 +435,6 @@ def cut_flat_ends(me):
     bm.to_mesh(me)
     bm.free()
     me.update()
-
-
-# --------------------------------------------------------------------------
-# Nuclei
-# --------------------------------------------------------------------------
-def make_nuclei(lines, n_fibres, discs):
-    bm = bmesh.new()
-    count = 0
-    for fid, pts in enumerate(lines):
-        if fid >= n_fibres:       # nuclei only on main fibres
-            continue
-        total = sum((pts[k + 1][0] - pts[k][0]).length for k in range(len(pts) - 1))
-        dlist = [d[0] for d in discs[fid]]
-        u = random.uniform(1.8, 3.2)
-        while u < total - 1.8:
-            if all(abs(u - du) > 1.1 for du in dlist):
-                # locate sample at arc length u
-                acc = 0.0
-                k = 0
-                while k < len(pts) - 1 and acc < u:
-                    acc += (pts[k + 1][0] - pts[k][0]).length
-                    k += 1
-                co, r = pts[k]
-                t = (pts[min(k + 1, len(pts) - 1)][0] - pts[max(k - 1, 0)][0]).normalized()
-                Z = Vector((0, 0, 1))
-                N = (Z - Z.dot(t) * t).normalized()
-                B = t.cross(N)
-                ang = random.uniform(0, 2 * math.pi)
-                radial = (N * math.cos(ang) + B * math.sin(ang)).normalized()
-                ax_long = r * random.uniform(0.70, 0.85)
-                ax_w = r * random.uniform(0.36, 0.42)
-                ax_h = r * random.uniform(0.26, 0.31)
-                center = co + radial * (r * 1.0 - ax_h * 0.35)
-                if abs(center.x) > X_CUT - 1.0:
-                    u += 1.0
-                    continue
-                side = radial.cross(t).normalized()   # right-handed frame -> outward normals
-                rot = Matrix((t, side, radial)).transposed().to_4x4()
-                mat = (Matrix.Translation(center) @ rot @
-                       Matrix.Diagonal((ax_long, ax_w, ax_h, 1.0)))
-                ret = bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=20,
-                                                radius=1.0, matrix=mat)
-                for vv in ret['verts']:
-                    vv.co += (vv.co - center).normalized() * noise.noise(vv.co * 6.0) * 0.02
-                count += 1
-            u += random.uniform(3.2, 4.6)
-    for f in bm.faces:
-        f.smooth = True
-    me = bpy.data.meshes.new("Nuclei")
-    bm.to_mesh(me)
-    bm.free()
-    return me, count
 
 
 # --------------------------------------------------------------------------
@@ -476,7 +485,20 @@ def material_fibre():
     m3.inputs['Factor'].default_value = 0.15
     L.new(m2.outputs['Result'], m3.inputs['A'])
     L.new(nz.outputs['Color'], m3.inputs['B'])
-    L.new(m3.outputs['Result'], bsdf.inputs['Base Color'])
+    # nuclei (purple grains)
+    a_nuc = nt.nodes.new('ShaderNodeAttribute'); a_nuc.attribute_name = "nucleus"
+    nz2 = nt.nodes.new('ShaderNodeTexNoise')
+    nz2.inputs['Scale'].default_value = 400.0
+    L.new(tc.outputs['Object'], nz2.inputs['Vector'])
+    pm = nt.nodes.new('ShaderNodeMix'); pm.data_type = 'RGBA'
+    pm.inputs['A'].default_value = (0.30, 0.16, 0.42, 1)
+    pm.inputs['B'].default_value = (0.19, 0.09, 0.29, 1)
+    L.new(nz2.outputs['Fac'], pm.inputs['Factor'])
+    m4 = nt.nodes.new('ShaderNodeMix'); m4.data_type = 'RGBA'
+    L.new(m3.outputs['Result'], m4.inputs['A'])
+    L.new(pm.outputs['Result'], m4.inputs['B'])
+    L.new(a_nuc.outputs['Fac'], m4.inputs['Factor'])
+    L.new(m4.outputs['Result'], bsdf.inputs['Base Color'])
 
     bump = nt.nodes.new('ShaderNodeBump')
     bump.inputs['Strength'].default_value = 0.15
@@ -492,35 +514,6 @@ def material_fibre():
     _set(bsdf, 'Coat Weight', 0.04)
     _set(bsdf, 'Coat Roughness', 0.25)
     _set(bsdf, 'Sheen Weight', 0.0)
-    return m
-
-
-def material_nucleus():
-    m = bpy.data.materials.new("Nucleus")
-    m.use_nodes = True
-    nt = m.node_tree
-    bsdf = _principled(nt)
-    L = nt.links
-    tc = nt.nodes.new('ShaderNodeTexCoord')
-    nz = nt.nodes.new('ShaderNodeTexNoise')
-    nz.inputs['Scale'].default_value = 400.0
-    nz.inputs['Detail'].default_value = 4.0
-    L.new(tc.outputs['Object'], nz.inputs['Vector'])
-    mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'
-    mix.inputs['A'].default_value = (0.30, 0.16, 0.42, 1)
-    mix.inputs['B'].default_value = (0.19, 0.09, 0.29, 1)
-    L.new(nz.outputs['Fac'], mix.inputs['Factor'])
-    L.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
-    bump = nt.nodes.new('ShaderNodeBump')
-    bump.inputs['Strength'].default_value = 0.3
-    bump.inputs['Distance'].default_value = 0.0003
-    L.new(nz.outputs['Fac'], bump.inputs['Height'])
-    L.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
-    _set(bsdf, 'Roughness', 0.35)
-    _set(bsdf, 'Subsurface Weight', 0.25)
-    _set(bsdf, 'Subsurface Radius', (0.6, 0.4, 1.0))
-    _set(bsdf, 'Subsurface Scale', 0.002)
-    _set(bsdf, 'Coat Weight', 0.3)
     return m
 
 
@@ -595,7 +588,6 @@ def main():
     fibre_me = fuse_and_smooth(tubes)
     _, discs = sculpt_detail(fibre_me, lines, len(fibres))
     cut_flat_ends(fibre_me)
-    nuc_me, n_nuc = make_nuclei(lines, len(fibres), discs)
 
     # Stand the fibres up (X -> Z), real size: height = TARGET_HEIGHT_M, base on z = 0
     ys = [v.co.y for v in fibre_me.vertices]
@@ -607,23 +599,18 @@ def main():
          Matrix.Rotation(math.radians(-90), 4, 'Y') @
          Matrix.Translation((0, -cy, -cz)))
     fibre_me.transform(M)
-    nuc_me.transform(M)
 
     fibre_me.materials.append(material_fibre())
-    nuc_me.materials.append(material_nucleus())
 
     coll = bpy.data.collections.new("Cardiac_Muscle")
     bpy.context.scene.collection.children.link(coll)
     ob_f = bpy.data.objects.new("Cardiac_Fibres", fibre_me)
-    ob_n = bpy.data.objects.new("Nuclei", nuc_me)
     coll.objects.link(ob_f)
-    coll.objects.link(ob_n)
-    ob_n.parent = ob_f
 
     setup_stage(TARGET_HEIGHT_M)
 
     dims = ob_f.dimensions
-    print("Cardiac muscle built: %d fibre verts, %d nuclei" % (len(fibre_me.vertices), n_nuc))
+    print("Cardiac muscle built: %d fibre verts, %d nuclei" % (len(fibre_me.vertices), sculpt_detail.n_nuclei))
     print("Size (cm): X=%.1f  Y=%.1f  Z=%.1f" % (dims.x * 100, dims.y * 100, dims.z * 100))
 
     if DO_RENDER:
