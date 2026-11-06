@@ -378,7 +378,10 @@ def phone_brick(M):
     prism("1G_LCD_Frame", rrect(3.3, 1.55, 0.2), 0.12, (0, fy - 0.08, 8.85), M["ink"],
           bevel=0.03)
     prism("1G_LCD", rrect(2.95, 1.2, 0.12), 0.06, (0, fy - 0.14, 8.85), lcd)
-    text("1G_LCD_Text", "1G", 1.0, (0, fy - 0.19, 8.85), led, maxw=2.6, depth=0.02)
+    # screen content: network type with handset and signal icons
+    icon_handset("1G_LCD", led, fy - 0.18, 8.7, x=-1.05, k=0.32, d=0.01)
+    text("1G_LCD_Text", "1G", 0.9, (0.1, fy - 0.19, 8.85), led, depth=0.02)
+    signal_bars("1G_LCD", fy - 0.18, 8.45, 0.72, led, w=0.12, h0=0.22, dh=0.15, gap=0.06)
     # function keys
     for x, m in ((-1.25, key_g), (0, key), (1.25, key_r)):
         box(f"1G_FnKey_{x:+.0f}", (x, fy - 0.2, 7.35), (1.05, 0.4, 0.5), m, bevel=0.12, seg=3)
@@ -422,8 +425,10 @@ def phone_candybar(M):
           bevel=0.2, seg=3)
     prism("2G_Bezel", rrect(3.7, 3.6, 0.7), 0.12, (0, fy - 0.2, 7.95), bezel, bevel=0.05)
     prism("2G_LCD", rrect(2.85, 2.35, 0.18), 0.06, (0, fy - 0.27, 8.05), lcd)
-    # screen content: network type only
-    text("2G_LCD_Text", "2G", 1.9, (0, fy - 0.31, 8.05), pix, maxw=2.5, depth=0.01)
+    # screen content: network type with envelope (SMS) and signal icons
+    text("2G_LCD_Text", "2G", 1.35, (0, fy - 0.31, 8.55), pix, maxw=2.4, depth=0.01)
+    icon_envelope("2G_LCD", pix, lcd, fy - 0.305, 7.35, x=-0.6, k=0.3, d=0.01)
+    signal_bars("2G_LCD", fy - 0.305, 7.05, 0.25, pix, w=0.16, h0=0.22, dh=0.13, gap=0.08)
     # navigation key
     prism("2G_Nav", rrect(2.7, 0.95, 0.47), 0.3, (0, fy - 0.2, 5.55), nav, bevel=0.1, seg=3)
     prism("2G_Nav_C", circle(0.33, 32), 0.3, (-1.75, fy - 0.15, 5.55), key, bevel=0.1)
@@ -470,90 +475,48 @@ def smartphone_shell(M, tag, screen_color):
     return H, T, fy - 0.045   # height, thickness, screen surface
 
 
-APP_COLORS = ["#ff5a4e", "#ffb02e", "#3ddc84", "#2fa8ff", "#a463f2", "#ff6fae",
-              "#00c2b8", "#ffd84a", "#5b7cff", "#ff8a3d", "#44d07b", "#e94b8a"]
-GOOGLE = {"blue": "#4285f4", "red": "#ea4335", "yellow": "#fbbc05", "green": "#34a853"}
-
-
-def google_wordmark(tag, y, z, size):
-    """Multi-coloured "Google" word, one text object per letter"""
-    cols = ["blue", "red", "yellow", "blue", "green", "red"]
-    objs = []
-    for i, ch in enumerate("Google"):
-        m = mat(f"Google_{cols[i]}", GOOGLE[cols[i]], rough=0.3, emit=2.2)
-        ob = text(f"{tag}_Google_{i}_{ch}", ch, size, (0, y, z), m, depth=0.01)
-        ob.data.align_x = "LEFT"
-        objs.append(ob)
-    bpy.context.view_layer.update()
-    widths = [ob.dimensions.x / S for ob in objs]
-    gap = 0.04 * size
-    x = -(sum(widths) + gap * 5) / 2
-    for ob, w in zip(objs, widths):
-        ob.location.x = x * S
-        x += w + gap
-
-
-def google_g(tag, y, x, z, r=0.27, t=0.1):
-    """Google "G" icon built from four coloured arcs"""
-    for name, a0, a1 in (("red", 42, 160), ("yellow", 160, 215), ("green", 215, 325),
-                         ("blue", 325, 360)):
-        m = mat(f"Google_{name}", GOOGLE[name], rough=0.3, emit=2.2)
-        tube(f"{tag}_GoogleG_{name}", arc_pts(r, a0, a1, 16), t, (x, y, z), m)
-    tube(f"{tag}_GoogleG_bar", [(0.02, 0.0), (r, 0.0)], t, (x, y, z),
-         mat("Google_blue", GOOGLE["blue"], rough=0.3, emit=2.2))
-
-
-def smartphone(M, tag, screen_color, text_color="#ffffff"):
-    """Smartphone screen: big network type, Google logo + search bar, app icons"""
+def smartphone(M, tag, screen_color, accent, icon):
+    """Smartphone screen: only the network type, its icon and signal bars"""
     H, T, sy = smartphone_shell(M, tag, screen_color)
     fy = sy - 0.006
-    fg = mat(f"{tag}_Screen_Text", text_color, rough=0.3, emit=2.4)
-    white = mat("UI_White", "#ffffff", rough=0.3, emit=2.0)
+    white = mat(f"{tag}_UI_White", "#ffffff", rough=0.3, emit=2.4)
+    halo = mat(f"{tag}_UI_Halo", accent, rough=0.3, emit=1.8)
+    # generation icon inside a glowing disc
+    prism(f"{tag}_Icon_Disc", circle(1.75, 64), 0.01, (0, fy, 8.55), halo)
+    if icon == "globe":
+        icon_globe(f"{tag}_Screen_Icon", white, fy - 0.03, 8.55, k=0.85)
+    elif icon == "hd":
+        icon_hd(f"{tag}_Screen_Icon", white, halo, fy - 0.01, 8.55, k=0.85, d=0.01)
+    else:
+        icon_cloud(f"{tag}_Screen_Icon", white, halo, fy - 0.01, 8.65, k=0.9, d=0.01)
     # network type
-    text(f"{tag}_Screen_Text", tag, 1.9, (0, fy - 0.01, 9.95), fg, maxw=4.0, depth=0.01)
-    # Google logo and search bar
-    google_wordmark(tag, fy - 0.01, 8.65, 1.0)
-    bar = mat("UI_SearchBar", "#f1f3f4", rough=0.3, emit=1.6)
-    prism(f"{tag}_SearchBar", rrect(4.8, 0.82, 0.41), 0.01, (0, fy, 7.55), bar)
-    google_g(tag, fy - 0.03, -1.95, 7.55)
-    hint = mat("UI_SearchHint", "#9aa0a6", rough=0.3, emit=1.2)
-    prism(f"{tag}_SearchHint", rrect(2.4, 0.12, 0.06), 0.01, (-0.2, fy - 0.004, 7.55), hint)
-    # app icons (4 x 3)
-    k = 0
-    for r in range(3):
-        for c in range(4):
-            m = mat(f"App_{k}", APP_COLORS[k], rough=0.3, emit=1.6)
-            x = (c - 1.5) * 1.22
-            z = 6.25 - r * 1.3
-            prism(f"{tag}_App_{k}", rrect(0.95, 0.95, 0.26), 0.01, (x, fy, z), m)
-            prism(f"{tag}_AppGlyph_{k}", circle(0.19, 20) if k % 2 else rrect(0.44, 0.32, 0.07),
-                  0.01, (x, fy - 0.004, z), white)
-            k += 1
-    # dock
-    dock = mat(f"{tag}_Dock", "#ffffff", rough=0.3, emit=0.35)
-    prism(f"{tag}_Dock", rrect(4.9, 1.35, 0.5), 0.01, (0, fy, 1.45), dock)
-    for c in range(4):
-        m = mat(f"App_{(c * 3) % 12}", APP_COLORS[(c * 3) % 12], rough=0.3, emit=1.6)
-        prism(f"{tag}_DockApp_{c}", rrect(0.9, 0.9, 0.25), 0.01,
-              ((c - 1.5) * 1.15, fy - 0.004, 1.45), m)
+    text(f"{tag}_Screen_Text", tag, 2.7, (0, fy - 0.01, 5.0), white, maxw=4.6, depth=0.01)
+    # signal bars
+    signal_bars(f"{tag}_Screen", fy - 0.004, 1.55, -1.5, white, w=0.55, h0=0.45, dh=0.4,
+                gap=0.3)
 
 
 def phone_3g(M):
-    smartphone(M, "3G", "#0f3d22")
+    smartphone(M, "3G", "#0f3d22", "#1f9a48", "globe")
 
 
 def phone_4g(M):
-    smartphone(M, "4G", "#5a240a")
+    smartphone(M, "4G", "#5a240a", "#f2751b", "hd")
 
 
 def phone_5g(M):
-    smartphone(M, "5G", "#24104a")
+    smartphone(M, "5G", "#24104a", "#7b3fc4", "cloud")
 
 
 # ---------------------------------------------------------------------------
 # Base icons
 # ---------------------------------------------------------------------------
-def icon_handset(fg, y, z):
+def _detail(y, d):
+    """y position and depth for the details drawn on top of an icon"""
+    return y - (d / 2 + 0.02), min(0.04, d)
+
+
+def icon_handset(pre, fg, y, z, x=0.0, k=1.0, d=0.12):
     pts_out, pts_in = [], []
     n = 40
     for i in range(n + 1):
@@ -566,32 +529,37 @@ def icon_handset(fg, y, z):
         pts_in.append((ri * math.cos(th), ri * math.sin(th)))
     pts = pts_out + list(reversed(pts_in))
     rot = math.radians(-30)
-    pts = [(u * math.cos(rot) - v * math.sin(rot),
-            u * math.sin(rot) + v * math.cos(rot) + 0.55) for u, v in pts]
-    prism("Icon_1G_Handset", pts, 0.12, (0, y, z), fg, bevel=0.03)
+    pts = [(k * (u * math.cos(rot) - v * math.sin(rot)),
+            k * (u * math.sin(rot) + v * math.cos(rot) + 0.55)) for u, v in pts]
+    prism(f"{pre}_Handset", pts, d, (x, y, z), fg, bevel=0.03 if d > 0.05 else 0)
 
 
-def icon_envelope(fg, bg, y, z):
-    prism("Icon_2G_Envelope", rrect(2.9, 2.0, 0.18), 0.12, (0, y, z), fg, bevel=0.03)
-    tube("Icon_2G_Flap", [(-1.3, 0.85), (0, -0.15), (1.3, 0.85)], 0.16, (0, y - 0.08, z), bg)
+def icon_envelope(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
+    prism(f"{pre}_Envelope", rrect(2.9 * k, 2.0 * k, 0.18 * k), d, (x, y, z), fg,
+          bevel=0.03 if d > 0.05 else 0)
+    yd, _ = _detail(y, d)
+    tube(f"{pre}_Flap", [(-1.3 * k, 0.85 * k), (0, -0.15 * k), (1.3 * k, 0.85 * k)], 0.16 * k,
+         (x, yd, z), bg)
 
 
-def icon_globe(fg, y, z):
-    r = 1.4
-    tube("Icon_3G_Ring", circle(r, 64), 0.17, (0, y, z), fg, cyclic=True)
-    tube("Icon_3G_Meridian", circle(r, 64, rx=0.6), 0.14, (0, y, z), fg, cyclic=True)
-    tube("Icon_3G_Axis", [(0, -r), (0, r)], 0.14, (0, y, z), fg)
-    tube("Icon_3G_Equator", [(-r, 0), (r, 0)], 0.14, (0, y, z), fg)
-    for zz in (-0.72, 0.72):
+def icon_globe(pre, fg, y, z, x=0.0, k=1.0):
+    r = 1.4 * k
+    tube(f"{pre}_Ring", circle(r, 64), 0.17 * k, (x, y, z), fg, cyclic=True)
+    tube(f"{pre}_Meridian", circle(r, 64, rx=0.6 * k), 0.14 * k, (x, y, z), fg, cyclic=True)
+    tube(f"{pre}_Axis", [(0, -r), (0, r)], 0.14 * k, (x, y, z), fg)
+    tube(f"{pre}_Equator", [(-r, 0), (r, 0)], 0.14 * k, (x, y, z), fg)
+    for zz in (-0.72 * k, 0.72 * k):
         hw = math.sqrt(r * r - zz * zz)
-        tube(f"Icon_3G_Lat_{zz:+.1f}", [(-hw, zz), (hw, zz)], 0.14, (0, y, z), fg)
+        tube(f"{pre}_Lat_{zz / k:+.1f}", [(-hw, zz), (hw, zz)], 0.14 * k, (x, y, z), fg)
 
 
-def icon_hd(fg, bg, y, z):
-    prism("Icon_4G_Screen", rrect(2.8, 2.05, 0.38), 0.12, (0, y, z), fg, bevel=0.03)
-    text("Icon_4G_HD", "HD", 1.0, (-0.42, y - 0.08, z + 0.05), bg, depth=0.04)
-    tri = [(0.42, -0.5), (1.12, 0.0), (0.42, 0.5)]
-    prism("Icon_4G_Play", tri, 0.04, (0, y - 0.08, z + 0.05), bg)
+def icon_hd(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
+    prism(f"{pre}_Screen", rrect(2.8 * k, 2.05 * k, 0.38 * k), d, (x, y, z), fg,
+          bevel=0.03 if d > 0.05 else 0)
+    yd, dd = _detail(y, d)
+    text(f"{pre}_HD", "HD", 1.0 * k, (x - 0.42 * k, yd, z + 0.05 * k), bg, depth=dd)
+    tri = [(0.42 * k, -0.5 * k), (1.12 * k, 0.0), (0.42 * k, 0.5 * k)]
+    prism(f"{pre}_Play", tri, dd, (x, yd, z + 0.05 * k), bg)
 
 
 def cloud_outline():
@@ -622,13 +590,24 @@ def cloud_outline():
     return pts
 
 
-def icon_cloud(fg, bg, y, z):
-    prism("Icon_5G_Cloud", cloud_outline(), 0.12, (0, y, z), fg, bevel=0.03)
-    yy = y - 0.08
-    tube("Icon_5G_Net_H", [(-0.6, -0.45), (0.6, -0.45)], 0.1, (0, yy, z), bg)
-    for i, (x, top) in enumerate(((-0.6, 0.05), (0.0, 0.42), (0.6, 0.0))):
-        tube(f"Icon_5G_Net_V_{i}", [(x, -0.45), (x, top)], 0.1, (0, yy, z), bg)
-        prism(f"Icon_5G_Node_{i}", circle(0.14, 20), 0.05, (x, yy, z + top), bg)
+def icon_cloud(pre, fg, bg, y, z, x=0.0, k=1.0, d=0.12):
+    pts = [(u * k, v * k) for u, v in cloud_outline()]
+    prism(f"{pre}_Cloud", pts, d, (x, y, z), fg, bevel=0.03 if d > 0.05 else 0)
+    yy, dd = _detail(y, d)
+    tube(f"{pre}_Net_H", [(-0.6 * k, -0.45 * k), (0.6 * k, -0.45 * k)], 0.1 * k, (x, yy, z), bg)
+    for i, (px, top) in enumerate(((-0.6, 0.05), (0.0, 0.42), (0.6, 0.0))):
+        tube(f"{pre}_Net_V_{i}", [(px * k, -0.45 * k), (px * k, top * k)], 0.1 * k,
+             (x, yy, z), bg)
+        prism(f"{pre}_Node_{i}", circle(0.14 * k, 20), max(dd, 0.01),
+              (x + px * k, yy, z + top * k), bg)
+
+
+def signal_bars(pre, y, z, x, mat_, n=4, w=0.5, h0=0.5, dh=0.4, gap=0.25, d=0.01):
+    """Signal-strength icon: n rising bars, (x, z) = bottom-left corner"""
+    for i in range(n):
+        h = h0 + i * dh
+        prism(f"{pre}_Bar_{i}", rrect(w, h, min(w, h) * 0.2, 2), d,
+              (x + w / 2 + i * (w + gap), y, z + h / 2), mat_)
 
 
 # ---------------------------------------------------------------------------
@@ -680,11 +659,11 @@ def build_base(M, root):
     fy = -9.0
     iz = 15.0
     builders = [
-        lambda fg, bg, y: icon_handset(fg, y, iz),
-        lambda fg, bg, y: icon_envelope(fg, bg, y, iz),
-        lambda fg, bg, y: icon_globe(fg, y, iz),
-        lambda fg, bg, y: icon_hd(fg, bg, y, iz),
-        lambda fg, bg, y: icon_cloud(fg, bg, y, iz),
+        lambda fg, bg, y: icon_handset("Icon_1G", fg, y, iz),
+        lambda fg, bg, y: icon_envelope("Icon_2G", fg, bg, y, iz),
+        lambda fg, bg, y: icon_globe("Icon_3G", fg, y, iz),
+        lambda fg, bg, y: icon_hd("Icon_4G", fg, bg, y, iz),
+        lambda fg, bg, y: icon_cloud("Icon_5G", fg, bg, y, iz),
     ]
     for i, g in enumerate(GENERATIONS):
         x = (i - 2) * PITCH
