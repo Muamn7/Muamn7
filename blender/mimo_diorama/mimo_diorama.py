@@ -822,7 +822,9 @@ def build_tower(C, M, C_white=None):
         bm_box(bm, (c.x, c.y, zc - h / 2 - 0.0015), (depth + 0.002, w + 0.002, 0.004), rot)
         obj_from_bm("Antenna_PanelCapBottom_%d" % i, bm, C_white, M["cap"])
         bm = bmesh.new()
-        bm_frustum(bm, (c.x, c.y, zc + h / 2 + 0.0015), (depth, w), (depth + 0.002, w + 0.002), 0.004, rot)
+        # underside starts 1.8 mm inside so it sits fully on the rounded panel edges
+        bm_frustum(bm, (c.x, c.y, zc + h / 2 + 0.0015), (depth - 0.0036, w - 0.0036),
+                   (depth + 0.002, w + 0.002), 0.004, rot)
         obj_from_bm("Antenna_PanelCapTop_%d" % i, bm, C_white, M["cap"])
         panels.append((c, n, h, w, depth))
 
@@ -842,15 +844,17 @@ def build_tower(C, M, C_white=None):
         gap = u_back - u_pipe                                     # panel back (glue face)
         for s in (0.32, -0.32):
             zz = zc + s * h
+            # 45-degree slope on BOTH sides, so the mount also prints upside down
             bm_prism(arm_bm, c, n, side, 0.012, [
                 (u_pipe, zz - 0.002 - gap * STEEP), (u_back, zz - 0.002),
-                (u_back, zz + 0.002), (u_pipe, zz + 0.002)])
+                (u_back, zz + 0.002), (u_pipe, zz + 0.002 + gap * STEEP)])
         # radio unit clamped on the pipe, with a pointed (45 deg) underside
         if R > 0.045:
             zr = zc - h * 0.15
             # one solid: pointed 45-degree bottom + box (no seam between them)
             bm_rect_loft(arm_bm, Vector((pipe.x, pipe.y, 0)), rot, [
-                (0.0015, 0.0015, zr - 0.014), (0.010, 0.018, zr - 0.004), (0.010, 0.018, zr + 0.014)])
+                (0.0015, 0.0015, zr - 0.014), (0.010, 0.018, zr - 0.004), (0.010, 0.018, zr + 0.014),
+                (0.0015, 0.0015, zr + 0.0245)])          # pointed top too (prints upside down)
     mounts = obj_from_bm("Antenna_Mounts", arm_bm, C, M["steel_dark"], smooth=40)
     self_union(mounts)
     return panels
@@ -1412,6 +1416,149 @@ def pack_fonts():
                 print("Could not pack font", f.name, ex)
 
 
+# ---------------------------------------------------------------------------
+# 3D-print export
+# ---------------------------------------------------------------------------
+MOUNT_ORDER = [-15, 105, 225, 20, 200]     # azimuths -> Mount_1 .. Mount_5
+
+
+def _world_bm(names):
+    dg = bpy.context.evaluated_depsgraph_get()
+    bm = bmesh.new()
+    for nm in names:
+        ob = bpy.data.objects.get(nm)
+        if ob is None or ob.type not in {'MESH', 'CURVE', 'FONT'}:
+            continue
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.transform(ev.matrix_world)
+        bm.from_mesh(me)
+        ev.to_mesh_clear()
+    return bm
+
+
+def _islands(bm):
+    seen, out = set(), []
+    bm.faces.ensure_lookup_table()
+    for f in bm.faces:
+        if f.index in seen:
+            continue
+        st, isl = [f], [f]
+        seen.add(f.index)
+        while st:
+            g = st.pop()
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h.index not in seen:
+                        seen.add(h.index)
+                        st.append(h)
+                        isl.append(h)
+        out.append(isl)
+    return out
+
+
+def _write_stl(bm, path, place=True):
+    """Put the part on the bed (z=0), centred, and write it in millimetres."""
+    me = bpy.data.meshes.new("stl_tmp")
+    bm.to_mesh(me)
+    if place and me.vertices:
+        xs = [v.co.x for v in me.vertices]
+        ys = [v.co.y for v in me.vertices]
+        z0 = min(v.co.z for v in me.vertices)
+        off = Vector(((min(xs) + max(xs)) / -2, (min(ys) + max(ys)) / -2, -z0))
+        me.transform(Matrix.Translation(off))
+    ob = bpy.data.objects.new("stl_tmp", me)
+    bpy.context.scene.collection.objects.link(ob)
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    ob.select_set(True)
+    bpy.context.view_layer.objects.active = ob
+    bpy.ops.wm.stl_export(filepath=path, export_selected_objects=True, global_scale=1000.0)
+    d = [round(x * 1000, 1) for x in ob.dimensions]
+    bpy.data.objects.remove(ob, do_unlink=True)
+    bpy.data.meshes.remove(me)
+    print("STL", os.path.basename(path), "mm:", d)
+
+
+def export_print_parts(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    names = [o.name for o in bpy.data.objects]
+    tower = [n for n in names if n.startswith("Tower_")]
+    _write_stl(_world_bm(tower), os.path.join(outdir, "Tower.stl"))
+    for b in ("BuildingA", "BuildingB"):
+        _write_stl(_world_bm([n for n in names if n.startswith(b + "_") and "Windows" not in n]),
+                   os.path.join(outdir, b + ".stl"))
+
+    # White antenna panels: each standing, turned to face +Y, in one row
+    allbm, x = bmesh.new(), 0.0
+    for i in range(5):
+        p = bpy.data.objects["Antenna_Panel_%d" % i]
+        b = _world_bm(["Antenna_Panel_%d" % i, "Antenna_PanelCapBottom_%d" % i,
+                       "Antenna_PanelCapTop_%d" % i])
+        fix = Matrix.Rotation(-p.rotation_euler.z, 4, 'Z') @ Matrix.Translation(-p.location)
+        bmesh.ops.transform(b, matrix=fix, verts=b.verts)
+        xs = [v.co.x for v in b.verts]
+        z0 = min(v.co.z for v in b.verts)
+        bmesh.ops.translate(b, vec=Vector((x - min(xs), 0, -z0)), verts=b.verts)
+        x += (max(xs) - min(xs)) + 0.008
+        me = bpy.data.meshes.new("t")
+        b.to_mesh(me)
+        b.free()
+        allbm.from_mesh(me)
+        bpy.data.meshes.remove(me)
+    _write_stl(allbm, os.path.join(outdir, "Antennas_White.stl"))
+
+    # Antenna mounts (pipe + struts + brackets + radio unit), one part per
+    # antenna, made to glue onto an already printed tower: the tower is
+    # subtracted so every strut end is cut to the exact shape of the bar it
+    # sits on. Printed UPSIDE DOWN (pipe end on the bed) -> no supports.
+    dg = bpy.context.evaluated_depsgraph_get()
+    src = bpy.data.objects["Antenna_Mounts"]
+    me = bpy.data.meshes.new_from_object(src.evaluated_get(dg))
+    me.transform(src.matrix_world)
+    tmp = bpy.data.objects.new("mount_cut", me)
+    bpy.context.scene.collection.objects.link(tmp)
+    mod = tmp.modifiers.new("cut", 'BOOLEAN')
+    mod.operation = 'DIFFERENCE'
+    mod.solver = 'EXACT'
+    mod.object = bpy.data.objects["Tower_Lattice"]
+    bake_modifiers(tmp)
+    bm = bmesh.new()
+    bm.from_mesh(tmp.data)
+    bpy.data.objects.remove(tmp, do_unlink=True)
+    tx, ty = -0.30, 0.075
+    parts = {}
+    for isl in _islands(bm):
+        vs = {v for f in isl for v in f.verts}
+        cx = sum(v.co.x for v in vs) / len(vs) - tx
+        cy = sum(v.co.y for v in vs) / len(vs) - ty
+        az = math.degrees(math.atan2(cy, cx))
+        k = min(range(5), key=lambda i: abs((az - MOUNT_ORDER[i] + 180) % 360 - 180))
+        part = bmesh.new()
+        vmap = {}
+        for v in vs:
+            vmap[v] = part.verts.new(v.co)
+        for f in isl:
+            part.faces.new([vmap[v] for v in f.verts])
+        parts.setdefault(k, []).append(part)
+    for k, lst in sorted(parts.items()):
+        part = lst[0]
+        for extra in lst[1:]:
+            me = bpy.data.meshes.new("t")
+            extra.to_mesh(me)
+            part.from_mesh(me)
+            bpy.data.meshes.remove(me)
+        bmesh.ops.remove_doubles(part, verts=part.verts, dist=1e-6)   # 0.001 mm
+        holes = [e for e in part.edges if e.is_boundary]
+        if holes:
+            bmesh.ops.holes_fill(part, edges=holes, sides=0)
+        bmesh.ops.transform(part, matrix=Matrix.Rotation(math.pi, 4, 'X'), verts=part.verts)  # upside down
+        bmesh.ops.recalc_face_normals(part, faces=part.faces)
+        _write_stl(part, os.path.join(outdir, "Mount_%d.stl" % (k + 1)))
+        part.free()
+    bm.free()
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
@@ -1427,6 +1574,9 @@ def main():
     if save:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(save))
         print("Saved", save)
+    stl_dir = arg("--export-stl")
+    if stl_dir:
+        export_print_parts(os.path.abspath(stl_dir))
     out = arg("--render")
     if out:
         scene.render.filepath = os.path.abspath(out)
