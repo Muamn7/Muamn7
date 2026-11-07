@@ -941,6 +941,11 @@ def union_model(model, target_coll, solver="MANIFOLD"):
     main = objs[0]
     parts.objects.unlink(main)
     target_coll.objects.link(main)
+    if len(objs) == 1:          # nothing to merge with
+        bpy.data.collections.remove(parts)
+        main.name = model.name
+        main.data.name = model.name
+        return main
     mod = main.modifiers.new("Union", 'BOOLEAN')
     mod.operation = 'UNION'
     mod.operand_type = 'COLLECTION'
@@ -1415,6 +1420,8 @@ def build_big_tower(fn, out_dir, height=BIG_TOWER_HEIGHT, max_section=MAX_SECTIO
                 ob.data.transform(Matrix.Translation((0, 0, zmin)))
         if model.loose:
             build_loose_parts(model, coll, 0.0, out_dir, scale=scale, suffix=tag)
+        if model.name in LABELS:
+            build_labels([(sections[0], model.name, model.name + tag)], coll, out_dir, k=scale)
         return sections, cuts, scale
     finally:
         FIT_SCALE = 1.0
@@ -1423,6 +1430,166 @@ def build_big_tower(fn, out_dir, height=BIG_TOWER_HEIGHT, max_section=MAX_SECTIO
 def PIN_R(info, zc, scale):
     """Pin radius: 40% of the leg radius at the cut, at most 2 mm."""
     return min(2.0, 0.4 * info["leg_r"](zc) * scale)
+
+
+# ----------------------------------------------------------------------------
+# لوحات الأسماء بالإنجليزي - English name plates (2 mm plate + slotted stand)
+# ----------------------------------------------------------------------------
+LABELS = {
+    "01_Lattice_Tower": ["LATTICE TOWER"],
+    "02_Monopole": ["MONOPOLE TOWER"],
+    "03_Microwave_Tower": ["MICROWAVE TOWER"],
+    "04_Radome_Station": ["RADOME STATION"],
+    "05_Cell_Site_4G_5G": ["CELL SITE", "4G / 5G"],
+    "06_Smart_Solar_Pole": ["SMART &", "SUSTAINABLE"],
+    "07_Lattice_PrintX_A": ["LATTICE TOWER"],
+    "08_Lattice_PrintX_B": ["LATTICE TOWER"],
+}
+LABEL_PLATE = 2.0         # سماكة خلفية اللوحة (مم)
+LABEL_RELIEF = 0.8        # ارتفاع الحروف والإطار فوق الخلفية (مم)
+LABEL_TEXT = 5.0          # حجم الخط (مم)
+LABEL_SLOT_DEPTH = 4.0    # عمق دخول اللوحة في القاعدة (مم)
+LABEL_FIT = 0.25          # فراغ اللوحة داخل شق القاعدة (مم)
+LABEL_FONTS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+               "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+               "C:/Windows/Fonts/arialbd.ttf", "/Library/Fonts/Arial Bold.ttf"]
+
+
+def rounded_rect(w, h, r, seg=6):
+    pts = []
+    for cx, cy, a0 in ((w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90),
+                       (-w / 2 + r, -h / 2 + r, 180), (w / 2 - r, -h / 2 + r, 270)):
+        for k in range(seg + 1):
+            a = math.radians(a0 + 90 * k / seg)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return pts
+
+
+def add_prism(m, poly, z0, z1, mat, hole=None):
+    """Extrude a 2D outline (optionally with a same-size hole outline) between z0 and z1."""
+    n = len(poly)
+    verts = [Vector((x, y, z)) for z in (z0, z1) for x, y in poly]
+    if hole is None:
+        faces = [tuple(reversed(range(n))), tuple(range(n, 2 * n))]
+        faces += [(k, (k + 1) % n, n + (k + 1) % n, n + k) for k in range(n)]
+    else:
+        assert len(hole) == n
+        verts += [Vector((x, y, z)) for z in (z0, z1) for x, y in hole]
+        o0, o1, i0, i1 = 0, n, 2 * n, 3 * n
+        faces = []
+        for k in range(n):
+            k1 = (k + 1) % n
+            faces += [(o0 + k, o0 + k1, o1 + k1, o1 + k), (i0 + k1, i0 + k, i1 + k, i1 + k1),
+                      (o1 + k, o1 + k1, i1 + k1, i1 + k), (o0 + k1, o0 + k, i0 + k, i0 + k1)]
+    m.add(verts, faces, mat)
+
+
+def text_parts(lines, size, z0, z1):
+    """Raised text as closed meshes (one shell per glyph), centred on the origin."""
+    font = None
+    for path in LABEL_FONTS:
+        if os.path.exists(path):
+            font = bpy.data.fonts.load(path, check_existing=True)
+            break
+    cu = bpy.data.curves.new("label_text", 'FONT')
+    cu.body = "\n".join(lines)
+    if font:
+        cu.font = font
+    cu.size = size
+    cu.space_line = 1.15
+    cu.align_x = 'CENTER'
+    cu.align_y = 'CENTER'
+    cu.extrude = (z1 - z0) / 2
+    cu.fill_mode = 'BOTH'
+    ob = bpy.data.objects.new("label_text", cu)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location.z = (z0 + z1) / 2
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), depsgraph=dg)
+    me.transform(ob.matrix_world)
+    bpy.data.objects.remove(ob)
+    bpy.data.curves.remove(cu)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    verts = [v.co.copy() for v in bm.verts]
+    faces = [tuple(v.index for v in f.verts) for f in bm.faces]
+    xs = [v.x for v in verts]
+    ys = [v.y for v in verts]
+    bm.free()
+    bpy.data.meshes.remove(me)
+    return verts, faces, (max(xs) - min(xs), max(ys) - min(ys))
+
+
+def label_models(name, lines, k=1.0):
+    """Plate (built lying flat, text up = its print side) and slotted stand.
+    k scales the lettering and stand; the plate stays LABEL_PLATE thick."""
+    relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
+    slot = LABEL_SLOT_DEPTH * k
+    verts, faces, (tw, th) = text_parts(lines, LABEL_TEXT * k, LABEL_PLATE - 0.2, LABEL_PLATE + relief)
+    margin, frame_w = 3.5 * k, 1.2 * k
+    w = max(tw + 2 * (margin + frame_w), 34.0 * k)
+    text_h = th + 2 * margin + 2 * frame_w
+    h = text_h + slot
+    plate = Model(f"label_{name}_plate")
+    add_prism(plate, rounded_rect(w, h, 2.0 * k), 0.0, LABEL_PLATE, "white")
+    # text area sits above the part that goes into the slot
+    oy = slot / 2
+    ow, oh = w - 1.0 * k, text_h - 1.0 * k
+    outer = [(x, y + oy) for x, y in rounded_rect(ow, oh, 1.6 * k)]
+    inner = [(x, y + oy) for x, y in rounded_rect(ow - 2 * frame_w, oh - 2 * frame_w, 0.6 * k)]
+    add_prism(plate, outer, LABEL_PLATE - 0.2, LABEL_PLATE + relief, "dark", hole=inner)
+    plate.add([v + Vector((0, oy, 0)) for v in verts], faces, "dark")
+    stand = Model(f"label_{name}_stand")
+    sw, sd, sh = w + 6.0 * k, 12.0 * k, 7.0 * k
+    stand.loft_rects((0, 0), [(sw, sd, 0.0), (sw, sd, sh - 1.5 * k), (sw - 3.0 * k, sd - 3.0 * k, sh)], "concrete")
+    slot_w = LABEL_PLATE + LABEL_FIT
+    stand.cut().box(Matrix.Translation((0, 0, sh - slot / 2 + 0.5)), w + 2 * LABEL_FIT, slot_w, slot + 1.0)
+    return plate, stand, (w, h, sh, slot)
+
+
+def build_labels(pairs, coll, out_dir, k=1.0):
+    """Name plate + stand in front of each (tower object, LABELS key, file name);
+    one STL per tower with both parts laid out in their print orientation."""
+    for tower, key, name in pairs:
+        lines = LABELS[key]
+        plate_m, stand_m, (w, h, sh, slot) = label_models(name, lines, k)
+        plate = union_model(plate_m, coll, "MANIFOLD")
+        clean_for_print(plate)
+        assign_materials(plate, plate_m)
+        stand = union_model(stand_m, coll, "MANIFOLD")
+        subtract_cutters(stand, stand_m)
+        clean_for_print(stand)
+        assign_materials(stand, stand_m)
+        bad = check_manifold(plate)[0] + check_manifold(stand)[0]
+        shells = check_manifold(plate)[1], check_manifold(stand)[1]
+        if EXPORT_STL and out_dir:
+            bm = bmesh.new()
+            for me, M in ((plate.data, Matrix.Identity(4)),
+                          (stand.data, Matrix.Translation((0, -(h / 2 + 12.0 * k), 0)))):
+                tmp = me.copy()
+                tmp.transform(M)
+                bm.from_mesh(tmp)
+                bpy.data.meshes.remove(tmp)
+            out = bpy.data.meshes.new(f"label_{name}")
+            bm.to_mesh(out)
+            bm.free()
+            tmp_ob = bpy.data.objects.new(out.name, out)
+            bpy.context.scene.collection.objects.link(tmp_ob)
+            export_stl(tmp_ob, os.path.join(out_dir, "labels"))
+            bpy.data.objects.remove(tmp_ob)
+            bpy.data.meshes.remove(out)
+        # stand it up in front of the tower: plate's print-up (+Z) faces the viewer (-Y)
+        front = min((tower.matrix_world @ Vector(c)).y for c in tower.bound_box)
+        y = front - 9.0 * k
+        x = tower.location.x
+        plate.data.transform(Matrix.Translation((0, h / 2 - slot, 0)))
+        plate.data.transform(Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1))))
+        plate.location = (x, y + LABEL_PLATE / 2, sh + 0.05)     # bottom edge on the slot floor
+        stand.location = (x, y, 0)
+        print(f"    label {name:24s} '{' / '.join(lines)}'  plate {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back"
+              f"  non-manifold={bad}  shells={shells}")
 
 
 def build_all(out_dir=None):
@@ -1459,6 +1626,7 @@ def build_all(out_dir=None):
             export_stl(ob, out_dir)
         if model.loose:
             build_loose_parts(model, coll, ob.location.x, out_dir)
+    build_labels([(o, o.name, o.name) for o in coll.objects if o.name in LABELS], coll, out_dir)
     return results
 
 
