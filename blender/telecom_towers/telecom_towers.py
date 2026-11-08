@@ -1484,6 +1484,20 @@ def add_prism(m, poly, z0, z1, mat, hole=None):
     m.add(verts, faces, mat)
 
 
+def shape_text(line):
+    """Arabic needs joined letter forms and right-to-left order, which Blender's
+    text does not do: reshape to presentation forms and reorder for display."""
+    if not any("\u0600" <= ch <= "\u06ff" for ch in line):
+        return line
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+    except ImportError:
+        raise RuntimeError("Arabic text needs: pip install arabic-reshaper python-bidi "
+                           "(into Blender's Python)")
+    return get_display(arabic_reshaper.reshape(line))
+
+
 def text_parts(lines, size, z0, z1):
     """Raised text as closed meshes (one shell per glyph), centred on the origin."""
     font = None
@@ -1492,7 +1506,7 @@ def text_parts(lines, size, z0, z1):
             font = bpy.data.fonts.load(path, check_existing=True)
             break
     cu = bpy.data.curves.new("label_text", 'FONT')
-    cu.body = "\n".join(lines)
+    cu.body = "\n".join(shape_text(line) for line in lines)
     if font:
         cu.font = font
     cu.size = size
@@ -1513,21 +1527,55 @@ def text_parts(lines, size, z0, z1):
     bm.from_mesh(me)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    verts = [v.co.copy() for v in bm.verts]
-    faces = [tuple(v.index for v in f.verts) for f in bm.faces]
-    xs = [v.x for v in verts]
-    ys = [v.y for v in verts]
+    bm.verts.ensure_lookup_table()
+    # one closed shell per glyph: joined (Arabic) letters overlap, so each
+    # shell must be its own part for the boolean union to merge them
+    shells, seen = [], set()
+    for f0 in bm.faces:
+        if f0.index in seen:
+            continue
+        stack, fs = [f0], []
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            fs.append(f)
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g.index not in seen:
+                        seen.add(g.index)
+                        stack.append(g)
+        vmap = {}
+        for f in fs:
+            for v in f.verts:
+                vmap.setdefault(v.index, len(vmap))
+        verts = [None] * len(vmap)
+        for vi, k in vmap.items():
+            verts[k] = bm.verts[vi].co.copy()
+        shells.append((verts, [tuple(vmap[v.index] for v in f.verts) for f in fs]))
+    xs = [v.co.x for v in bm.verts]
+    ys = [v.co.y for v in bm.verts]
     bm.free()
     bpy.data.meshes.remove(me)
-    return verts, faces, (max(xs) - min(xs), max(ys) - min(ys))
+    return shells, (max(xs) - min(xs), max(ys) - min(ys))
 
 
 def label_models(name, lines, k=1.0):
     """Plate (built lying flat, text up = its print side) and slotted stand.
     k scales the lettering and stand; the plate stays LABEL_PLATE thick."""
+    return plate_models(name, [(lines, LABEL_TEXT * k)], k)
+
+
+def plate_models(name, blocks, k=1.0, gap=2.5):
+    """Name plate with stacked text blocks [(lines, letter size), ...]."""
     relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
     slot = LABEL_SLOT_DEPTH * k
-    verts, faces, (tw, th) = text_parts(lines, LABEL_TEXT * k, LABEL_PLATE - 0.2, LABEL_PLATE + relief)
+    made = [text_parts(lines, size, LABEL_PLATE - 0.2, LABEL_PLATE + relief) for lines, size in blocks]
+    tw = max(bw for _, (bw, _) in made)
+    th = sum(bh for _, (_, bh) in made) + gap * k * (len(made) - 1)
+    glyphs, y = [], th / 2
+    for shells, (_, bh) in made:       # stack the blocks top to bottom
+        glyphs += [([v + Vector((0, y - bh / 2, 0)) for v in sv], sf) for sv, sf in shells]
+        y -= bh + gap * k
     margin, frame_w = 3.5 * k, 1.2 * k
     w = max(tw + 2 * (margin + frame_w), 34.0 * k)
     text_h = th + 2 * margin + 2 * frame_w
@@ -1540,7 +1588,8 @@ def label_models(name, lines, k=1.0):
     outer = [(x, y + oy) for x, y in rounded_rect(ow, oh, 1.6 * k)]
     inner = [(x, y + oy) for x, y in rounded_rect(ow - 2 * frame_w, oh - 2 * frame_w, 0.6 * k)]
     add_prism(plate, outer, LABEL_PLATE - 0.2, LABEL_PLATE + relief, "dark", hole=inner)
-    plate.add([v + Vector((0, oy, 0)) for v in verts], faces, "dark")
+    for sv, sf in glyphs:
+        plate.add([v + Vector((0, oy, 0)) for v in sv], sf, "dark")
     stand = Model(f"label_{name}_stand")
     sw, sd, sh = w + 6.0 * k, 12.0 * k, 7.0 * k
     stand.loft_rects((0, 0), [(sw, sd, 0.0), (sw, sd, sh - 1.5 * k), (sw - 3.0 * k, sd - 3.0 * k, sh)], "concrete")
@@ -1592,6 +1641,50 @@ def build_labels(pairs, coll, out_dir, k=1.0):
               f"  non-manifold={bad}  shells={shells}")
 
 
+CREDITS = [
+    (["كروب B"], 8.0),
+    (["الدكتورة زهراء علاء الخفاجي"], 6.0),
+    (["سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم",
+      "سلام ستار", "علي حسين عبد الهادي", "حسين علي حسين"], 5.5),
+]
+
+
+def build_credits(coll, out_dir, x, y):
+    """Group-B credits plaque (same 2 mm plate + stand), standing behind the towers."""
+    name = "Credits_Group_B"
+    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, CREDITS, gap=3.0)
+    plate = union_model(plate_m, coll, "MANIFOLD")
+    clean_for_print(plate)
+    assign_materials(plate, plate_m)
+    stand = union_model(stand_m, coll, "MANIFOLD")
+    subtract_cutters(stand, stand_m)
+    clean_for_print(stand)
+    assign_materials(stand, stand_m)
+    if EXPORT_STL and out_dir:
+        bm = bmesh.new()
+        for me, M in ((plate.data, Matrix.Identity(4)),
+                      (stand.data, Matrix.Translation((0, -(h / 2 + 12.0), 0)))):
+            tmp = me.copy()
+            tmp.transform(M)
+            bm.from_mesh(tmp)
+            bpy.data.meshes.remove(tmp)
+        out = bpy.data.meshes.new("credits_group_B")
+        bm.to_mesh(out)
+        bm.free()
+        tmp_ob = bpy.data.objects.new(out.name, out)
+        bpy.context.scene.collection.objects.link(tmp_ob)
+        export_stl(tmp_ob, os.path.join(out_dir, "labels"))
+        bpy.data.objects.remove(tmp_ob)
+        bpy.data.meshes.remove(out)
+    plate.data.transform(Matrix.Translation((0, h / 2 - slot, 0)))
+    plate.data.transform(Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1))))
+    plate.location = (x, y + LABEL_PLATE / 2, sh + 0.05)
+    stand.location = (x, y, 0)
+    bad = check_manifold(plate)[0] + check_manifold(stand)[0]
+    print(f"    credits plaque {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back  non-manifold={bad}  "
+          f"shells={check_manifold(plate)[1]}, {check_manifold(stand)[1]}")
+
+
 def build_all(out_dir=None):
     if CLEAR_SCENE:
         clear_scene()
@@ -1627,6 +1720,8 @@ def build_all(out_dir=None):
         if model.loose:
             build_loose_parts(model, coll, ob.location.x, out_dir)
     build_labels([(o, o.name, o.name) for o in coll.objects if o.name in LABELS], coll, out_dir)
+    back = max((o.matrix_world @ Vector(c)).y for o in coll.objects if o.name in LABELS for c in o.bound_box)
+    build_credits(coll, out_dir, 0.0, back + 25.0)
     return results
 
 
