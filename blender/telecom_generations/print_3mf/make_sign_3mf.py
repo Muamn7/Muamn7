@@ -90,10 +90,11 @@ def text_solid(name, label, z0, z1, font):
     return tob
 
 
-def subtract(target, cutter):
+def subtract(target, cutter, use_self=False):
     mod = target.modifiers.new("bool", "BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "EXACT"
+    mod.use_self = use_self      # needed when the cutter's glyph shells touch each other
     mod.object = cutter
     dg = bpy.context.evaluated_depsgraph_get()
     me = bpy.data.meshes.new_from_object(target.evaluated_get(dg))
@@ -138,12 +139,15 @@ def write_3mf(path, sign_name, parts, pin, plate=(128.0, 128.0)):
     comps = "".join(f'<component objectid="{i}"/>' for i in comp_ids)
     res.append(f'<object id="{sign_id}" type="model" name="{sign_name}">'
                f'<components>{comps}</components></object>')
-    pin_id = sign_id + 1
-    res.append(f'<object id="{pin_id}" type="model" pid="1" pindex="{len(parts)}" name="Pin">'
-               f'{mesh_xml(*pin)}</object>')
     px, py = plate
-    build = (f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {px - 12:.1f} {py:.1f} 0"/>'
-             f'<item objectid="{pin_id}" transform="1 0 0 0 1 0 0 0 1 {px + 50:.1f} {py:.1f} 0"/>')
+    if pin is None:
+        build = f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {px:.1f} {py:.1f} 0"/>'
+    else:
+        pin_id = sign_id + 1
+        res.append(f'<object id="{pin_id}" type="model" pid="1" pindex="{len(parts)}" name="Pin">'
+                   f'{mesh_xml(*pin)}</object>')
+        build = (f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {px - 12:.1f} {py:.1f} 0"/>'
+                 f'<item objectid="{pin_id}" transform="1 0 0 0 1 0 0 0 1 {px + 50:.1f} {py:.1f} 0"/>')
     model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
              '<model unit="millimeter" xml:lang="en-US" '
              'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
