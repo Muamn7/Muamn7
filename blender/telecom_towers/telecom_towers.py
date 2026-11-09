@@ -1722,8 +1722,10 @@ def build_all(out_dir=None):
         if model.loose:
             build_loose_parts(model, coll, ob.location.x, out_dir)
     build_labels([(o, o.name, o.name) for o in coll.objects if o.name in LABELS], coll, out_dir)
-    back = max((o.matrix_world @ Vector(c)).y for o in coll.objects if o.name in LABELS for c in o.bound_box)
-    build_credits(coll, out_dir, 0.0, back + 25.0)
+    # at the end of the row, in line with the name plates, so nothing hides it
+    last = max(o.location.x for o in coll.objects if o.name in LABELS)
+    front = min((o.matrix_world @ Vector(c)).y for o in coll.objects if o.name in LABELS for c in o.bound_box)
+    build_credits(coll, out_dir, last + TOWER_SPACING + 10.0, front + 15.0)
     return results
 
 
