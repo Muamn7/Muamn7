@@ -33,6 +33,7 @@ HOLE_D = 6.3           # mm, hole for the pin (0.3 mm clearance)
 HOLE_DEPTH = 15.0      # mm
 PIN_LEN = 30.0         # mm
 SEG = 160
+TEXT_RES = 24          # curve resolution of the glyphs
 
 SIGNS = [("1G", "#353537"), ("2G", "#1452C4"), ("3G", "#138A3A"),
          ("4G", "#EA6410"), ("5G", "#6A2FB8")]
@@ -73,7 +74,7 @@ def text_solid(name, label, z0, z1, font):
     cu.extrude = (z1 - z0) / 2
     cu.align_x = "CENTER"
     cu.align_y = "CENTER"
-    cu.resolution_u = 24
+    cu.resolution_u = TEXT_RES
     ob = bpy.data.objects.new(name + "_curve", cu)
     bpy.context.scene.collection.objects.link(ob)
     dg = bpy.context.evaluated_depsgraph_get()
@@ -103,10 +104,11 @@ def subtract(target, cutter, use_self=False):
     bpy.data.objects.remove(cutter, do_unlink=True)
 
 
-def tri_data(ob):
+def tri_data(ob, merge=1e-4):
     bm = bmesh.new()
     bm.from_mesh(ob.data)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+    if merge:
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge)
     bmesh.ops.triangulate(bm, faces=bm.faces)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bad = [e for e in bm.edges if not e.is_manifold]
