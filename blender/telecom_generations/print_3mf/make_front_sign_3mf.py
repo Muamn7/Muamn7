@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Print-ready front title sign ("Generations of Communication") as 3MF files.
+Print-ready front title sign ("Generations of Communication") as 3MF files,
+always ONE piece (no splitting).
 
-A FLAT 2 mm plate the size of the sign on the model (528 x 84 mm) made of two
-flush parts: the light Panel and the dark Text (title, subtitle and the
-signal waves) inlaid 0.6 mm.
-528 mm does not fit most printers, so the plate is also split into three
-pieces (about 176 mm each); the cuts are placed in gaps between letters
-whenever possible.
-Outputs: front_sign_full.3mf and front_sign_part1..3.3mf
+A FLAT 2 mm plate made of two flush parts: the light Panel and the dark Text
+(title, subtitle and the signal waves) inlaid 0.6 mm.
+Outputs:
+  front_sign_full.3mf     - real size of the model's sign, 528 x 84 mm
+  front_sign_fit_256.3mf  - same sign scaled to 305 x 48.5 mm and laid
+                            diagonally so it fits a 256 x 256 mm bed
 Run:  blender -b -P make_front_sign_3mf.py   (or python with the bpy module)
 """
 import math
@@ -27,8 +27,7 @@ TITLE = ("Generations of Communication", 30.0, 380.0, 12.5)            # text, s
 SUBTITLE = ("From the First Generation ... to the Fifth Generation", 16.0, 360.0, -21.0)
 WAVES_X, WAVE_RADII, WAVE_T, WAVE_SPAN = 226.0, (9.0, 16.0, 23.0), 3.2, 48.0
 PANEL_COLOR, TEXT_COLOR = "#F7F7F5", "#0A0A0A"
-PIECES = 3
-PLATE_LIMIT = 250.0             # mm, largest piece we accept
+FIT_BED = 250.0                 # mm, usable bed side for the diagonal one-piece version
 
 
 def wave_band(r, side):
@@ -87,60 +86,6 @@ def boolean(target, cutter, op):
     bpy.data.objects.remove(cutter, do_unlink=True)
 
 
-def letter_islands(font):
-    """(xmin, xmax, ycentre) of every separate letter shell"""
-    probe = content("probe", 0.0, 1.0, font)
-    out = []
-    bm = bmesh.new()
-    bm.from_mesh(probe.data)
-    seen = set()
-    for v in bm.verts:
-        if v.index in seen:
-            continue
-        stack, pts = [v], []
-        seen.add(v.index)
-        while stack:
-            cur = stack.pop()
-            pts.append(cur.co)
-            for e in cur.link_edges:
-                o = e.other_vert(cur)
-                if o.index not in seen:
-                    seen.add(o.index)
-                    stack.append(o)
-        xs = [p.x for p in pts]
-        ys = [p.y for p in pts]
-        out.append((min(xs), max(xs), min(ys), max(ys)))
-    bm.free()
-    bpy.data.objects.remove(probe, do_unlink=True)
-    return out
-
-
-def find_gap(target, covered, margin=0.8, search=30.0):
-    for step in range(int(search / 0.125) + 1):
-        for x in (target + step * 0.125, target - step * 0.125):
-            if not any(a - margin <= x <= b + margin for a, b in covered):
-                return x
-    return None
-
-
-def choose_cuts(font):
-    """stepped cuts: one x in a gap of the title line, one in a gap of the subtitle line,
-    joined by a horizontal step between the two lines"""
-    isl = letter_islands(font)
-    mid = (TITLE[3] + SUBTITLE[3]) / 2
-    title = [(a, b) for a, b, y0, y1 in isl if (y0 + y1) / 2 > mid]
-    sub = [(a, b) for a, b, y0, y1 in isl if (y0 + y1) / 2 <= mid]
-    y_step = (min(y0 for a, b, y0, y1 in isl if (y0 + y1) / 2 > mid) +
-              max(y1 for a, b, y0, y1 in isl if (y0 + y1) / 2 <= mid)) / 2
-    cuts = []
-    for j in range(1, PIECES):
-        target = -W / 2 + W * j / PIECES
-        xt, xb = find_gap(target, title), find_gap(target, sub)
-        print(f"  cut {j}: title line x = {xt}, subtitle line x = {xb}, step at y = {y_step:.2f}")
-        cuts.append((xt if xt is not None else target, xb if xb is not None else target))
-    return cuts, y_step
-
-
 def export(path, title, objs):
     parts = []
     for name, col, ob in objs:
@@ -156,7 +101,6 @@ def export(path, title, objs):
 
 def build(font):
     ms.clear()
-    cuts, y_step = choose_cuts(font)
     outline = [(sc.rrect(W, H, R), (0, 0))]
     panel = sc.prism_obj("Panel", outline, 0.0, THICK)
     boolean(panel, content("cut", THICK - INLAY, THICK + 0.2, font), "DIFFERENCE")
@@ -164,36 +108,19 @@ def build(font):
     boolean(text, content("glyphs", THICK - INLAY - 0.2, THICK + 0.2, font), "INTERSECT")
     export(os.path.join(ms.HERE, "front_sign_full.3mf"), "Front_Sign_Full",
            [("Panel", PANEL_COLOR, panel), ("Text", TEXT_COLOR, text)])
-    edges = [(-W / 2 - 1, -W / 2 - 1)] + cuts + [(W / 2 + 1, W / 2 + 1)]
-    yb, yt = -H / 2 - 5, H / 2 + 5
-    for j in range(PIECES):
-        (lt, lb), (rt, rb) = edges[j], edges[j + 1]
-        box = [([(lb, yb), (rb, yb), (rb, y_step), (rt, y_step), (rt, yt), (lt, yt),
-                 (lt, y_step), (lb, y_step)], (0, 0))]
-        pieces = []
-        for name, col, src in (("Panel", PANEL_COLOR, panel), ("Text", TEXT_COLOR, text)):
-            ob = bpy.data.objects.new(f"{name}_{j}", src.data.copy())
-            bpy.context.scene.collection.objects.link(ob)
-            boolean(ob, sc.prism_obj("box", box, -1.0, THICK + 1.0), "INTERSECT")
-            pieces.append((name, col, ob))
-        # centre the piece on the plate using the panel's extent
-        xs = [v.co.x for v in pieces[0][2].data.vertices]
-        cx = (max(xs) + min(xs)) / 2
-        assert max(xs) - min(xs) <= PLATE_LIMIT, "piece too long for the plate"
-        for _, _, ob in pieces:
-            for v in ob.data.vertices:
-                v.co.x -= cx
-        out = os.path.join(ms.HERE, f"front_sign_part{j + 1}.3mf")
-        parts = []
-        for name, col, ob in pieces:
-            if not ob.data.polygons:
-                continue
-            v, t, bad = ms.tri_data(ob, merge=0)
-            print(f"  part{j + 1} {name}: {len(t)} tris, non-manifold = {bad}, "
-                  f"x {min(p[0] for p in v):.1f}..{max(p[0] for p in v):.1f}")
-            parts.append((name, col, v, t))
-        ms.write_3mf(out, f"Front_Sign_Part{j + 1}", parts, None)
-        print("saved", out)
+    # one piece that fits a square bed: scale so the 45 deg rotated plate fits FIT_BED
+    k = FIT_BED * math.sqrt(2) / (W + H)
+    c = s_ = math.sqrt(0.5)
+    parts = []
+    for name, col, ob in (("Panel", PANEL_COLOR, panel), ("Text", TEXT_COLOR, text)):
+        v, t, bad = ms.tri_data(ob, merge=0)
+        v = [(k * (x * c - y * s_), k * (x * s_ + y * c), z) for x, y, z in v]
+        print(f"  fit_256 {name}: {len(t)} tris, non-manifold = {bad}")
+        parts.append((name, col, v, t))
+    xs = [p[0] for p in parts[0][2]]
+    print(f"  fit_256: {W * k:.1f} x {H * k:.1f} mm, diagonal footprint {max(xs) - min(xs):.1f} mm")
+    ms.write_3mf(os.path.join(ms.HERE, "front_sign_fit_256.3mf"), "Front_Sign_Fit_256", parts,
+                 None)
 
 
 if __name__ == "__main__":
