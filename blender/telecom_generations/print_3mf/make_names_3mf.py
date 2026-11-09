@@ -26,8 +26,8 @@ FRAME = 7.0                 # mm, frame width
 R_OUT, R_IN = 8.0, 4.0      # mm, corner radii
 THICK = 3.0                 # mm
 INLAY = 0.6                 # mm, text depth (3 layers @ 0.2)
-TITLE_SIZE, NAME_SIZE = 21.0, 16.0
-MAX_W = W - 2 * FRAME - 16  # mm, longest line is shrunk to this width
+TITLE_SIZE, NAME_SIZE = 25.0, 21.0
+MAX_W = W - 2 * FRAME - 10  # mm, longest line is shrunk to this width
 FRAME_COLOR, PANEL_COLOR, TEXT_COLOR = "#3A3F47", "#E4E6E9", "#3A3F47"
 
 LINES = [
@@ -45,8 +45,8 @@ LINES = [
 
 
 def line_centres():
-    top, bottom = H / 2 - FRAME - 16, -H / 2 + FRAME + 13
-    title_gap = 22.0
+    top, bottom = H / 2 - FRAME - 13, -H / 2 + FRAME + 10
+    title_gap = 21.0
     step = (top - title_gap - bottom) / (len(LINES) - 2)
     return [top] + [top - title_gap - i * step for i in range(len(LINES) - 1)]
 
@@ -55,6 +55,7 @@ def text_block(name, z0, z1, font):
     """all lines as one mesh between z0..z1"""
     ms.TEXT_RES = 8
     bm = bmesh.new()
+    spans = []
     for i, (line, y) in enumerate(zip(LINES, line_centres())):
         ms.TEXT_SIZE = TITLE_SIZE if i == 0 else NAME_SIZE
         ob = ms.text_solid(f"{name}_{i}", line, z0, z1, font)
@@ -64,8 +65,16 @@ def text_block(name, z0, z1, font):
         for v in ob.data.vertices:
             v.co.x *= k
             v.co.y = v.co.y * k + y
+        ys = [v.co.y for v in ob.data.vertices]
+        spans.append((min(ys), max(ys)))
         bm.from_mesh(ob.data)
         bpy.data.objects.remove(ob, do_unlink=True)
+    shift = -(spans[-1][0] + spans[0][1]) / 2      # centre the block vertically
+    bmesh.ops.translate(bm, vec=(0, shift, 0), verts=bm.verts)
+    spans = [(a + shift, b + shift) for a, b in spans]
+    gaps = [spans[i][0] - spans[i + 1][1] for i in range(len(spans) - 1)]
+    print(f"  {name}: smallest gap between lines = {min(gaps):.2f} mm, "
+          f"text from y={spans[-1][0]:.1f} to {spans[0][1]:.1f}")
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
