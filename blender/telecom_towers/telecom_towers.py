@@ -1565,9 +1565,10 @@ def label_models(name, lines, k=1.0):
     return plate_models(name, [(lines, LABEL_TEXT * k)], k)
 
 
-def plate_models(name, blocks, k=1.0, gap=2.5):
+def plate_models(name, blocks, k=1.0, gap=2.5, relief=None):
     """Name plate with stacked text blocks [(lines, letter size), ...]."""
-    relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
+    if relief is None:
+        relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
     slot = LABEL_SLOT_DEPTH * k
     made = [text_parts(lines, size, LABEL_PLATE - 0.2, LABEL_PLATE + relief) for lines, size in blocks]
     tw = max(bw for _, (bw, _) in made)
@@ -1642,18 +1643,18 @@ def build_labels(pairs, coll, out_dir, k=1.0):
 
 
 CREDITS = [
-    (["المشروع الاول الابراج"], 7.0),
-    (["الدكتورة زهراء علاء الخفاجي"], 6.0),
+    (["المشروع الاول الابراج"], 10.0),
+    (["الدكتورة زهراء علاء الخفاجي"], 9.0),
     (["سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم", "سلام ستار",
       "علي حسين عبد الهادي", "شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم",
-      "دلال كاظم", "نور الهدى كامل"], 5.5),
-    (["كروب B"], 7.0),
+      "دلال كاظم", "نور الهدى كامل"], 8.0),
+    (["كروب B"], 10.0),
 ]
 
 def build_credits(coll, out_dir, x, y):
     """Group-B credits plaque (same 2 mm plate + stand), standing behind the towers."""
     name = "Credits_Group_B"
-    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, CREDITS, gap=3.0)
+    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, CREDITS, gap=3.5, relief=1.2)
     plate = union_model(plate_m, coll, "MANIFOLD")
     clean_for_print(plate)
     assign_materials(plate, plate_m)
