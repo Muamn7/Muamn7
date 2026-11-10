@@ -125,11 +125,14 @@ def mesh_xml(verts, tris):
     return f"<mesh><vertices>{v}</vertices><triangles>{t}</triangles></mesh>"
 
 
-def write_3mf(path, sign_name, parts, pin, plate=(128.0, 128.0)):
-    """parts: [(name, colour, verts, tris)] -> one object made of parts; pin: extra object"""
+def write_3mf(path, sign_name, parts, pin, plate=(128.0, 128.0), positions=None,
+              extra_name="Pin", extra_color=None):
+    """parts: [(name, colour, verts, tris)] -> one object made of parts; pin: extra object.
+    positions: optional ((x, y) of the parts object, (x, y) of the extra object) on the bed"""
     res = ['<basematerials id="1">']
     res += [f'<base name="{n}" displaycolor="{c}FF"/>' for n, c, _, _ in parts]
-    res += [f'<base name="Pin" displaycolor="{parts[0][1]}FF"/>', "</basematerials>"]
+    res += [f'<base name="{extra_name}" displaycolor="{extra_color or parts[0][1]}FF"/>',
+            "</basematerials>"]
     oid = 2
     comp_ids = []
     for i, (n, c, v, t) in enumerate(parts):
@@ -146,10 +149,12 @@ def write_3mf(path, sign_name, parts, pin, plate=(128.0, 128.0)):
         build = f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {px:.1f} {py:.1f} 0"/>'
     else:
         pin_id = sign_id + 1
-        res.append(f'<object id="{pin_id}" type="model" pid="1" pindex="{len(parts)}" name="Pin">'
+        res.append(f'<object id="{pin_id}" type="model" pid="1" pindex="{len(parts)}" '
+                   f'name="{extra_name}">'
                    f'{mesh_xml(*pin)}</object>')
-        build = (f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {px - 12:.1f} {py:.1f} 0"/>'
-                 f'<item objectid="{pin_id}" transform="1 0 0 0 1 0 0 0 1 {px + 50:.1f} {py:.1f} 0"/>')
+        (ax, ay), (bx, by) = positions or ((px - 12, py), (px + 50, py))
+        build = (f'<item objectid="{sign_id}" transform="1 0 0 0 1 0 0 0 1 {ax:.1f} {ay:.1f} 0"/>'
+                 f'<item objectid="{pin_id}" transform="1 0 0 0 1 0 0 0 1 {bx:.1f} {by:.1f} 0"/>')
     model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
              '<model unit="millimeter" xml:lang="en-US" '
              'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
