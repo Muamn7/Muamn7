@@ -1,7 +1,7 @@
 """
 Studio + preview renders for hard_hat.blend.
 
-    blender --background hard_hat_ridge.blend --python render_previews.py -- OUT_DIR [SIZE] [SAMPLES] [VIEWS] [--save]
+    blender --background hard_hat_classic.blend --python render_previews.py -- OUT_DIR [SIZE] [SAMPLES] [VIEWS] [--save]
 
 VIEWS is a comma list (default: all). --save writes the studio into the .blend.
 """
@@ -24,7 +24,8 @@ VIEWS = {
     "top":       ((0.0, -0.001, 1.40), (0.0, -0.015, 0.0), 105),
     "rear_3q":   ((-0.80, 0.80, 0.50), (0.0, 0.0, 0.050), 95),
     "underside": ((0.25, -0.30, -1.05), (0.0, -0.01, 0.040), 105),
-    "detail_ridge": ((0.30, -0.36, 0.30), (0.0, -0.040, 0.105), 95),
+    "photo_angle": ((-0.560, -0.140, 0.160), (0.0, -0.020, 0.045), 46),
+    "detail_band": ((-0.42, -0.22, 0.10), (-0.085, -0.035, 0.020), 85),
 }
 
 
