@@ -574,7 +574,7 @@ def build_base(mats, coll, x_min, x_max):
 
 def tube(name, points, radius, coll, mat, closed_caps=True):
     obj = add_object(name, curve_data(name, [points], dims="3D", cyclic=False,
-                                      bevel_depth=radius, bevel_resolution=6,
+                                      bevel_depth=radius, bevel_resolution=14,
                                       use_fill_caps=closed_caps), coll)
     obj = curve_to_mesh(obj)
     assign(obj, mat)
