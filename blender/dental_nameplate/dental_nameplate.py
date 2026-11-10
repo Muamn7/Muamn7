@@ -131,6 +131,14 @@ def curve_to_mesh(obj):
     bpy.data.objects.remove(obj)
     if data.users == 0:
         bpy.data.curves.remove(data)
+    # The converted caps and sides are separate surfaces: weld them so every
+    # part is a closed solid that can be 3D printed.
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
     new = bpy.data.objects.new(name, me)
     new.matrix_world = mw
     for c in colls:
@@ -204,7 +212,18 @@ def offset_loop(loop, dist):
     for i in range(n):
         t = (loop[(i + 1) % n] - loop[i - 1]).normalized()
         out.append(loop[i] + Vector((t.y, -t.x)) * dist * sign)
-    return out
+
+    # In a notch tighter than the offset the curve crosses itself; drop the
+    # points that end up closer to the original outline than the offset.
+    def gap(p):
+        best = abs(dist)
+        for i in range(n):
+            a, b = loop[i], loop[(i + 1) % n]
+            ab = b - a
+            t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+            best = min(best, (a + ab * t - p).length)
+        return best
+    return [p for p in out if gap(p) > abs(dist) * 0.98]
 
 
 def curve_data(name, splines, dims="2D", cyclic=True, **props):
@@ -563,16 +582,12 @@ def tube(name, points, radius, coll, mat, closed_caps=True):
     return obj
 
 
-def cylinder(name, radius, height, coll, mat, segments=64, hollow_wall=0.0, top_radius=None):
+def cylinder(name, radius, height, coll, mat, segments=64, top_radius=None):
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments,
                           radius1=radius, radius2=radius if top_radius is None else top_radius,
                           depth=height,
                           matrix=Matrix.Translation((0, 0, height / 2)))
-    if hollow_wall:
-        top = max(bm.faces, key=lambda f: f.calc_center_median().z)
-        bmesh.ops.inset_region(bm, faces=[top], thickness=hollow_wall, depth=0)
-        bmesh.ops.translate(bm, vec=(0, 0, -(height - hollow_wall * 2.5)), verts=top.verts)
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -582,23 +597,54 @@ def cylinder(name, radius, height, coll, mat, segments=64, hollow_wall=0.0, top_
     return obj
 
 
-def build_instruments(mats, coll, cx, base_top):
-    r_cup, h_cup = 0.0115, 0.066
-    cup = cylinder("Instrument Holder", r_cup, h_cup, coll, mats["gold_satin"], hollow_wall=0.0011)
-    cup.location = (cx, 0.004, base_top)
-    bevel(cup, 0.0005, segments=3)
-    collar = cylinder("Holder Collar", r_cup + 0.0009, 0.004, coll, mats["gold"])
-    collar.location = (cx, 0.004, base_top)
-    bevel(collar, 0.0006, segments=3)
-    lip = cylinder("Holder Lip", r_cup + 0.0005, 0.0025, coll, mats["gold"])
-    lip.location = (cx, 0.004, base_top + h_cup - 0.0025)
-    bevel(lip, 0.0005, segments=3)
+def lathe(name, profile, coll, mats, segments=96):
+    """Solid of revolution around Z. `profile` runs (radius, z, material index of the
+    segment that starts there) from the axis at the bottom to the axis at the top."""
+    bm = bmesh.new()
+    rings = []
+    for r, z, _ in profile:
+        if r == 0:
+            rings.append([bm.verts.new((0, 0, z))])
+        else:
+            rings.append([bm.verts.new((r * math.cos(a), r * math.sin(a), z))
+                          for a in (2 * math.pi * i / segments for i in range(segments))])
+    for (lo, hi), (_, _, mat) in zip(zip(rings, rings[1:]), profile):
+        for i in range(segments):
+            j = (i + 1) % segments
+            if len(lo) == 1:
+                f = bm.faces.new((lo[0], hi[j], hi[i]))
+            elif len(hi) == 1:
+                f = bm.faces.new((lo[i], lo[j], hi[0]))
+            else:
+                f = bm.faces.new((lo[i], lo[j], hi[j], hi[i]))
+            f.material_index = mat
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = add_object(name, me, coll)
+    assign(obj, *mats)
+    smooth(obj, 40)
+    return obj
 
-    c = Vector((cx, 0.004, base_top + 0.006))
+
+def build_instruments(mats, coll, cx, base_top):
+    # Holder: one solid cup with a 2.2 mm wall, 3 mm floor, polished foot ring and lip.
+    r_cup, h_cup, wall, floor = 0.0115, 0.066, 0.0022, 0.003
+    cup = lathe("Instrument Holder", [
+        (0.0, 0.0, 1), (r_cup + 0.0009, 0.0, 1), (r_cup + 0.0009, 0.004, 1),
+        (r_cup, 0.004, 0), (r_cup, h_cup - 0.0025, 1), (r_cup + 0.0005, h_cup - 0.0025, 1),
+        (r_cup + 0.0005, h_cup, 1), (r_cup - wall, h_cup, 0), (r_cup - wall, floor, 0),
+        (0.0, floor, 0)], coll, (mats["gold_satin"], mats["gold"]))
+    cup.location = (cx, 0.004, base_top)
+    bevel(cup, 0.0004, segments=3)
+
+    # The handles stand on the floor of the cup and lean on its rim.
+    c = Vector((cx, 0.004, base_top + floor - 0.0005))
 
     # Dental mirror: knurled handle leaning left, thin neck, round mirror head.
-    m_dir = Vector((-0.13, -0.02, 1.0)).normalized()
-    m_top = c + m_dir * 0.112
+    m_dir = Vector((-0.095, -0.02, 1.0)).normalized()
+    m_top = c + m_dir * 0.1155
     tube("Mirror Handle", [c, c + m_dir * 0.03, m_top], 0.0026, coll, mats["gold_knurl"])
     head_r = 0.0135
     head_c = m_top + Vector((-0.018, -0.006, 0.040))
@@ -606,20 +652,20 @@ def build_instruments(mats, coll, cx, base_top):
     neck = catmull([m_top - m_dir * 0.004, m_top + m_dir * 0.010,
                     m_top + m_dir * 0.018 + Vector((-0.001, -0.002, 0.004)), attach],
                    samples=10, closed=False)
-    tube("Mirror Neck", neck, 0.0011, coll, mats["gold"])
+    tube("Mirror Neck", neck, 0.0012, coll, mats["gold"])
     ring = cylinder("Mirror Head", head_r + 0.0012, 0.0032, coll, mats["gold"], segments=96)
     tilt = Matrix.Rotation(math.radians(56), 4, "X") @ Matrix.Rotation(math.radians(-12), 4, "Y")
     ring.matrix_world = Matrix.Translation(head_c) @ Matrix.Rotation(math.radians(8), 4, "Z") @ tilt \
         @ Matrix.Translation((0, 0, -0.0016))
     bevel(ring, 0.0007, segments=4)
-    glass = cylinder("Mirror Glass", head_r - 0.0002, 0.0005, coll, mats["mirror"], segments=96)
+    glass = cylinder("Mirror Glass", head_r - 0.0002, 0.001, coll, mats["mirror"], segments=96)
     glass.matrix_world = Matrix.Translation(head_c) @ Matrix.Rotation(math.radians(8), 4, "Z") @ tilt \
-        @ Matrix.Translation((0, 0, 0.0014))
+        @ Matrix.Translation((0, 0, 0.0013))
 
     # Explorer probe: knurled handle leaning right, thin neck ending in a hook.
-    p0 = c + Vector((0.0025, 0.002, 0.0))
-    p_dir = Vector((0.11, 0.015, 1.0)).normalized()
-    p_top = p0 + p_dir * 0.098
+    p0 = c + Vector((0.0015, 0.0, 0.0))
+    p_dir = Vector((0.075, 0.01, 1.0)).normalized()
+    p_top = p0 + p_dir * 0.1015
     tube("Probe Handle", [p0, p0 + p_dir * 0.03, p_top], 0.0024, coll, mats["gold_knurl"])
     cone = cylinder("Probe Taper", 0.0024, 0.006, coll, mats["gold"], top_radius=0.0011)
     cone.matrix_world = Matrix.Translation(p_top) @ p_dir.to_track_quat("Z", "Y").to_matrix().to_4x4()
@@ -628,7 +674,7 @@ def build_instruments(mats, coll, cx, base_top):
     for ang in range(180, -60, -20):
         a = math.radians(ang)
         hook.append(hook_c + Vector((math.cos(a) * 0.0052, 0, math.sin(a) * 0.0052)))
-    tube("Probe Neck", catmull(hook, samples=8, closed=False), 0.00085, coll, mats["gold"])
+    tube("Probe Neck", catmull(hook, samples=8, closed=False), 0.001, coll, mats["gold"])
     return cx + r_cup + 0.001
 
 
