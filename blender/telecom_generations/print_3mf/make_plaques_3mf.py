@@ -1,5 +1,5 @@
 """
-Print-ready names plaques with stands, as 3MF files (one file per plaque).
+Print-ready names plaque with a stand, as a 3MF file (one piece plaque).
 
 Each plaque is FLAT - nothing is raised. The names, the title and the thin
 frame line are printed INTO the background: they are a separate "Ink" part
@@ -38,13 +38,13 @@ FONT_FILES = {"ar": os.path.join(HERE, "fonts", "NotoSansArabic-Medium.ttf"),
               "lat": os.path.join(HERE, "fonts", "NotoSans-Medium.ttf")}
 
 # plaque (mm). The design area is W x H; TAB extra mm at the bottom go into the stand
-W, H, TAB = 200.0, 155.0, 8.0
+W, H, TAB = 200.0, 232.0, 8.0
 THICK, INLAY = 3.0, 0.6
 CORNER = 4.0
 LINE_INSET, LINE_W = 2.5, 2.2      # frame line: distance from the edge, line width
-TITLE_SIZE, NAME_SIZE = 17.0, 16.0
-TITLE_Y = 56.7                     # line centres from the design centre (mm)
-NAME_YS = (32.7, 10.3, -11.5, -33.5, -55.5)
+TITLE_SIZE, NAME_SIZE = 18.0, 16.0  # starting sizes; shrunk until lines keep MIN_GAP
+MIN_GAP = 3.0                      # mm, smallest allowed space between two lines
+TITLE_Y, LAST_Y, TITLE_GAP = H / 2 - 17.0, -H / 2 + 21.0, 21.0   # line centres (mm)
 MAX_W = 176.0
 # stand (mm)
 STAND = dict(w=218.0, d=30.0, h=16.0, r=3.0, slot_depth=8.0, clearance=0.4)
@@ -55,11 +55,8 @@ PLAQUES = [
     # file name, title (segments in visual left-to-right order), names
     ("plaque_group_B",
      [("B", LAT), ("كروب", AR)],
-     ["شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم", "دلال كاظم", "نور الهدى كامل"]),
-    ("plaque_dr_zahraa",
-     [("الدكتورة زهراء علاء الخفاجي", AR)],
-     ["سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم", "سلام ستار",
-      "علي حسين عبد الهادي"]),
+     ["الدكتورة زهراء علاء الخفاجي", "عقيل منصور كاطع", "سجاد كاظم", "سما حيدر",
+      "بتول صبيح", "كرار حيدر", "علاء مازن", "ساجده شهيد", "عباس علي محسن"]),
 ]
 
 _FONTS = {}
@@ -126,17 +123,22 @@ def rect_path(w, h, r):
     return p
 
 
-def ink_path(title, names):
-    """frame line + title + names as one clean 2D path"""
+def ink_path(title, names, title_size, name_size):
+    """frame line + title + names as one clean 2D path; also returns the smallest line gap"""
     ow, oh = W - 2 * LINE_INSET, H - 2 * LINE_INSET
     path = pathops.op(rect_path(ow, oh, CORNER),
                       rect_path(ow - 2 * LINE_W, oh - 2 * LINE_W, max(CORNER - LINE_W, 0.5)),
                       pathops.PathOp.DIFFERENCE)
-    lines = [line_path(title, TITLE_SIZE, TITLE_Y)]
-    lines += [line_path([(n, AR)], NAME_SIZE, y) for n, y in zip(names, NAME_YS)]
+    step = (TITLE_Y - TITLE_GAP - LAST_Y) / (len(names) - 1)
+    name_ys = [TITLE_Y - TITLE_GAP - i * step for i in range(len(names))]
+    lines = [line_path(title, title_size, TITLE_Y)]
+    lines += [line_path([(n, AR)], name_size, y) for n, y in zip(names, name_ys)]
+    gap = min(lines[i].bounds[1] - lines[i + 1].bounds[3] for i in range(len(lines) - 1))
+    inner_top = H / 2 - LINE_INSET - LINE_W
+    gap = min(gap, inner_top - lines[0].bounds[3], lines[-1].bounds[1] + inner_top)
     for lp in lines:
         path = pathops.op(path, lp, pathops.PathOp.UNION)
-    return path
+    return path, gap
 
 
 class FlattenPen(BasePen):
@@ -226,7 +228,13 @@ def boolean(target, cutter, op):
 
 def build_plaque(fname, title, names):
     ms.clear()
-    ink2d = ink_path(title, names)
+    ts, ns = TITLE_SIZE, NAME_SIZE
+    while True:
+        ink2d, gap = ink_path(title, names, ts, ns)
+        if gap >= MIN_GAP:
+            break
+        ts, ns = ts - 0.5, ns - 0.5
+    print(f"  {fname}: title {ts} mm, names {ns} mm, smallest gap {gap:.2f} mm")
     outline = [(sc.rrect(W, H + TAB, CORNER), (0, -TAB / 2))]
     bg = sc.prism_obj("Background", outline, 0.0, THICK)
     boolean(bg, solid("cut", ink2d, THICK - INLAY, THICK + 0.2), "DIFFERENCE")
@@ -245,10 +253,11 @@ def build_plaque(fname, title, names):
               f"z {min(zs):.2f}..{max(zs):.2f}")
         parts.append((name, col, v, t))
     sv, stt, bad = ms.tri_data(stand, merge=0)
+    sv = [(-y, x, z) for x, y, z in sv]        # stand turned 90 deg to lie beside the plaque
     print(f"  {fname} Stand: {len(stt)} tris, non-manifold = {bad}")
     out = os.path.join(HERE, fname + ".3mf")
-    # plaque lies face up, stand in front of it; both fit a 256 x 256 mm bed
-    ms.write_3mf(out, fname, parts, (sv, stt), positions=((128.0, 150.0), (128.0, 30.0)),
+    # plaque lies face up, stand beside it; both fit a 256 x 256 mm bed
+    ms.write_3mf(out, fname, parts, (sv, stt), positions=((108.0, 128.0), (235.0, 128.0)),
                  extra_name="Stand", extra_color=STAND_COLOR)
     print("saved", out)
 
