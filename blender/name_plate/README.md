@@ -27,3 +27,8 @@
 ```
 blender -b -P name_plate.py -- --save name_plate.blend --stl name_plate.stl --render name_plate.png
 ```
+
+## لوحتان بالأسماء مطبوعة داخل الوجه (3MF)
+`inlay_3mf/` — `Plaque_Group_B.3mf` و `Plaque_Project_1.3mf` (200×170×3 مم) و `Stands_x2.3mf`.
+الأسماء والإطار **مستوية مع الوجه** (آخر 0.6 مم) بلون مختلف، غير بارزة. الخط:
+`NotoSansArabic-Medium.ttf` (Noto Sans Arabic، رخصة SIL OFL 1.1). السكربت: `name_plates_inlay.py`.

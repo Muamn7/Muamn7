@@ -23,14 +23,15 @@ HERE = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() els
 sys.path.insert(0, HERE)
 from name_plate import visual            # Arabic shaping (joined letters, RTL)   # noqa: E402
 
-FONT_CANDIDATES = [os.path.join(HERE, "DejaVuSans-Bold.ttf"),
+FONT_CANDIDATES = [os.path.join(HERE, "NotoSansArabic-Medium.ttf"),      # font from the picture
+                   os.path.join(HERE, "DejaVuSans-Bold.ttf"),
                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                    os.path.join(HERE, "NotoKufiArabic-ExtraBold.ttf")]
 
 PLAQUES = {
     "Plaque_Group_B": ["كروب B", "شهد بشير ديوان", "عذراء رياض سفيح",
                        "شمس عبد الكاظم", "دلال كاظم", "نور الهدى كامل"],
-    "Plaque_Project_1": ["المشروع الاول الابراج", "الدكتورة زهراء علاء الخفاجي",
+    "Plaque_Project_1": ["الدكتورة زهراء علاء الخفاجي",
                          "سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم",
                          "سلام ستار", "علي حسين عبد الهادي"],
 }
@@ -42,8 +43,9 @@ CORNER = 6.0
 EDGE = 4.0                 # light margin outside the frame line
 FRAME = 3.0                # frame line width
 SLOT_HIDE = 10.0           # bottom strip that goes into the stand
-TITLE_EM, BIG_EM, NAME_EM = 17.0, 15.5, 13.5
-PITCH = 21.0
+TITLE_EM, BIG_EM, NAME_EM = 18.0, 17.5, 15.5
+PITCH = 22.0
+FIRST_GAP = 3.0          # a little extra space under the first line
 MM = 0.001
 
 
@@ -93,65 +95,183 @@ def bake(ob):
     ob.data = me
 
 
-def text_slab(body, em, y, font, max_w):
-    """Text as a flat solid from z = T-INLAY to z = T (mm units)."""
-    cu = bpy.data.curves.new("t", 'FONT')
-    cu.body = visual(body)
-    cu.font = font
-    cu.size = em
-    cu.align_x = 'CENTER'
-    cu.align_y = 'CENTER'
-    cu.extrude = INLAY / 2
-    cu.resolution_u = 8
-    ob = bpy.data.objects.new("t", cu)
-    bpy.context.scene.collection.objects.link(ob)
-    bpy.context.view_layer.update()
-    if ob.dimensions.x > max_w:
-        cu.size *= max_w / ob.dimensions.x
-    ob.location = (0, y, T - INLAY / 2)
-    bpy.context.view_layer.update()
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
-    me.transform(ob.matrix_world)
-    bpy.data.objects.remove(ob, do_unlink=True)
-    for v in me.vertices:                                   # exact flat top & bottom
-        v.co.z = T if v.co.z > T - INLAY / 2 else T - INLAY
-    return me
+# ---------------------------------------------------------------------------
+# 2D text + plaque geometry (font outlines -> pathops booleans -> extrusion).
+# Needs fontTools + skia-pathops (only to regenerate; the 3MF files are ready).
+# ---------------------------------------------------------------------------
+def _font_paths():
+    from fontTools.ttLib import TTFont
+    path = next(p for p in FONT_CANDIDATES if os.path.exists(p))
+    return TTFont(path), path
 
 
-def build_plaque(name, lines, font):
-    # plate (y = 0 at the visual centre of the plaque body)
+def _line_path(tt, text, em, y, max_w):
+    """Shaped line -> one pathops.Path in mm, centred at (0, y)."""
+    import pathops
+    from fontTools.pens.transformPen import TransformPen
+    gs = tt.getGlyphSet()
+    cmap = tt.getBestCmap()
+    hmtx = tt["hmtx"]
+    upm = tt["head"].unitsPerEm
+    glyphs = [cmap.get(ord(ch), ".notdef") for ch in visual(text)]
+    width = sum(hmtx[g][0] for g in glyphs)
+    s = em / upm
+    if width * s > max_w:
+        s = max_w / width
+    x = -width * s / 2
+    base = y - 0.28 * em * (s * upm / em)          # visual centre of Arabic letters
+    p = pathops.Path()
+    for g in glyphs:
+        gs[g].draw(TransformPen(p.getPen(glyphSet=gs), (s, 0, 0, s, x, base)))
+        x += hmtx[g][0] * s
+    return p
+
+
+def _rr_path(w, h, r, cy=0.0, reverse=False):
+    import pathops
+    p = pathops.Path()
+    pts = rr(w, h, r, cy=cy)
+    if reverse:
+        pts = pts[::-1]
+    pen = p.getPen()
+    pen.moveTo(pts[0])
+    for q in pts[1:]:
+        pen.lineTo(q)
+    pen.closePath()
+    return p
+
+
+def _loops(path, tol=0.08):
+    """Flatten a pathops.Path into closed point loops (mm)."""
+    from fontTools.pens.basePen import BasePen
+
+    class Flat(BasePen):
+        def __init__(self):
+            super().__init__(None)
+            self.loops, self.cur = [], []
+
+        def _moveTo(self, p):
+            self.cur = [p]
+
+        def _lineTo(self, p):
+            self.cur.append(p)
+
+        def _qCurveToOne(self, p1, p2):
+            p0 = self.cur[-1]
+            n = max(2, int(math.dist(p0, p2) / 0.6))
+            for i in range(1, n + 1):
+                t = i / n
+                self.cur.append(((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+                                 (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]))
+
+        def _curveToOne(self, p1, p2, p3):
+            p0 = self.cur[-1]
+            n = max(3, int(math.dist(p0, p3) / 0.6))
+            for i in range(1, n + 1):
+                t = i / n
+                a, b, c, d = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t * t, t ** 3
+                self.cur.append((a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+                                 a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]))
+
+        def _closePath(self):
+            pts = []
+            for q in self.cur:
+                if not pts or math.dist(pts[-1], q) > 1e-4:
+                    pts.append(q)
+            if len(pts) > 2 and math.dist(pts[0], pts[-1]) < 1e-4:
+                pts.pop()
+            if len(pts) >= 3:
+                self.loops.append(pts)
+            self.cur = []
+
+        _endPath = _closePath
+
+    pen = Flat()
+    path.draw(pen)
+    return pen.loops
+
+
+def _extrude(name, loops, z0, z1):
+    """Even-odd filled region (outer loops + holes) -> closed solid."""
+    from mathutils.geometry import tessellate_polygon
     bm = bmesh.new()
-    slab_bm(bm, rr(PW, PH, CORNER), 0, T)
-    plate = mesh_obj(name + "_Plate", bm)
+    bot, top = [], []
+    for lp in loops:
+        bot.append([bm.verts.new((x, y, z0)) for x, y in lp])
+        top.append([bm.verts.new((x, y, z1)) for x, y in lp])
+    flat_b = [v for l in bot for v in l]
+    flat_t = [v for l in top for v in l]
+    tris = tessellate_polygon([[Vector((x, y, 0)) for x, y in lp] for lp in loops])
+    for a, b, c in tris:
+        for vs in ((flat_t[a], flat_t[b], flat_t[c]), (flat_b[c], flat_b[b], flat_b[a])):
+            try:
+                bm.faces.new(vs)
+            except ValueError:
+                pass
+    for lb, lt in zip(bot, top):
+        n = len(lb)
+        for i in range(n):
+            j = (i + 1) % n
+            try:
+                bm.faces.new((lb[i], lb[j], lt[j], lt[i]))
+            except ValueError:
+                pass
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return mesh_obj(name, bm)
 
-    # dark part = frame line + all text, unioned into one clean solid
+
+def build_plaque(name, lines, font=None):
+    import pathops
+    tt, _ = _font_paths()
     fy0, fy1 = -PH / 2 + SLOT_HIDE + EDGE, PH / 2 - EDGE
     fw, fh, fcy = PW - 2 * EDGE, fy1 - fy0, (fy0 + fy1) / 2
-    bm = bmesh.new()
-    slab_bm(bm, rr(fw, fh, CORNER - 1, cy=fcy), T - INLAY, T,
-            inner=rr(fw - 2 * FRAME, fh - 2 * FRAME, CORNER - 1 - FRAME * 0.6, cy=fcy))
-    max_w = fw - 2 * FRAME - 16
+    # dark region: frame line (outer minus inner) + all text lines
+    dark = pathops.Path()
+    _rr_path(fw, fh, CORNER - 1, cy=fcy).draw(dark.getPen())
+    _rr_path(fw - 2 * FRAME, fh - 2 * FRAME, CORNER - 1 - FRAME * 0.6, cy=fcy, reverse=True).draw(dark.getPen())
+    max_w = fw - 2 * FRAME - 8
     n = len(lines)
-    y_top = fcy + PITCH * (n - 1) / 2
+    ys = [0.0] + [-(FIRST_GAP + PITCH * i) for i in range(1, n)]
+    shift = fcy - (ys[0] + ys[-1]) / 2 - 1.5
     for i, line in enumerate(lines):
-        em = TITLE_EM if i == 0 else (BIG_EM if line.startswith("الدكتورة") else NAME_EM)
-        me = text_slab(line, em, y_top - i * PITCH, font, max_w)
-        bm.from_mesh(me)
-        bpy.data.meshes.remove(me)
-    dark = mesh_obj(name + "_Text", bm)
-    # fuse overlapping letters into one solid
-    dummy = bpy.data.objects.new("d", bpy.data.meshes.new("d"))
-    bpy.context.scene.collection.objects.link(dummy)
-    u = dark.modifiers.new("u", 'BOOLEAN')
-    u.operation, u.solver, u.use_self, u.object = 'UNION', 'EXACT', True, dummy
-    bake(dark)
-    bpy.data.objects.remove(dummy, do_unlink=True)
-    # cut the dark part out of the plate -> flush inlay
-    c = plate.modifiers.new("c", 'BOOLEAN')
-    c.operation, c.solver, c.object = 'DIFFERENCE', 'EXACT', dark
-    bake(plate)
-    return plate, dark
+        em = BIG_EM if line.startswith("الدكتورة") else (TITLE_EM if i == 0 else NAME_EM)
+        _line_path(tt, line, em, ys[i] + shift, max_w).draw(dark.getPen())
+    dark.simplify(fix_winding=True)                    # union of everything, no overlaps
+    dl = _loops(dark)
+    outer = rr(PW, PH, CORNER)
+    from mathutils.geometry import tessellate_polygon
+    z0, zf, z1 = 0.0, T - INLAY, T
+    # ---- plate: ONE solid with pockets shaped exactly like the dark part ----
+    bm = bmesh.new()
+    ob_ = [bm.verts.new((x, y, z0)) for x, y in outer]
+    ot = [bm.verts.new((x, y, z1)) for x, y in outer]
+    lt = [[bm.verts.new((x, y, z1)) for x, y in lp] for lp in dl]      # top edges of pockets
+    lf = [[bm.verts.new((x, y, zf)) for x, y in lp] for lp in dl]      # pocket floor edges
+
+    def tri_faces(loops_xy, vert_loops, flip=False):
+        flat = [v for l in vert_loops for v in l]
+        for a_, b_, c_ in tessellate_polygon([[Vector((x, y, 0)) for x, y in lp] for lp in loops_xy]):
+            vs = (flat[a_], flat[b_], flat[c_])
+            try:
+                bm.faces.new(vs[::-1] if flip else vs)
+            except ValueError:
+                pass
+
+    tri_faces([outer] + dl, [ot] + lt)                 # face of the plaque (with holes)
+    tri_faces(dl, lf)                                  # pocket floors
+    bm.faces.new(list(reversed(ob_)))                  # bottom
+    for loop_a, loop_b in [(ob_, ot)] + list(zip(lf, lt)):
+        n = len(loop_a)
+        for i in range(n):
+            j = (i + 1) % n
+            try:
+                bm.faces.new((loop_a[i], loop_a[j], loop_b[j], loop_b[i]))
+            except ValueError:
+                pass
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    plate_ob = mesh_obj(name + "_Plate", bm)
+    dark_ob = _extrude(name + "_Text", dl, zf, z1)
+    return plate_ob, dark_ob
 
 
 def build_stand(name, x_off=0.0):
