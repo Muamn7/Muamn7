@@ -1565,7 +1565,7 @@ def label_models(name, lines, k=1.0):
     return plate_models(name, [(lines, LABEL_TEXT * k)], k)
 
 
-def plate_models(name, blocks, k=1.0, gap=2.5, relief=None):
+def plate_models(name, blocks, k=1.0, gap=2.5, relief=None, min_size=(0.0, 0.0)):
     """Name plate with stacked text blocks [(lines, letter size), ...]."""
     if relief is None:
         relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
@@ -1578,8 +1578,8 @@ def plate_models(name, blocks, k=1.0, gap=2.5, relief=None):
         glyphs += [([v + Vector((0, y - bh / 2, 0)) for v in sv], sf) for sv, sf in shells]
         y -= bh + gap * k
     margin, frame_w = 3.5 * k, 1.2 * k
-    w = max(tw + 2 * (margin + frame_w), 34.0 * k)
-    text_h = th + 2 * margin + 2 * frame_w
+    w = max(tw + 2 * (margin + frame_w), 34.0 * k, min_size[0])
+    text_h = max(th + 2 * margin + 2 * frame_w, min_size[1] - slot)
     h = text_h + slot
     plate = Model(f"label_{name}_plate")
     add_prism(plate, rounded_rect(w, h, 2.0 * k), 0.0, LABEL_PLATE, "white")
@@ -1642,19 +1642,28 @@ def build_labels(pairs, coll, out_dir, k=1.0):
               f"  non-manifold={bad}  shells={shells}")
 
 
-CREDITS = [
+# two plaques, one on each side of the tower row (Arabic reads from the right)
+CREDITS_RIGHT = [
     (["المشروع الاول الابراج"], 10.0),
     (["الدكتورة زهراء علاء الخفاجي"], 9.0),
     (["سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم", "سلام ستار",
-      "علي حسين عبد الهادي", "شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم",
-      "دلال كاظم", "نور الهدى كامل"], 8.0),
+      "علي حسين عبد الهادي"], 8.0),
+]
+CREDITS_LEFT = [
     (["كروب B"], 10.0),
+    (["شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم", "دلال كاظم", "نور الهدى كامل"], 8.0),
 ]
 
-def build_credits(coll, out_dir, x, y):
-    """Group-B credits plaque (same 2 mm plate + stand), standing behind the towers."""
-    name = "Credits_Group_B"
-    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, CREDITS, gap=3.5, relief=1.2)
+
+def credits_size(blocks):
+    """Plate size a credits text would need, so both plaques can be made equal."""
+    probe, _, (w, h, _, _) = plate_models("probe", blocks, gap=3.5, relief=1.2)
+    return w, h
+
+
+def build_credits(coll, out_dir, x, y, name, blocks, min_size):
+    """Credits plaque (same 2 mm plate + slotted stand as the tower labels)."""
+    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, blocks, gap=3.5, relief=1.2, min_size=min_size)
     plate = union_model(plate_m, coll, "MANIFOLD")
     clean_for_print(plate)
     assign_materials(plate, plate_m)
@@ -1670,7 +1679,7 @@ def build_credits(coll, out_dir, x, y):
             tmp.transform(M)
             bm.from_mesh(tmp)
             bpy.data.meshes.remove(tmp)
-        out = bpy.data.meshes.new("credits_group_B")
+        out = bpy.data.meshes.new(name.lower())
         bm.to_mesh(out)
         bm.free()
         tmp_ob = bpy.data.objects.new(out.name, out)
@@ -1683,7 +1692,7 @@ def build_credits(coll, out_dir, x, y):
     plate.location = (x, y + LABEL_PLATE / 2, sh + 0.05)
     stand.location = (x, y, 0)
     bad = check_manifold(plate)[0] + check_manifold(stand)[0]
-    print(f"    credits plaque {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back  non-manifold={bad}  "
+    print(f"    {name} {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back  non-manifold={bad}  "
           f"shells={check_manifold(plate)[1]}, {check_manifold(stand)[1]}")
 
 
@@ -1722,10 +1731,12 @@ def build_all(out_dir=None):
         if model.loose:
             build_loose_parts(model, coll, ob.location.x, out_dir)
     build_labels([(o, o.name, o.name) for o in coll.objects if o.name in LABELS], coll, out_dir)
-    # at the end of the row, in line with the name plates, so nothing hides it
-    last = max(o.location.x for o in coll.objects if o.name in LABELS)
+    # one plaque at each end of the row, in line with the name plates
+    xs = [o.location.x for o in coll.objects if o.name in LABELS]
     front = min((o.matrix_world @ Vector(c)).y for o in coll.objects if o.name in LABELS for c in o.bound_box)
-    build_credits(coll, out_dir, last + TOWER_SPACING + 10.0, front + 15.0)
+    size = tuple(max(a, b) for a, b in zip(credits_size(CREDITS_RIGHT), credits_size(CREDITS_LEFT)))
+    build_credits(coll, out_dir, max(xs) + TOWER_SPACING + 10.0, front + 15.0, "Credits_Right", CREDITS_RIGHT, size)
+    build_credits(coll, out_dir, min(xs) - TOWER_SPACING - 10.0, front + 15.0, "Credits_Left", CREDITS_LEFT, size)
     return results
 
 
