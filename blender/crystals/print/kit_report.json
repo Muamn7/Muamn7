@@ -1,0 +1,295 @@
+{
+ "collisions": 0,
+ "kits": {
+  "BCC": {
+   "atom_types": [
+    {
+     "name": "BCC_Center_A",
+     "count": 2,
+     "d": 22.82,
+     "holes": 4,
+     "grooves": 0,
+     "tris": 5318,
+     "sig": [
+      [
+       0.0,
+       35.3
+      ],
+      [
+       90.0,
+       35.3
+      ],
+      [
+       180.0,
+       35.3
+      ],
+      [
+       270.0,
+       35.3
+      ]
+     ]
+    },
+    {
+     "name": "BCC_Corner_A",
+     "count": 8,
+     "d": 19.56,
+     "holes": 0,
+     "grooves": 2,
+     "tris": 4846,
+     "sig": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       90.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "name": "BCC_Corner_B",
+     "count": 8,
+     "d": 19.56,
+     "holes": 2,
+     "grooves": 2,
+     "tris": 4596,
+     "sig": [
+      [
+       -1.0,
+       90.0
+      ],
+      [
+       0.0,
+       0.0
+      ],
+      [
+       45.0,
+       35.3
+      ],
+      [
+       90.0,
+       0.0
+      ]
+     ]
+    }
+   ],
+   "rods": {
+    "edge": {
+     "length": 118.87,
+     "count": 12,
+     "file": "BCC_Rod_edge_119mm.stl"
+    },
+    "diag": {
+     "length": 99.76,
+     "count": 8,
+     "file": "BCC_Rod_diag_100mm.stl"
+    }
+   }
+  },
+  "HCP": {
+   "atom_types": [
+    {
+     "name": "HCP_Mid_A",
+     "count": 6,
+     "d": 23.28,
+     "holes": 1,
+     "grooves": 2,
+     "tris": 5008,
+     "sig": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       30.0,
+       54.7
+      ],
+      [
+       60.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "name": "HCP_HexCorner_A",
+     "count": 12,
+     "d": 23.28,
+     "holes": 0,
+     "grooves": 3,
+     "tris": 4960,
+     "sig": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       60.0,
+       0.0
+      ],
+      [
+       120.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "name": "HCP_HexCorner_B",
+     "count": 12,
+     "d": 23.28,
+     "holes": 1,
+     "grooves": 3,
+     "tris": 4758,
+     "sig": [
+      [
+       -1.0,
+       90.0
+      ],
+      [
+       0.0,
+       -0.0
+      ],
+      [
+       60.0,
+       0.0
+      ],
+      [
+       120.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "name": "HCP_HexCenter_A",
+     "count": 2,
+     "d": 23.28,
+     "holes": 0,
+     "grooves": 6,
+     "tris": 5218,
+     "sig": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       60.0,
+       0.0
+      ],
+      [
+       120.0,
+       0.0
+      ],
+      [
+       180.0,
+       0.0
+      ],
+      [
+       240.0,
+       0.0
+      ],
+      [
+       300.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "name": "HCP_HexCenter_B",
+     "count": 2,
+     "d": 23.28,
+     "holes": 4,
+     "grooves": 6,
+     "tris": 5482,
+     "sig": [
+      [
+       -1.0,
+       90.0
+      ],
+      [
+       0.0,
+       0.0
+      ],
+      [
+       30.0,
+       54.7
+      ],
+      [
+       60.0,
+       -0.0
+      ],
+      [
+       120.0,
+       -0.0
+      ],
+      [
+       150.0,
+       54.7
+      ],
+      [
+       180.0,
+       0.0
+      ],
+      [
+       240.0,
+       0.0
+      ],
+      [
+       270.0,
+       54.7
+      ],
+      [
+       300.0,
+       0.0
+      ]
+     ]
+    }
+   ],
+   "rods": {
+    "short_grey": {
+     "length": 62.32,
+     "count": 25,
+     "file": "HCP_Rod_short_grey_62mm.stl"
+    },
+    "short_yellow": {
+     "length": 62.32,
+     "count": 8,
+     "file": "HCP_Rod_short_yellow_62mm.stl"
+    },
+    "long_yellow": {
+     "length": 111.44,
+     "count": 4,
+     "file": "HCP_Rod_long_yellow_111mm.stl"
+    },
+    "long_grey": {
+     "length": 111.44,
+     "count": 3,
+     "file": "HCP_Rod_long_grey_111mm.stl"
+    }
+   }
+  }
+ },
+ "plates": {
+  "BCC_Plate1_Atoms_Black": 18,
+  "BCC_Plate2_Rods_Clear": 20,
+  "HCP_Plate1_Atoms_Silver": 34,
+  "HCP_Plate2_Rods_Grey": 28,
+  "HCP_Plate3_Rods_Yellow": 12
+ },
+ "dims_mm": {
+  "BCC": {
+   "edge": 130.43,
+   "corner_d": 19.57,
+   "center_d": 22.83,
+   "height": 150.0
+  },
+  "HCP": {
+   "a": 77.6,
+   "c": 126.72,
+   "atom_d": 23.28,
+   "height": 150.0
+  },
+  "rod_d": 5.0,
+  "hole_d": 5.3,
+  "insert": 4.0
+ }
+}
