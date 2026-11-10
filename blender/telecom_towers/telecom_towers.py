@@ -18,6 +18,7 @@ Telecom towers set - print-ready procedural models for Blender 4.2+ (tested on 5
 import bpy
 import bmesh
 import itertools
+import zipfile
 import math
 import os
 import sys
@@ -1446,7 +1447,7 @@ LABELS = {
     "08_Lattice_PrintX_B": ["LATTICE TOWER"],
 }
 LABEL_PLATE = 2.0         # سماكة خلفية اللوحة (مم)
-LABEL_RELIEF = 0.8        # ارتفاع الحروف والإطار فوق الخلفية (مم)
+LABEL_INLAY = 1.0         # عمق الحروف والإطار داخل الخلفية (مم) - مستوية مع السطح، بلون ثاني
 LABEL_TEXT = 5.0          # حجم الخط (مم)
 LABEL_SLOT_DEPTH = 4.0    # عمق دخول اللوحة في القاعدة (مم)
 LABEL_FIT = 0.25          # فراغ اللوحة داخل شق القاعدة (مم)
@@ -1565,81 +1566,142 @@ def label_models(name, lines, k=1.0):
     return plate_models(name, [(lines, LABEL_TEXT * k)], k)
 
 
-def plate_models(name, blocks, k=1.0, gap=2.5, relief=None, min_size=(0.0, 0.0)):
-    """Name plate with stacked text blocks [(lines, letter size), ...]."""
-    if relief is None:
-        relief = LABEL_RELIEF * (1.5 if k > 1.5 else 1.0)
+def plate_models(name, blocks, k=1.0, gap=2.5, min_size=(0.0, 0.0)):
+    """Name plate with stacked text blocks [(lines, letter size), ...].
+
+    The letters and frame are inlaid: cut LABEL_INLAY deep into the plate and
+    filled by a second part flush with its face, so a multi-colour printer
+    prints them in another colour on a flat plate. Built lying flat (face up).
+    Returns plate, inlay and slotted stand models, and the sizes."""
     slot = LABEL_SLOT_DEPTH * k
-    made = [text_parts(lines, size, LABEL_PLATE - 0.2, LABEL_PLATE + relief) for lines, size in blocks]
+    top, bottom = LABEL_PLATE, LABEL_PLATE - LABEL_INLAY
+    made = [text_parts(lines, size, bottom, top) for lines, size in blocks]
     tw = max(bw for _, (bw, _) in made)
     th = sum(bh for _, (_, bh) in made) + gap * k * (len(made) - 1)
-    glyphs, y = [], th / 2
-    for shells, (_, bh) in made:       # stack the blocks top to bottom
-        glyphs += [([v + Vector((0, y - bh / 2, 0)) for v in sv], sf) for sv, sf in shells]
-        y -= bh + gap * k
     margin, frame_w = 3.5 * k, 1.2 * k
     w = max(tw + 2 * (margin + frame_w), 34.0 * k, min_size[0])
     text_h = max(th + 2 * margin + 2 * frame_w, min_size[1] - slot)
     h = text_h + slot
-    plate = Model(f"label_{name}_plate")
-    add_prism(plate, rounded_rect(w, h, 2.0 * k), 0.0, LABEL_PLATE, "white")
-    # text area sits above the part that goes into the slot
-    oy = slot / 2
+    oy = slot / 2                      # text area sits above the part that goes into the slot
+    glyphs, y = [], th / 2
+    for shells, (_, bh) in made:       # stack the blocks top to bottom
+        glyphs += [([v + Vector((0, y - bh / 2 + oy, 0)) for v in sv], sf) for sv, sf in shells]
+        y -= bh + gap * k
     ow, oh = w - 1.0 * k, text_h - 1.0 * k
     outer = [(x, y + oy) for x, y in rounded_rect(ow, oh, 1.6 * k)]
     inner = [(x, y + oy) for x, y in rounded_rect(ow - 2 * frame_w, oh - 2 * frame_w, 0.6 * k)]
-    add_prism(plate, outer, LABEL_PLATE - 0.2, LABEL_PLATE + relief, "dark", hole=inner)
+
+    plate = Model(f"label_{name}_plate")
+    add_prism(plate, rounded_rect(w, h, 2.0 * k), 0.0, LABEL_PLATE, "white")
+    inlay = Model(f"label_{name}_text")
+    add_prism(inlay, outer, bottom, top, "dark", hole=inner)
     for sv, sf in glyphs:
-        plate.add([v + Vector((0, oy, 0)) for v in sv], sf, "dark")
+        inlay.add(sv, sf, "dark")
+    # the same shapes, a little taller, cut the pockets the inlay fills
+    cut = plate.cut()
+    add_prism(cut, outer, bottom, top + 0.5, "dark", hole=inner)
+    for sv, sf in glyphs:
+        cut.add([Vector((v.x, v.y, top + 0.5 if v.z > (top + bottom) / 2 else bottom)) for v in sv], sf, "dark")
+
     stand = Model(f"label_{name}_stand")
     sw, sd, sh = w + 6.0 * k, 12.0 * k, 7.0 * k
     stand.loft_rects((0, 0), [(sw, sd, 0.0), (sw, sd, sh - 1.5 * k), (sw - 3.0 * k, sd - 3.0 * k, sh)], "concrete")
     slot_w = LABEL_PLATE + LABEL_FIT
     stand.cut().box(Matrix.Translation((0, 0, sh - slot / 2 + 0.5)), w + 2 * LABEL_FIT, slot_w, slot + 1.0)
-    return plate, stand, (w, h, sh, slot)
+    return plate, inlay, stand, (w, h, sh, slot)
+
+
+THREEMF_COLORS = [("Plate", "#F2F2EEFF"), ("Text", "#1C2733FF"), ("Stand", "#8E9196FF")]
+
+
+def write_3mf(path, objects):
+    """Minimal 3MF writer (Blender has no 3MF exporter). objects is a list of
+    (name, [(part name, mesh, colour index), ...], (x, y, z)); an object with
+    several parts becomes one multi-part object, so the slicer keeps the
+    parts together and each can get its own filament."""
+    def mesh_xml(me):
+        me.calc_loop_triangles()
+        vs = "".join(f'<vertex x="{v.co.x:.4f}" y="{v.co.y:.4f}" z="{v.co.z:.4f}"/>' for v in me.vertices)
+        ts = "".join(f'<triangle v1="{t.vertices[0]}" v2="{t.vertices[1]}" v3="{t.vertices[2]}"/>'
+                     for t in me.loop_triangles)
+        return f"<mesh><vertices>{vs}</vertices><triangles>{ts}</triangles></mesh>"
+
+    res = ['<basematerials id="1">' + "".join(f'<base name="{n}" displaycolor="{c}"/>' for n, c in THREEMF_COLORS)
+           + "</basematerials>"]
+    items, oid = [], 2
+    for name, parts, (x, y, z) in objects:
+        ids = []
+        for pname, me, color in parts:
+            res.append(f'<object id="{oid}" type="model" name="{pname}" pid="1" pindex="{color}">{mesh_xml(me)}</object>')
+            ids.append(oid)
+            oid += 1
+        if len(ids) > 1:
+            comps = "".join(f'<component objectid="{i}"/>' for i in ids)
+            res.append(f'<object id="{oid}" type="model" name="{name}"><components>{comps}</components></object>')
+            ids = [oid]
+            oid += 1
+        items.append(f'<item objectid="{ids[0]}" transform="1 0 0 0 1 0 0 0 1 {x:.4f} {y:.4f} {z:.4f}"/>')
+    model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+             '<model unit="millimeter" xml:lang="en-US" '
+             'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+             '<metadata name="Application">telecom_towers.py (Blender)</metadata>'
+             f'<resources>{"".join(res)}</resources><build>{"".join(items)}</build></model>')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml",
+                   '<?xml version="1.0" encoding="UTF-8"?>\n'
+                   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                   '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+                   '</Types>')
+        z.writestr("_rels/.rels",
+                   '<?xml version="1.0" encoding="UTF-8"?>\n'
+                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+                   'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
+        z.writestr("3D/3dmodel.model", model)
+
+
+def finish_plaque(name, models, coll, out_dir, x, y, k=1.0):
+    """Mesh the plate, inlay and stand, write the 3MF (plate + inlay as one
+    two-part object lying flat, stand beside it) and stand the plaque up at x, y."""
+    plate_m, inlay_m, stand_m, (w, h, sh, slot) = models
+    plate = union_model(plate_m, coll, "MANIFOLD")
+    subtract_cutters(plate, plate_m)
+    inlay = union_model(inlay_m, coll, "MANIFOLD")
+    stand = union_model(stand_m, coll, "MANIFOLD")
+    subtract_cutters(stand, stand_m)
+    for ob, m in ((plate, plate_m), (inlay, inlay_m), (stand, stand_m)):
+        clean_for_print(ob)
+        assign_materials(ob, m)
+    checks = [check_manifold(ob)[:2] for ob in (plate, inlay, stand)]
+    if EXPORT_STL and out_dir:
+        write_3mf(os.path.join(out_dir, "labels", f"label_{name}.3mf"), [
+            (f"{name} plate", [("plate", plate.data, 0), ("text", inlay.data, 1)], (0, 0, 0)),
+            (f"{name} stand", [("stand", stand.data, 2)], (0, -(h / 2 + 12.0 * k), 0))])
+    # stand it up: the plate's print-up (+Z) faces the viewer (-Y)
+    for ob in (plate, inlay):
+        ob.data.transform(Matrix.Translation((0, h / 2 - slot, 0)))
+        ob.data.transform(Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1))))
+        ob.location = (x, y + LABEL_PLATE / 2, sh + 0.05)     # bottom edge on the slot floor
+    stand.location = (x, y, 0)
+    bad = sum(c[0] for c in checks)
+    print(f"    {name:26s} plate {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back, text inlaid {LABEL_INLAY:.1f} mm"
+          f"  non-manifold={bad}  shells={[c[1] for c in checks]}")
+    return plate, inlay, stand
+
+
+def label_models(name, lines, k=1.0):
+    """Tower name plate: one text block."""
+    return plate_models(name, [(lines, LABEL_TEXT * k)], k)
 
 
 def build_labels(pairs, coll, out_dir, k=1.0):
-    """Name plate + stand in front of each (tower object, LABELS key, file name);
-    one STL per tower with both parts laid out in their print orientation."""
+    """Name plate + stand in front of each (tower object, LABELS key, file name)."""
     for tower, key, name in pairs:
-        lines = LABELS[key]
-        plate_m, stand_m, (w, h, sh, slot) = label_models(name, lines, k)
-        plate = union_model(plate_m, coll, "MANIFOLD")
-        clean_for_print(plate)
-        assign_materials(plate, plate_m)
-        stand = union_model(stand_m, coll, "MANIFOLD")
-        subtract_cutters(stand, stand_m)
-        clean_for_print(stand)
-        assign_materials(stand, stand_m)
-        bad = check_manifold(plate)[0] + check_manifold(stand)[0]
-        shells = check_manifold(plate)[1], check_manifold(stand)[1]
-        if EXPORT_STL and out_dir:
-            bm = bmesh.new()
-            for me, M in ((plate.data, Matrix.Identity(4)),
-                          (stand.data, Matrix.Translation((0, -(h / 2 + 12.0 * k), 0)))):
-                tmp = me.copy()
-                tmp.transform(M)
-                bm.from_mesh(tmp)
-                bpy.data.meshes.remove(tmp)
-            out = bpy.data.meshes.new(f"label_{name}")
-            bm.to_mesh(out)
-            bm.free()
-            tmp_ob = bpy.data.objects.new(out.name, out)
-            bpy.context.scene.collection.objects.link(tmp_ob)
-            export_stl(tmp_ob, os.path.join(out_dir, "labels"))
-            bpy.data.objects.remove(tmp_ob)
-            bpy.data.meshes.remove(out)
-        # stand it up in front of the tower: plate's print-up (+Z) faces the viewer (-Y)
         front = min((tower.matrix_world @ Vector(c)).y for c in tower.bound_box)
-        y = front - 9.0 * k
-        x = tower.location.x
-        plate.data.transform(Matrix.Translation((0, h / 2 - slot, 0)))
-        plate.data.transform(Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1))))
-        plate.location = (x, y + LABEL_PLATE / 2, sh + 0.05)     # bottom edge on the slot floor
-        stand.location = (x, y, 0)
-        print(f"    label {name:24s} '{' / '.join(lines)}'  plate {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back"
-              f"  non-manifold={bad}  shells={shells}")
+        finish_plaque(name, label_models(name, LABELS[key], k), coll, out_dir,
+                      tower.location.x, front - 9.0 * k, k)
 
 
 # two plaques, one on each side of the tower row (Arabic reads from the right)
@@ -1657,43 +1719,13 @@ CREDITS_LEFT = [
 
 def credits_size(blocks):
     """Plate size a credits text would need, so both plaques can be made equal."""
-    probe, _, (w, h, _, _) = plate_models("probe", blocks, gap=3.5, relief=1.2)
+    *_, (w, h, _, _) = plate_models("probe", blocks, gap=3.5)
     return w, h
 
 
 def build_credits(coll, out_dir, x, y, name, blocks, min_size):
-    """Credits plaque (same 2 mm plate + slotted stand as the tower labels)."""
-    plate_m, stand_m, (w, h, sh, slot) = plate_models(name, blocks, gap=3.5, relief=1.2, min_size=min_size)
-    plate = union_model(plate_m, coll, "MANIFOLD")
-    clean_for_print(plate)
-    assign_materials(plate, plate_m)
-    stand = union_model(stand_m, coll, "MANIFOLD")
-    subtract_cutters(stand, stand_m)
-    clean_for_print(stand)
-    assign_materials(stand, stand_m)
-    if EXPORT_STL and out_dir:
-        bm = bmesh.new()
-        for me, M in ((plate.data, Matrix.Identity(4)),
-                      (stand.data, Matrix.Translation((0, -(h / 2 + 12.0), 0)))):
-            tmp = me.copy()
-            tmp.transform(M)
-            bm.from_mesh(tmp)
-            bpy.data.meshes.remove(tmp)
-        out = bpy.data.meshes.new(name.lower())
-        bm.to_mesh(out)
-        bm.free()
-        tmp_ob = bpy.data.objects.new(out.name, out)
-        bpy.context.scene.collection.objects.link(tmp_ob)
-        export_stl(tmp_ob, os.path.join(out_dir, "labels"))
-        bpy.data.objects.remove(tmp_ob)
-        bpy.data.meshes.remove(out)
-    plate.data.transform(Matrix.Translation((0, h / 2 - slot, 0)))
-    plate.data.transform(Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1))))
-    plate.location = (x, y + LABEL_PLATE / 2, sh + 0.05)
-    stand.location = (x, y, 0)
-    bad = check_manifold(plate)[0] + check_manifold(stand)[0]
-    print(f"    {name} {w:.0f} x {h:.0f} mm, {LABEL_PLATE:.0f} mm back  non-manifold={bad}  "
-          f"shells={check_manifold(plate)[1]}, {check_manifold(stand)[1]}")
+    """Credits plaque (same 2 mm inlaid plate + slotted stand as the tower labels)."""
+    finish_plaque(name, plate_models(name, blocks, gap=3.5, min_size=min_size), coll, out_dir, x, y)
 
 
 def build_all(out_dir=None):
