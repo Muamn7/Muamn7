@@ -126,19 +126,20 @@ def render_lineup(scene, cam, out_dir, size):
     tmp = bpy.data.collections.new("_lineup")
     scene.collection.children.link(tmp)
     hat.hide_render = True
+    k = hat.get("shell_scale", 1.0)
     copies = []
-    for k, n in enumerate(names):
+    for i, n in enumerate(names):
         ob = bpy.data.objects.new("lineup_" + n, hat.data)
         tmp.objects.link(ob)
-        ob.location = ((k - 2) * 0.30, 0.0, 0.0)
+        ob.location = ((i - 2) * 0.30 * k, 0.0, 0.0)
         ob.rotation_euler = (0.0, 0.0, math.radians(-63))
         ob.material_slots[0].link = 'OBJECT'
         ob.material_slots[0].material = bpy.data.materials["HardHat_" + n]
         copies.append(ob)
     rx, ry = scene.render.resolution_x, scene.render.resolution_y
     scene.render.resolution_x, scene.render.resolution_y = int(size * 2.4), size
-    cam.location = (0.0, -2.2, 0.95)
-    look_at(cam, (0.0, 0.0, 0.03))
+    cam.location = (0.0, -2.2 * k, 0.95 * k)
+    look_at(cam, (0.0, 0.0, 0.03 * k))
     cam.data.lens = 56
     scene.render.filepath = os.path.join(out_dir, "lineup.png")
     bpy.ops.render.render(write_still=True)
@@ -178,15 +179,20 @@ def main():
 
     cam = scene.camera
     floor = bpy.data.objects.get("Floor_ShadowCatcher")
+    # camera positions are drawn for the scale-1 helmet; follow its size
+    k = bpy.data.objects["HardHat"].get("shell_scale", 1.0)
+
+    def place(name):
+        loc, tgt, focal = VIEWS[name]
+        cam.location = [c * k for c in loc]
+        look_at(cam, [c * k for c in tgt])
+        cam.data.lens = focal
 
     for name in views:
         if name == "lineup":
             render_lineup(scene, cam, out_dir, size)
             continue
-        loc, tgt, focal = VIEWS[name]
-        cam.location = loc
-        look_at(cam, tgt)
-        cam.data.lens = focal
+        place(name)
         cam.data.clip_start = 0.01
         if floor:
             floor.hide_render = name in ("underside", "top")
@@ -195,10 +201,7 @@ def main():
         print("rendered", name)
 
     if save:
-        loc, tgt, focal = VIEWS["hero_3q"]
-        cam.location = loc
-        look_at(cam, tgt)
-        cam.data.lens = focal
+        place("hero_3q")
         if floor:
             floor.hide_render = False
         bpy.ops.wm.save_mainfile(compress=True)

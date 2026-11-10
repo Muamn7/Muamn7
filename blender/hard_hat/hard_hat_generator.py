@@ -1,15 +1,18 @@
 """
 Vented cap-style safety helmet (hard hat) -- procedural Blender model.
 
-Shell only: no suspension, no straps, no fabric.
-Sized for a 56 cm head circumference (see HEAD_* below).
+Shell only: no suspension, no straps, no fabric. The shell sits directly on
+the head with no extra room: where it touches the head, the inner wall measures
+exactly HEAD_CIRC around (58 cm). Change HEAD_CIRC for another size; the whole
+helmet, height included, is rescaled to it and the wall stays TH_REAL thick.
 
 Run inside Blender (Scripting tab -> Open -> Run Script; the helmet is built
 in a new scene called "HardHat", takes about a minute), or headless:
     blender --background --python hard_hat_generator.py -- /path/to/output.blend
 
-All dimensions below are in millimetres; the model is built at real-world
-scale (1 Blender unit = 1 m, scene shows millimetres).
+Shape parameters are in "design millimetres"; the solved SCALE turns them into
+real millimetres. The model is built at real-world scale (1 Blender unit = 1 m,
+scene shows millimetres).
 """
 
 import math
@@ -21,15 +24,42 @@ import numpy as np
 from mathutils import Matrix, Vector
 
 # --------------------------------------------------------------------------
-# Parameters (mm)
+# Head size and fit
+# --------------------------------------------------------------------------
+HEAD_CIRC = 580.0       # head circumference in mm (58 cm)
+TH_REAL = 2.8           # wall thickness of the finished helmet, mm
+LIP_BEAD_REAL = 1.8     # extra thickness rolled into the lip / brim edge, mm
+
+# Fit plane: the horizontal plane just above the band step, where the inner
+# wall of the dome starts and the shell touches the head (below it the band
+# steps outwards and does not touch the head). The generator solves SCALE so
+# that the inner wall measures exactly HEAD_CIRC around in this plane, with
+# no gap. Everything scales together, so the height follows the size.
+FIT_ABOVE_LEDGE = 1.0   # design mm above the highest point of the band step
+
+SCALE = 1.0             # design mm -> real mm (solved in build_shell_rings)
+TH = TH_REAL            # wall thickness in design mm (set by set_scale)
+LIP_BEAD = LIP_BEAD_REAL
+MM = 0.001              # one design millimetre in metres (set by set_scale)
+REAL_MM = 0.001
+HEAD_TAG = "%gcm" % (HEAD_CIRC / 10)
+
+
+def set_scale(s):
+    global SCALE, TH, LIP_BEAD, MM
+    SCALE = s
+    TH = TH_REAL / s
+    LIP_BEAD = LIP_BEAD_REAL / s
+    MM = 0.001 * s
+
+
+# --------------------------------------------------------------------------
+# Shape parameters (design millimetres, see SCALE)
 # --------------------------------------------------------------------------
 NU = 960            # segments around the helmet
 ND_OUT = 230        # rings on the outer dome
 ND_IN = 90          # rings on the inner dome (no fine detail inside)
 N_CAP = 9           # rings on the rounded lip edge
-
-TH = 2.8            # wall thickness
-LIP_BEAD = 1.8      # extra thickness rolled into the lip / brim edge
 
 # Footprint of the shell wall at the rain-gutter ledge (egg shape, wider at back)
 A0, DA = 96.5, 1.5  # half width   -> 95 at front-side, 98 at back-side
@@ -64,16 +94,11 @@ VENT_SLOT = (9.5, 4.4)      # slot length (along strip), width
 ACC_U = 8.0
 ACC_SIZE = (38.0, 7.0, 26.0)  # width, projection, height
 
-# Suspension key sockets moulded on the inside of the band (4-point harness)
-SOCKET_PHI = (42.0, 138.0, 222.0, 318.0)
+# Suspension key sockets on the inside of the band: none. The shell sits
+# directly on the head, so there is no harness to clip in and the sockets
+# would only press on the head. (42.0, 138.0, 222.0, 318.0) puts them back.
+SOCKET_PHI = ()
 SOCKET_SIZE = (16.0, 5.0, 16.0)  # width, inward projection, height
-
-# Reference head
-HEAD_CIRC = 560.0
-HEAD_BREADTH = 158.0
-HEAD_Z = 8.0
-
-MM = 0.001
 
 
 # --------------------------------------------------------------------------
@@ -302,7 +327,57 @@ def vent_sdf(u, v):
 # --------------------------------------------------------------------------
 # Shell
 # --------------------------------------------------------------------------
+def inner_offset(Ib, Ni, m_soft):
+    """Inner wall: the base surface pushed in by the wall thickness, a soft
+    copy of the panel recess (so the wall stays >= TH) and a bead at the lip."""
+    nb = 14
+    bead = np.zeros(Ib.shape[1])
+    bead[-nb:] = LIP_BEAD * smoothstep(0.0, 1.0, np.linspace(0.0, 1.0, nb))
+    return Ib - Ni * (TH + PANEL_DEPTH * m_soft + bead[None, :])[..., None]
+
+
+def fit_plane_z():
+    _, z_L = rim_heights(np.linspace(0.0, 2 * math.pi, 3601))
+    return float(z_L.max()) + FIT_ABOVE_LEDGE
+
+
+def horizontal_section(I, z):
+    """Where each meridian of the inner wall first crosses height z on its
+    way down from the crown: [NU, 2], in the units of I."""
+    zc = I[..., 2]
+    j = np.argmax(zc < z, axis=1)
+    rows = np.arange(I.shape[0])
+    a, b = I[rows, j - 1], I[rows, j]
+    t = (a[:, 2] - z) / (a[:, 2] - b[:, 2])
+    return a[:, :2] + t[:, None] * (b[:, :2] - a[:, :2])
+
+
+def loop_length(p):
+    return float(np.sum(np.linalg.norm(np.roll(p, -1, axis=0) - p, axis=1)))
+
+
+def solve_scale(Ib, Ni, m_soft, z_fit):
+    """SCALE that makes the inner wall exactly HEAD_CIRC around at z_fit."""
+    s = 0.85
+    for _ in range(50):
+        set_scale(s)
+        circ = s * loop_length(horizontal_section(inner_offset(Ib, Ni, m_soft), z_fit))
+        if abs(circ - HEAD_CIRC) < 1e-6:
+            break
+        s *= (HEAD_CIRC + 2 * math.pi * TH_REAL) / (circ + 2 * math.pi * TH_REAL)
+    return s
+
+
 def build_shell_rings():
+    # inner base surface first: the size of the helmet is set from it
+    _, Ib, ui, vi = base_surface(ND_IN)
+    Ni = grid_normals(Ib)
+    m_soft = 1.0 - smoothstep(-5.0, 5.0, panel_sdf(ui, vi) - 3.0)
+    z_fit = fit_plane_z()
+    set_scale(solve_scale(Ib, Ni, m_soft, z_fit))
+    I = inner_offset(Ib, Ni, m_soft)
+    fit = (horizontal_section(I, z_fit), z_fit, float(I[0, 0, 2]))
+
     # outer
     phi, Ob, u, v = base_surface(ND_OUT)
     Nb = grid_normals(Ob)
@@ -311,16 +386,6 @@ def build_shell_rings():
     d_panel = panel_sdf(u, v)
     rib = RIB[0] * np.exp(-0.5 * ((d_panel - RIB[1]) / RIB[2]) ** 2) * smoothstep(0.0, 1.5, v)
     O = Ob - Nb * (PANEL_DEPTH * m_panel + VENT_DEPTH * m_vent - rib)[..., None]
-
-    # inner (coarser dome, soft copy of the panel recess so the wall stays >= TH)
-    _, Ib, ui, vi = base_surface(ND_IN)
-    Ni = grid_normals(Ib)
-    m_soft = 1.0 - smoothstep(-5.0, 5.0, panel_sdf(ui, vi) - 3.0)
-    # thickened bead along the outer lip / brim edge
-    nb = 14
-    bead = np.zeros(Ib.shape[1])
-    bead[-nb:] = LIP_BEAD * smoothstep(0.0, 1.0, np.linspace(0.0, 1.0, nb))
-    I = Ib - Ni * (TH + PANEL_DEPTH * m_soft + bead[None, :])[..., None]
 
     # rounded lip edge between the two
     oe, ne = Ob[:, -1], Nb[:, -1]
@@ -336,7 +401,7 @@ def build_shell_rings():
     I[:, -1] = oe - ne * 2 * rad
 
     rings = np.concatenate([O, cap, I[:, ::-1]], axis=1)  # [NU, R, 3]
-    return np.transpose(rings, (1, 0, 2)), (phi, Ob, Nb, u, v)
+    return np.transpose(rings, (1, 0, 2)), (phi, Ob, Nb, u, v), fit
 
 
 def rings_to_mesh(name, rings):
@@ -561,39 +626,36 @@ def make_materials():
     return mats
 
 
-def head_ring(coll):
-    a = HEAD_BREADTH / 2
-    # solve semi-length b so that the ellipse circumference == HEAD_CIRC
-    lo, hi = a, 200.0
-    for _ in range(80):
-        b = (lo + hi) / 2
-        h = ((b - a) / (b + a)) ** 2
-        per = math.pi * (a + b) * (1 + 3 * h / (10 + math.sqrt(4 - 3 * h)))
-        lo, hi = (b, hi) if per < HEAD_CIRC else (lo, b)
-    n, tube = 256, 1.2
+def fit_ring(coll, loop, z):
+    """Thin ring whose centre line is the inner wall at the fit plane (real mm):
+    the line where the head touches the shell, HEAD_CIRC long."""
+    n, sides, tube = len(loop), 12, 0.8
+    d = np.roll(loop, -1, axis=0) - np.roll(loop, 1, axis=0)
     bm = bmesh.new()
     rings = []
     for i in range(n):
-        t = 2 * math.pi * i / n
-        c = Vector((a * math.sin(t), -b * math.cos(t), HEAD_Z))
-        d = Vector((a * math.cos(t), b * math.sin(t), 0)).normalized()
-        out = Vector((d.y, -d.x, 0))
+        c = Vector((loop[i, 0], loop[i, 1], z))
+        t = Vector((d[i, 0], d[i, 1], 0.0)).normalized()
+        out = Vector((t.y, -t.x, 0.0))
         ring = []
-        for k in range(12):
-            g = 2 * math.pi * k / 12
-            ring.append(bm.verts.new((c + (out * math.cos(g) + Vector((0, 0, 1)) * math.sin(g)) * tube) * MM))
+        for k in range(sides):
+            g = 2 * math.pi * k / sides
+            p = c + (out * math.cos(g) + Vector((0, 0, 1)) * math.sin(g)) * tube
+            ring.append(bm.verts.new(p * REAL_MM))
         rings.append(ring)
     for i in range(n):
         r0, r1 = rings[i], rings[(i + 1) % n]
-        for k in range(12):
-            bm.faces.new((r0[k], r1[k], r1[(k + 1) % 12], r0[(k + 1) % 12]))
-    me = bpy.data.meshes.new("Head_56cm_ring")
+        for k in range(sides):
+            bm.faces.new((r0[k], r1[k], r1[(k + 1) % sides], r0[(k + 1) % sides]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    name = "Head_%s_fit_line" % HEAD_TAG
+    me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
-    ob = bpy.data.objects.new("Head_56cm_ring", me)
+    ob = bpy.data.objects.new(name, me)
     link(ob, coll)
     ob.hide_render = True
-    return ob, a, b
+    return ob
 
 
 # --------------------------------------------------------------------------
@@ -615,7 +677,7 @@ def main(out_path=None):
     tmp = bpy.data.collections.new("_tmp")
     scene.collection.children.link(tmp)
 
-    rings, data = build_shell_rings()
+    rings, data, (fit, z_fit, z_crown) = build_shell_rings()
     me = rings_to_mesh("HardHat_Shell", rings)
     shell = bpy.data.objects.new("HardHat", me)
     coll.objects.link(shell)
@@ -634,9 +696,19 @@ def main(out_path=None):
     me.polygons.foreach_set("material_index", [0] * len(me.polygons))
     me.update()
 
-    ref = bpy.data.collections.new("Reference_Head_56cm")
+    # size report (real mm)
+    loop = fit * SCALE
+    fit_z = z_fit * SCALE
+    size = dict(
+        inner_circumference_at_fit_mm=loop_length(loop),
+        inner_width_at_fit_mm=float(np.ptp(loop[:, 0])),
+        inner_length_at_fit_mm=float(np.ptp(loop[:, 1])),
+        fit_plane_height_mm=fit_z,
+        inner_depth_mm=(z_crown - z_fit) * SCALE,
+    )
+    ref = bpy.data.collections.new("Reference_Head_%s" % HEAD_TAG)
     scene.collection.children.link(ref)
-    ring, a, b = head_ring(ref)
+    ring = fit_ring(ref, loop, fit_z)
 
     # keep the generator inside the .blend (Text Editor) so it can be re-run
     try:
@@ -645,11 +717,17 @@ def main(out_path=None):
     except Exception:
         pass
     shell["head_circumference_mm"] = HEAD_CIRC
-    shell["wall_thickness_mm"] = TH
+    shell["wall_thickness_mm"] = TH_REAL
+    shell["shell_scale"] = SCALE
+    for k, val in size.items():
+        shell[k] = round(val, 2)
+    print("HardHat for a %.1f cm head: scale %.5f" % (HEAD_CIRC / 10, SCALE))
+    for k, val in size.items():
+        print("  %-32s %8.2f" % (k, val))
 
     if out_path:
         bpy.ops.wm.save_as_mainfile(filepath=out_path, compress=True)
-    return shell, ring, (a, b)
+    return shell, ring, size
 
 
 if __name__ == "__main__":
