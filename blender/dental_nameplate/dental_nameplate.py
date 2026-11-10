@@ -461,33 +461,41 @@ def cap_height(font, size, coll, mats):
     return hi.y - lo.y
 
 
-def chaikin(points, iterations=4):
-    """Corner-cutting smoothing of a closed loop; keeps swept strokes free of miter spikes."""
-    pts = [Vector(p) for p in points]
-    for _ in range(iterations):
-        out = []
-        for i in range(len(pts)):
-            a, b = pts[i], pts[(i + 1) % len(pts)]
-            out += [a.lerp(b, 0.25), a.lerp(b, 0.75)]
-        pts = out
-    return pts
+def arc(center, radius, a0, a1, step=math.radians(6)):
+    n = max(2, int(abs(a1 - a0) / step) + 1)
+    return [center + Vector((math.cos(a), math.sin(a))) * radius
+            for a in (a0 + (a1 - a0) * i / (n - 1) for i in range(n))]
 
 
-def heart_points(width, n=40):
-    s = width / 32.0
-    pts = []
-    for i in range(n):
-        t = 2 * math.pi * i / n
-        x = 16 * math.sin(t) ** 3
-        y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
-        pts.append(Vector((x * s, (y - 4) * s)))
-    return chaikin(pts)
+def heart_points(width, notch_r=0.0024, tip_r=0.0022):
+    """Classic heart (a square on its corner with two round lobes) with its notch
+    and tip rounded, so a swept stroke never folds over itself.
+    The widest point, where the line joins, sits at y = 0."""
+    a = width / (1 + 1 / math.sqrt(2))       # side of the square
+    c = a / (2 * math.sqrt(2))
+    r = a / 2                                  # lobe radius
+    c1, c2 = Vector((c, 3 * c)), Vector((-c, 3 * c))
+    # Notch fillet, tangent to both lobes from outside.
+    f = Vector((0, 3 * c + math.sqrt((r + notch_r) ** 2 - c ** 2)))
+    p1 = c1 + (f - c1) * (r / (r + notch_r))
+    p2 = Vector((-p1.x, p1.y))
+    ang = lambda v: math.atan2(v.y, v.x)
+    pts = arc(f, notch_r, ang(p2 - f), ang(p1 - f))[:-1]
+    pts += arc(c1, r, ang(p1 - c1), math.radians(-45))[:-1]
+    # Tip fillet on the 90 degree corner at the bottom.
+    g = Vector((0, tip_r * math.sqrt(2)))
+    pts += arc(g, tip_r, math.radians(-45), math.radians(-135))[:-1]
+    pts += arc(c2, r, math.radians(225), ang(p2 - c2) % (2 * math.pi))[:-1]
+    return [p - Vector((0, 3 * c)) for p in pts]
 
 
-def build_heartbeat(mats, coll, x0, x1, z, depth):
-    """Heartbeat line from x0 to x1 at height z, with a heart near the end."""
-    w, d = 0.0032, depth
-    profile_cu = curve_data("ECGProfile", [[(-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2)]])
+def build_heartbeat(mats, coll, x0, x1, z, depth, min_bottom=0.0):
+    """Heartbeat line from x0 to x1 at height z, with a heart near the end.
+    The line is raised if needed so nothing hangs below min_bottom."""
+    w, d, c = 0.0032, depth, 0.0005   # width, depth, gold chamfer around the black face
+    profile_cu = curve_data("ECGProfile", [[
+        (-w / 2, -d / 2 + c), (-w / 2 + c, -d / 2), (w / 2 - c, -d / 2), (w / 2, -d / 2 + c),
+        (w / 2, d / 2 - c), (w / 2 - c, d / 2), (-w / 2 + c, d / 2), (-w / 2, d / 2 - c)]])
     profile = add_object("_ECGProfile", profile_cu, coll)
 
     heart_w = 0.021
@@ -505,6 +513,8 @@ def build_heartbeat(mats, coll, x0, x1, z, depth):
     pts.append(Vector((left, 0)))
     tail_pts = [Vector((hx + heart_w / 2 - 0.0008 - x0, 0)), Vector((x1 - x0, 0))]
     heart = [p + Vector((hx - x0, 0)) for p in heart_points(heart_w)]
+    lowest = min(p.y for p in pts + heart) - w / 2
+    z = max(z, min_bottom - lowest)
 
     cu = curve_data("Heartbeat", [], bevel_mode="OBJECT", bevel_object=profile,
                     use_fill_caps=True)
@@ -755,7 +765,7 @@ def build(title=TITLE, name=NAME, font_path=None):
                               depth=LETTER_DEPTH * 0.9)
     title_obj.data.transform(Matrix.Diagonal((squeeze, 1, 1, 1)))
     tlo, thi = local_bounds(title_obj)
-    title_base = base_top + (hi.y - lo.y) - 0.0008
+    title_base = base_top + NAME_CAP_HEIGHT - 0.0015   # "Dr" rests on the capital R
     title_x = name_x + lo.x + 0.003 - tlo.x
     title_obj.matrix_world = Matrix.Translation((title_x, -0.004, title_base - tlo.y)) @ FRONT
     title_cap = NAME_CAP_HEIGHT * TITLE_SCALE
@@ -763,7 +773,8 @@ def build(title=TITLE, name=NAME, font_path=None):
     cup_x = name_right + 0.004 + 0.0115
     right = build_instruments(mats, plate, cup_x, base_top)
     build_heartbeat(mats, plate, title_x + thi.x - 0.0008, cup_x - 0.030,
-                    title_base + title_cap * 0.42, LETTER_DEPTH * 0.6)
+                    title_base + title_cap * 0.42, LETTER_DEPTH * 0.6,
+                    min_bottom=base_top + (hi.y - lo.y) + 0.0015)
 
     x_min, x_max = tooth_l - 0.014, right + 0.016
     build_base(mats, plate, x_min, x_max)
