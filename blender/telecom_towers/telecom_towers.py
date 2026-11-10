@@ -1448,12 +1448,24 @@ LABELS = {
 }
 LABEL_PLATE = 2.0         # سماكة خلفية اللوحة (مم)
 LABEL_INLAY = 1.0         # عمق الحروف والإطار داخل الخلفية (مم) - مستوية مع السطح، بلون ثاني
-LABEL_TEXT = 5.0          # حجم الخط (مم)
+LABEL_TEXT = 4.0          # حجم الخط (em بالمم)
 LABEL_SLOT_DEPTH = 4.0    # عمق دخول اللوحة في القاعدة (مم)
 LABEL_FIT = 0.25          # فراغ اللوحة داخل شق القاعدة (مم)
-LABEL_FONTS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-               "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+# Noto Sans / Noto Sans Arabic (the Android phone fonts, SIL OFL) ship in ./fonts
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+LATIN_FONTS = [os.path.join(FONT_DIR, "NotoSans-SemiBold.ttf"),
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                "C:/Windows/Fonts/arialbd.ttf", "/Library/Fonts/Arial Bold.ttf"]
+ARABIC_FONTS = [os.path.join(FONT_DIR, "NotoSansArabic-SemiBold.ttf"),
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "C:/Windows/Fonts/arialbd.ttf"]
+
+
+def load_font(paths):
+    for path in paths + [bpy.path.abspath("//fonts/" + os.path.basename(paths[0]))]:
+        if os.path.exists(path):
+            return bpy.data.fonts.load(path, check_existing=True)
+    return None
 
 
 def rounded_rect(w, h, r, seg=6):
@@ -1499,17 +1511,166 @@ def shape_text(line):
     return get_display(arabic_reshaper.reshape(line))
 
 
+def _is_arabic(ch):
+    return "\u0600" <= ch <= "\u06ff" or "\ufb50" <= ch <= "\ufeff"
+
+
+def _runs(line):
+    """Split a line into script runs in visual (left to right) order: an
+    Arabic line reads right to left, so its runs are reversed."""
+    runs, cur, cur_ar = [], "", None
+    for ch in line.strip():
+        ar = _is_arabic(ch) if not ch.isspace() else cur_ar
+        if cur and ar != cur_ar:
+            runs.append((cur, cur_ar))
+            cur = ""
+        cur, cur_ar = cur + ch, ar
+    if cur:
+        runs.append((cur, cur_ar))
+    if any(_is_arabic(ch) for ch in line):
+        runs.reverse()
+    return runs
+
+
+_FONT_CACHE = {}
+
+
+def _font(paths):
+    path = next((p for p in paths if os.path.exists(p)), None)
+    if path and path not in _FONT_CACHE:
+        import uharfbuzz as hb
+        from fontTools.ttLib import TTFont
+        face = hb.Face(hb.Blob.from_file_path(path))
+        _FONT_CACHE[path] = (hb.Font(face), face.upem, TTFont(path).getGlyphSet(), TTFont(path).getGlyphOrder())
+    return _FONT_CACHE.get(path)
+
+
+def _flatten_pen(steps=6):
+    """fontTools pen that records outlines as closed polylines (curves flattened)."""
+    from fontTools.pens.basePen import BasePen
+
+    class Flatten(BasePen):
+        def __init__(self):
+            super().__init__(None)
+            self.loops, self.cur = [], []
+
+        def _moveTo(self, p):
+            self.cur = [p]
+
+        def _lineTo(self, p):
+            self.cur.append(p)
+
+        def _qCurveToOne(self, p1, p2):
+            p0 = self.cur[-1]
+            for i in range(1, steps + 1):
+                t = i / steps
+                self.cur.append(((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+                                 (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]))
+
+        def _curveToOne(self, p1, p2, p3):
+            p0 = self.cur[-1]
+            for i in range(1, steps + 1):
+                t = i / steps
+                a, b, c, d = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t * t, t ** 3
+                self.cur.append((a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+                                 a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]))
+
+        def _closePath(self):
+            loop = []
+            for q in self.cur:          # drop repeated points (the tessellator dislikes them)
+                if not loop or (abs(q[0] - loop[-1][0]) > 1e-6 or abs(q[1] - loop[-1][1]) > 1e-6):
+                    loop.append(q)
+            if len(loop) > 1 and abs(loop[0][0] - loop[-1][0]) < 1e-6 and abs(loop[0][1] - loop[-1][1]) < 1e-6:
+                loop.pop()
+            if len(loop) > 2:
+                self.loops.append(loop)
+            self.cur = []
+
+        _endPath = _closePath
+
+    return Flatten()
+
+
+def _extrude_loops(loops, z0, z1):
+    """Extrude non-overlapping outline loops (outer contours + holes) into
+    closed solids: fill the outlines, then extrude the filled region, so the
+    walls always follow the cap's real edges."""
+    bm = bmesh.new()
+    edges = []
+    for loop in loops:
+        vs = [bm.verts.new((x, y, z0)) for x, y in loop]
+        edges += [bm.edges.new((vs[i], vs[(i + 1) % len(vs)])) for i in range(len(vs))]
+    bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False, edges=edges)
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    ext = bmesh.ops.extrude_face_region(bm, geom=list(bm.faces))
+    moved = [g for g in ext["geom"] if isinstance(g, bmesh.types.BMVert)]
+    bmesh.ops.translate(bm, verts=moved, vec=(0, 0, z1 - z0))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    verts = [v.co.copy() for v in bm.verts]
+    faces = [tuple(v.index for v in f.verts) for f in bm.faces]
+    bm.free()
+    return verts, faces
+
+
+def text_parts_hb(lines, size, z0, z1):
+    """Text shaped with HarfBuzz (the engine phones use). All glyph outlines are
+    merged in 2D (skia-pathops), so joined Arabic letters become one clean
+    outline, then extruded. Returns [(verts, faces)] centred on the origin."""
+    import uharfbuzz as hb
+    import pathops
+    from fontTools.pens.transformPen import TransformPen
+    ar_font, lat_font = _font(ARABIC_FONTS), _font(LATIN_FONTS)
+    line_h = size * 1.45
+    path = pathops.Path()
+    pen = path.getPen()
+    for li, line in enumerate(lines):
+        placed, x = [], 0.0
+        for text, ar in _runs(line):
+            font, upem, gs, order = ar_font if ar else lat_font
+            buf = hb.Buffer()
+            buf.add_str(text)
+            buf.guess_segment_properties()
+            hb.shape(font, buf, {})
+            scale = size / upem
+            for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
+                placed.append((gs, order[info.codepoint], scale, x + pos.x_offset * scale, pos.y_offset * scale))
+                x += pos.x_advance * scale
+        for gs, name, scale, gx, gy in placed:
+            gs[name].draw(TransformPen(pen, (scale, 0, 0, scale, gx - x / 2, -li * line_h + gy)))
+    path.simplify(fix_winding=True)          # union of all glyphs, overlaps removed
+    flat = _flatten_pen()
+    path.draw(flat)
+    verts, faces = _extrude_loops(flat.loops, z0, z1)
+    # outline area with holes subtracted (simplify() gives outer and hole
+    # contours opposite windings); kept for the self-check in the build log
+    text_parts_hb.area = abs(sum(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(l, l[1:] + l[:1])) / 2
+                                 for l in flat.loops))
+    xs = [v.x for v in verts]
+    ys = [v.y for v in verts]
+    c = Vector(((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, 0))
+    return [([v - c for v in verts], faces)], (max(xs) - min(xs), max(ys) - min(ys))
+
+
 def text_parts(lines, size, z0, z1):
     """Raised text as closed meshes (one shell per glyph), centred on the origin."""
-    font = None
-    for path in LABEL_FONTS:
-        if os.path.exists(path):
-            font = bpy.data.fonts.load(path, check_existing=True)
-            break
+    try:
+        return text_parts_hb(lines, size, z0, z1)
+    except ImportError:
+        print("    (uharfbuzz/fonttools not installed: falling back to Blender text)")
     cu = bpy.data.curves.new("label_text", 'FONT')
     cu.body = "\n".join(shape_text(line) for line in lines)
-    if font:
-        cu.font = font
+    latin = load_font(LATIN_FONTS)
+    if any("\u0600" <= ch <= "\u06ff" or "\ufb50" <= ch <= "\ufeff" for ch in cu.body):
+        # Arabic font for the text, Latin font (via the bold slot) for Latin letters/digits
+        cu.font = load_font(ARABIC_FONTS) or cu.font
+        if latin:
+            cu.font_bold = latin
+            for i, ch in enumerate(cu.body):
+                if ch.isascii() and ch.isalnum():
+                    cu.body_format[i].use_bold = True
+    elif latin:
+        cu.font = latin
     cu.size = size
     cu.space_line = 1.15
     cu.align_x = 'CENTER'
@@ -1706,14 +1867,13 @@ def build_labels(pairs, coll, out_dir, k=1.0):
 
 # two plaques, one on each side of the tower row (Arabic reads from the right)
 CREDITS_RIGHT = [
-    (["المشروع الاول الابراج"], 10.0),
-    (["الدكتورة زهراء علاء الخفاجي"], 9.0),
+    (["الدكتورة زهراء علاء الخفاجي"], 7.0),
     (["سجاد خضير حليم", "كرار فرحان عبد الكاظم", "سيف سعد نجم", "سلام ستار",
-      "علي حسين عبد الهادي"], 8.0),
+      "علي حسين عبد الهادي"], 6.5),
 ]
 CREDITS_LEFT = [
-    (["كروب B"], 10.0),
-    (["شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم", "دلال كاظم", "نور الهدى كامل"], 8.0),
+    (["كروب B"], 8.0),
+    (["شهد بشير ديوان", "عذراء رياض سفيح", "شمس عبد الكاظم", "دلال كاظم", "نور الهدى كامل"], 6.5),
 ]
 
 

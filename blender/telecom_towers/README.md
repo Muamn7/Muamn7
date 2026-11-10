@@ -112,22 +112,27 @@ blender -b -P telecom_towers.py -- --out ./stl/60cm --big lattice_A_60cm.blend
 
 | اللوحة | ملف 3MF | النص | المقاس |
 |--|--|--|--|
-| أبراج شبكية (1، 7، 8) | `label_01_Lattice_Tower.3mf` (و `07`، `08`) | LATTICE TOWER | 37 × 16 مم |
-| أبراج أحادية | `label_02_Monopole.3mf` | MONOPOLE TOWER | 43 × 16 مم |
-| أبراج مايكروويف | `label_03_Microwave_Tower.3mf` | MICROWAVE TOWER | 45 × 16 مم |
-| محطات رادوم | `label_04_Radome_Station.3mf` | RADOME STATION | 41 × 16 مم |
+| أبراج شبكية (1، 7، 8) | `label_01_Lattice_Tower.3mf` (و `07`، `08`) | LATTICE TOWER | 39 × 16 مم |
+| أبراج أحادية | `label_02_Monopole.3mf` | MONOPOLE TOWER | 47 × 16 مم |
+| أبراج مايكروويف | `label_03_Microwave_Tower.3mf` | MICROWAVE TOWER | 48 × 16 مم |
+| محطات رادوم | `label_04_Radome_Station.3mf` | RADOME STATION | 44 × 16 مم |
 | محطات خلايا | `label_05_Cell_Site_4G_5G.3mf` | CELL SITE / 4G / 5G | 34 × 22 مم |
-| أبراج ذكية ومستدامة | `label_06_Smart_Solar_Pole.3mf` | SMART & / SUSTAINABLE | 34 × 22 مم |
-| البرج 60 سم | `stl/60cm/labels/label_07_Lattice_PrintX_A_60cm.3mf` | LATTICE TOWER | 111 × 47 مم |
-| أسماء كروب B: اليمين | `label_Credits_Right.3mf` | المشروع، الدكتورة، و5 أسماء | 88 × 74 مم |
-| أسماء كروب B: اليسار | `label_Credits_Left.3mf` | كروب B، و5 أسماء | 88 × 74 مم |
+| أبراج ذكية ومستدامة | `label_06_Smart_Solar_Pole.3mf` | SMART & / SUSTAINABLE | 35 × 22 مم |
+| البرج 60 سم | `stl/60cm/labels/label_07_Lattice_PrintX_A_60cm.3mf` | LATTICE TOWER | 118 × 49 مم |
+| أسماء كروب B: اليمين | `label_Credits_Right.3mf` | الدكتورة، و5 أسماء | 87 × 70 مم |
+| أسماء كروب B: اليسار | `label_Credits_Left.3mf` | كروب B، و5 أسماء | 87 × 70 مم |
 
 ![لوحتا كروب B](preview/credits_left_right.png)
 
 **لوحتا كروب B:**
-- **اليمين** (القراءة تبدأ منها): المشروع الاول الابراج، الدكتورة زهراء علاء الخفاجي، سجاد خضير حليم، كرار فرحان عبد الكاظم، سيف سعد نجم، سلام ستار، علي حسين عبد الهادي.
+- **اليمين** (القراءة تبدأ منها): الدكتورة زهراء علاء الخفاجي، سجاد خضير حليم، كرار فرحان عبد الكاظم، سيف سعد نجم، سلام ستار، علي حسين عبد الهادي.
 - **اليسار:** كروب B، شهد بشير ديوان، عذراء رياض سفيح، شمس عبد الكاظم، دلال كاظم، نور الهدى كامل.
-- **حجم الخط:** العنوان و"كروب B" بحجم 10 مم، اسم الدكتورة 9 مم، والأسماء 8 مم.
+- **حجم الخط (em):** "كروب B" 8 مم، اسم الدكتورة 7 مم، والأسماء 6.5 مم.
+
+**الخط: Noto Sans Arabic / Noto Sans** (SemiBold)، وهو نفس خط أندرويد في الموبايل. الملفات في `fonts/` مع رخصتها المجانية (OFL)، وأزلت منها تداخل الخطوط الداخلية حتى تتحول لمجسّم سليم. طريقة رسم النص:
+- **HarfBuzz** (نفس محرك الموبايل) يوصل الحروف العربية ويرتبها من اليمين لليسار. حرف B اللاتيني يُرسم بخط Noto Sans.
+- **fontTools و skia-pathops** يدمجان حدود كل الحروف بالـ 2D قبل التجسيم.
+- **التحقق:** المساحة في المجسّم تطابق مساحة الحروف بالضبط.
 
 **الفحص الآلي لكل ملف 3MF:**
 - كل قطعة مغلقة.
@@ -138,7 +143,7 @@ blender -b -P telecom_towers.py -- --out ./stl/60cm --big lattice_A_60cm.blend
 **التعديل:**
 - **النصوص:** من `LABELS` و `CREDITS_RIGHT` و `CREDITS_LEFT` في السكربت.
 - **عمق الكتابة:** من `LABEL_INLAY`.
-- **العربي:** يحتاج `pip install arabic-reshaper python-bidi` في بايثون Blender إذا شغّلت السكربت. الملفات الجاهزة ما تحتاجه.
+- **إذا شغّلت السكربت في Blender:** ثبّت في بايثون Blender: `pip install uharfbuzz fonttools skia-pathops`. الملفات الجاهزة ما تحتاجها.
 
 ## التفاصيل المصمَّمة
 
