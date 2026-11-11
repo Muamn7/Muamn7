@@ -36,15 +36,14 @@ P = dict(
     z_dip=-9.85, dip_t0=20.0, dip_t1=85.0,   # انخفاض حافة القاعدة عند الأمام
 
     # العُرف الأوسط (الشريط العريض من الخلف للأمام)
-    w_top=18.0,                 # نصف عرضه فوق القمة (عند الحافة العلوية للدرجة)
+    w_top=21.0,                 # نصف عرضه فوق القمة (عند الحافة العلوية للدرجة)
     w_front=41.0,               # نصف عرضه عند القاعدة من الأمام
     w_back=37.0,                # نصف عرضه عند القاعدة من الخلف
-    flare_p=0.8,
-    hc_hi=5.5, hc_lo=5.0,       # ارتفاع الدرجة: فوق / عند القاعدة
+    flare_p=1.0,
+    hc_hi=5.5, hc_lo=5.5,       # ارتفاع الدرجة: فوق / عند القاعدة (متساوٍ على طول القوس)
     ramp_c=5.0,                 # عرض جدار الدرجة
     h_rim=1.5, w_rim=4.2,       # إطار مدوّر بارز على حافة العُرف
     g_front=2.4, g_top=0.6, w_groove=7.0,   # أخدود عند قدم الدرجة: عمقه من الأمام / فوق القمة
-    h_plate=1.6, w_plate=2.0,   # اللوحة الأمامية: بروز إضافي يبدأ عند الكسرة العلوية
 
     # الحزام الأوسط (درجة ثانية أخفض، تتلاشى نزولًا)
     s_band=54.0, h_band=3.2, ramp_b=3.2,   # حافته الخارجية عند |s| = s_band
@@ -53,8 +52,8 @@ P = dict(
     # الضلع العلوي الصغير على خط المنتصف
     rib_f0=-46.0, rib_f1=25.0, rib_r=8.5, h_rib=2.6, ramp_r=5.0,
 
-    # كسرات اللوحة الأمامية (خطّان عرضيان على العُرف)
-    c1=0.89, c2=0.745, c3=0.10, sag1=1.0, sag2=4.2,
+    # خطّا اللوحة الأمامية (عرضيان على العُرف)
+    c1=0.89, c2=0.745, h_crease=0.35, w_crease=1.6,   # موضعا الخطين (نسبة من الارتفاع)، عمقهما وعرضهما (مم)
 
     # الحافة السفلية + الرفرف الأمامي
     w_lip=9.5, w_lip_back=7.6,    # عرض الحافة الصغيرة (+ زيادة في الخلف)
@@ -89,6 +88,12 @@ def ellipse_perimeter(a, b, m=4000):
     return float(np.sum(np.hypot(np.diff(x), np.diff(y))))
 
 
+def inner_offset(p):
+    """عمق السطح الداخلي تحت السطح الأساسي. ثابت، فيكون الداخل أملس بلا تضاريس، وأرقّ
+    نقطة في الجدار (قاع الأخدود) تبقى بسماكة t_shell."""
+    return p['t_shell'] + p['g_front']
+
+
 def derive(p):
     """يحسب أبعاد الرأس والقبة من محيط الرأس."""
     p = dict(p)
@@ -96,9 +101,9 @@ def derive(p):
     p['head_a'] = p['head_circumference'] / unit          # نصف طول الرأس
     p['head_b'] = p['head_a'] * p['head_ratio']           # نصف عرض الرأس
     if p['A'] is None:
-        p['A'] = p['head_a'] + p['clearance'] + p['t_shell']
+        p['A'] = p['head_a'] + p['clearance'] + inner_offset(p)
     if p['B'] is None:
-        p['B'] = p['head_b'] + p['clearance'] + p['t_shell']
+        p['B'] = p['head_b'] + p['clearance'] + inner_offset(p)
     return p
 
 
@@ -186,9 +191,8 @@ def displacement(pt, p):
     hc = p['hc_lo'] + (p['hc_hi'] - p['hc_lo']) * sstep(0.12, 0.60, zn)
     crest = step_in(e - 0.5 * p['ramp_c'], p['ramp_c'])           # 1 داخل العُرف، 0 خارجه
     front = sstep(15.0, 45.0, f)
-    plate = front * step_in((zn - p['c1']) * p['H'], p['w_plate'])  # اللوحة الأمامية تحت الكسرة العلوية
     depth = p['g_top'] + (p['g_front'] - p['g_top']) * (1.0 - sstep(0.80, 0.95, zn))
-    d = ((hc + p['h_plate'] * plate) * crest
+    d = (hc * crest
          + p['h_rim'] * cos_bump((e + 0.85 * p['w_rim']) / p['w_rim'])
          - depth * cos_bump((e - 5.0) / p['w_groove']))
 
@@ -203,18 +207,17 @@ def displacement(pt, p):
 
     # كسرات اللوحة الأمامية
     inside = crest * front
-    t1 = (zn - p['c2']) / (p['c1'] - p['c2'])
-    t2 = (zn - p['c3']) / (p['c2'] - p['c3'])
-    sag = np.where((t1 > 0) & (t1 < 1), p['sag1'] * 4.0 * t1 * (1.0 - t1), 0.0)
-    sag = sag + np.where((t2 > 0) & (t2 < 1), p['sag2'] * 6.75 * t2 * t2 * (1.0 - t2), 0.0)
-    return d - inside * sag
+    # خطّان رفيعان محفوران فقط: لا يثنيان السطح، فيبقى قوس العُرف منتظمًا
+    line = sum(cos_bump((zn - c) * p['H'] / p['w_crease']) for c in (p['c1'], p['c2']))
+    return d - inside * p['h_crease'] * line
 
 
 def shell_points(d, p, inner=False):
     p0 = base_point(d, p)
-    off = displacement(p0, p)
     if inner:
-        off = off - p['t_shell']
+        off = np.full(p0.shape[:-1], -inner_offset(p))
+    else:
+        off = displacement(p0, p)
     return p0 + base_normal(p0, p) * off[..., None]
 
 
@@ -259,13 +262,16 @@ def rim_strip(rim_dirs, p):
     c0 = p['c_fillet'] + (p['c_fillet_brim'] - p['c_fillet']) * bump
     c1, tb, hb, ts = p['c_inner'], p['t_brim'], p['h_bead'], p['t_shell']
     re = 0.5 * (tb + hb)
-    qE, zE = D + c0 * ca, -c0 - c0 * sa
+    # سطح الرفرف يُقاس من القطع الناقص للقاعدة، لا من سطح الجدار: تضاريس العُرف
+    # عند القاعدة (درجة 5 مم) لا تنتقل إلى الرفرف فيبقى منحنى حافته ناعمًا.
+    qE = D + c0 * ca                   # نقطة التقاء التقويس بالرفرف (تتبع الجدار)
+    qR, zR = c0 * ca, -c0 - c0 * sa    # مرجع ثابت لسطح الرفرف
     Wt = W - re
 
     def top0(q):                       # سطح الرفرف العلوي بدون الشفة
-        x = q - qE
-        lin = zE - ta * x
-        cur = zE - ta * (x - p['brim_curve'] * x * x / (2.0 * (W - qE)))
+        x = q - qR
+        lin = zR - ta * x
+        cur = zR - ta * (x - p['brim_curve'] * x * x / (2.0 * (W - qR)))
         y = np.clip(q - (p['w_lip'] - 1.0), 0.0, None)          # الحافة الخلفية: رفّ مستوٍ ثم تنحني للأسفل
         return np.where(x < 0, lin, cur) - droop * np.where(y < 3.0, y * y / 6.0, y - 1.5)
 
@@ -277,8 +283,9 @@ def rim_strip(rim_dirs, p):
     # 1) تقويس التقاء الجدار بالحافة
     for i in range(1, R['fillet'] + 1):
         t = i / R['fillet']
+        zE = top0(qE)
         q = (1 - t) ** 2 * D + 2 * t * (1 - t) * D + t * t * qE
-        z = 2 * t * (1 - t) * (-c0) + t * t * zE
+        z = 2 * t * (1 - t) * zE + t * t * zE
         rows.append((q, z))
     # 2) السطح العلوي
     for i in range(1, R['top'] + 1):
@@ -290,7 +297,7 @@ def rim_strip(rim_dirs, p):
         ph = 0.5 * np.pi - np.pi * i / R['edge']
         rows.append((Wt + re * np.cos(ph), zc + re * np.sin(ph)))
     # 4) السطح السفلي
-    q_in = D - ts
+    q_in = np.full_like(D, -inner_offset(p))
     qU = q_in + c1
     for i in range(1, R['under'] + 1):
         q = Wt + (qU - Wt) * (i / R['under'])
@@ -473,7 +480,7 @@ def to_blender(v):
 #  بلندر: الكائنات، المادة، الإضاءة، الكاميرا
 # --------------------------------------------------------------------------- #
 # الكاميرا المطابقة للصورة المرجعية (استُخرجت بمطابقة ظلّ الخوذة مع الصورة)
-CAMERA = dict(az=-129.49, el=14.27, dist=1.67, scale=1.21, cx=166.47, cy=116.63, ref_size=360.0,
+CAMERA = dict(az=-128.56, el=14.28, dist=1.69, scale=1.19, cx=166.32, cy=116.54, ref_size=360.0,
               target=(0.0, 0.0, 0.07))
 
 
@@ -634,8 +641,8 @@ def build_scene(bpy, p=None, with_head=True):
 
 
 def report(p):
-    inner_a = p['A'] - p['t_shell']
-    inner_b = p['B'] - p['t_shell']
+    inner_a = p['A'] - inner_offset(p)
+    inner_b = p['B'] - inner_offset(p)
     print('محيط الرأس المرجعي      : %.1f مم' % ellipse_perimeter(p['head_a'], p['head_b']))
     print('الرأس (طول × عرض)       : %.1f × %.1f مم' % (2 * p['head_a'], 2 * p['head_b']))
     print('فتحة الخوذة (طول × عرض)  : %.1f × %.1f مم  (محيط %.1f مم)' % (
