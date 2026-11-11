@@ -68,28 +68,43 @@ ND_IN = 90          # rings on the inner dome
 N_CAP = 9           # rings on the rounded lip edge
 
 # Footprint of the dome at the band step (egg shape, a little wider at back)
-A0, DA = 96.5, 1.5  # half width   -> 95 at front-side, 98 at back-side
-B0, DB = 122.0, 2.0  # half length -> 120 to the front, 124 to the back
-Z_TOP = 152.0       # top of the crown above the peak root
-N_SUPER = (2.2, 2.35, 2.15)  # dome superellipse exponent: front, sides, back
-APEX_Y = 8.0        # crown apex a little behind the centre
+A0, DA = 98.9, 2.3  # half width   -> 96.6 at front-side, 101.2 at back-side
+B0, DB = 123.3, -2.0  # half length -> 125.3 to the front, 121.3 to the back
+Z_TOP = 145.5       # top of the crown above the peak root
+N_SUPER = (2.15, 2.29, 2.37)  # dome superellipse exponent: front, sides, back
+APEX_Y = 13.5       # crown apex a little behind the centre
 
 # Front panel: the front of the dome between the two side lines, raised a
 # little. Each line runs from the crown down to the band, at PANEL_PSI degrees
 # from the front (measured around the crown).
-PANEL_PSI = 50.0    # where the side lines are, degrees from the front
-PANEL_H = 2.0       # how far the panel stands out
-PANEL_EDGE = 2.4    # width of the rounded step along the lines
+PANEL_PSI = 36.0    # where the side lines are, degrees from the front
+PANEL_H = 3.5       # how far the panel stands out
+PANEL_EDGE = 2.0    # width of the rounded step along the lines
+
+# Crown lines, as on the reference photo. False: smooth crown, the side lines
+# fade out at the top. True: the side lines carry on over the crown and run
+# down the back, so the raised panel becomes a strip over the top, and a
+# narrower crest runs along the middle of that strip.
+CROWN_LINES = True
+STRIP_W = 46.0          # half width of the raised strip over the crown
+STRIP_BACK_END = 60.0   # height where the strip has faded out at the back
+CREST_W = 17.0          # half width of the crest on the strip
+CREST_H = 3.0           # how far the crest stands out from the strip
+CREST_FRONT_END = 116.0  # height on the forehead where the crest starts
+CREST_BACK_END = 84.0   # height where the crest has faded out at the back
+LINES_FADE = 18.0       # length of the fade at the back
 
 # Band around the sides and back, rain gutter and peak
-DROP_BACK = 14.0    # how much lower the rim is at the back than at the peak
+DROP_BACK = 17.5    # how much lower the rim is at the back than at the peak
 DROP_SIDE = 5.0     # extra dip of the rim over the ears
 R1, R2 = 1.5, 3.6   # band top fillets (concave, convex)
-BAND_STEP = 8.0     # how far the band stands out from the dome
-SLOT_PHI = 100.0    # accessory slot (gap in the band) on each side, degrees
+BAND_STEP = 5.5     # how far the band stands out from the dome
+SLOT_PHI = 118.0    # accessory slot (gap in the band) on each side, degrees
 SLOT_GAP = 6.0      # slot width along the band
 FRONT_BLOCK_DROP = 5.0  # band top is this much lower in front of the slot
-PEAK = 58.0         # length of the front peak
+PEAK = 60.7         # length of the front peak
+PEAK_DROOP = 38.0   # how far the peak tips down at its edge, degrees
+BAND_H = 15.0       # band height at the front (more on the sides and back)
 GUTTER = 8.0        # width of the rain gutter on the sides and back
 
 
@@ -187,7 +202,7 @@ def segment(p0, psi0, psi1, L, n):
 def rim_heights(phi):
     c, s = np.cos(phi), np.sin(phi)
     z_bb = -DROP_BACK * (1 - c) / 2 - DROP_SIDE * s ** 2      # band bottom
-    h_band = 22.0 + 8.0 * s ** 2 + 4.0 * (1 - c) / 2          # band height
+    h_band = BAND_H + 8.0 * s ** 2 + 4.0 * (1 - c) / 2        # band height
     _, drop = band_layout(phi)
     return z_bb, z_bb + h_band - drop
 
@@ -206,7 +221,7 @@ def lower_profile(phi):
     Ls = np.maximum(0.0, (wL - (R1 + R2) * (1 - np.cos(beta))) / np.sin(beta))
 
     th0 = np.radians(lerp(-8.0, -14.0, wb))     # lip start angle
-    th1 = np.radians(lerp(35.0, -38.0, wb))     # lip end angle (gutter up / peak down)
+    th1 = np.radians(lerp(35.0, -PEAK_DROOP, wb))  # lip end angle (gutter up / peak down)
     r3 = lerp(4.5, 9.0, wb)                     # band -> lip fillet
     L_lip = GUTTER + (PEAK - GUTTER) * wb       # gutter width / peak length
 
@@ -280,19 +295,32 @@ def grid_normals(pts):
 
 
 def panel_height(P, nd):
-    """Raised front panel between the two side lines. It fades out at the
-    crown and runs down the front to the root of the peak."""
-    x, y = P[..., 0], P[..., 1] - APEX_Y
+    """Raised front panel between the two side lines, running down the front
+    to the root of the peak. Without CROWN_LINES it fades out at the crown;
+    with them it carries on over the crown as a strip with a crest on it."""
+    x, y, z = P[..., 0], P[..., 1] - APEX_Y, P[..., 2]
     rho = np.hypot(x, y)
     psi = np.degrees(np.arctan2(np.abs(x), -y))
     inside = np.radians(PANEL_PSI - psi) * rho        # mm inside the line
-    m = smoothstep(-PANEL_EDGE / 2, PANEL_EDGE / 2, inside)
-    m = m * smoothstep(6.0, 26.0, rho)
+    e = PANEL_EDGE / 2
+    if CROWN_LINES:
+        strip = STRIP_W - np.abs(x)
+        k = 8.0                                        # rounded corner where they meet
+        h = np.clip(0.5 + 0.5 * (inside - strip) / k, 0.0, 1.0)
+        d = strip + (inside - strip) * h + k * h * (1.0 - h)   # smooth union
+        back = smoothstep(STRIP_BACK_END, STRIP_BACK_END + LINES_FADE, z)
+        m = smoothstep(-e, e, d) * np.where(y > 0, np.maximum(back, smoothstep(-e, e, inside)), 1.0)
+        along = np.where(y > 0, smoothstep(CREST_BACK_END, CREST_BACK_END + LINES_FADE, z),
+                         smoothstep(CREST_FRONT_END - 5.0, CREST_FRONT_END + 5.0, z))
+        crest = smoothstep(-e, e, CREST_W - np.abs(x)) * along
+    else:
+        m = smoothstep(-e, e, inside) * smoothstep(6.0, 26.0, rho)
+        crest = 0.0
     rows = np.ones(P.shape[1])
     k5 = nd + 1 + SEG_COUNTS['s1'] + SEG_COUNTS['s2'] + SEG_COUNTS['s3'] + SEG_COUNTS['s4']
     rows[k5:k5 + SEG_COUNTS['s5']] = np.linspace(1.0, 0.0, SEG_COUNTS['s5'])
     rows[k5 + SEG_COUNTS['s5']:] = 0.0
-    return PANEL_H * m * rows[None, :]
+    return (PANEL_H * m + CREST_H * crest) * rows[None, :]
 
 
 # --------------------------------------------------------------------------
@@ -405,7 +433,7 @@ def rings_to_mesh(name, rings):
 # --------------------------------------------------------------------------
 COLORS = {
     "White": (0.80, 0.80, 0.78),
-    "Yellow": (0.95, 0.70, 0.0),
+    "Yellow": (0.90, 0.47, 0.0),
     "Blue": (0.0, 0.22, 0.75),
     "Orange": (0.95, 0.24, 0.02),
     "Red": (0.62, 0.015, 0.02),

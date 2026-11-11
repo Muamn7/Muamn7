@@ -11,7 +11,7 @@ import os
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 LIGHT = float(os.environ.get("LIGHT", "1.25"))
 
@@ -24,7 +24,8 @@ VIEWS = {
     "top":       ((0.0, -0.001, 1.40), (0.0, -0.015, 0.0), 105),
     "rear_3q":   ((-0.80, 0.80, 0.50), (0.0, 0.0, 0.050), 95),
     "underside": ((0.25, -0.30, -1.05), (0.0, -0.01, 0.040), 105),
-    "photo_angle": ((-0.560, -0.140, 0.160), (0.0, -0.020, 0.045), 46),
+    # same camera as the reference photo (fitted to its outline), with roll
+    "photo_angle": ((-0.4642, -0.0998, 0.2744), (0.0144, -0.0171, 0.0012), 50.55, 6.74),
     "detail_band": ((-0.42, -0.22, 0.10), (-0.085, -0.035, 0.020), 85),
 }
 
@@ -184,9 +185,12 @@ def main():
     k = bpy.data.objects["HardHat"].get("shell_scale", 1.0)
 
     def place(name):
-        loc, tgt, focal = VIEWS[name]
+        loc, tgt, focal = VIEWS[name][:3]
+        roll = VIEWS[name][3] if len(VIEWS[name]) > 3 else 0.0
         cam.location = [c * k for c in loc]
         look_at(cam, [c * k for c in tgt])
+        q = cam.rotation_euler.to_quaternion() @ Quaternion((0.0, 0.0, 1.0), math.radians(roll))
+        cam.rotation_euler = q.to_euler()
         cam.data.lens = focal
 
     for name in views:
