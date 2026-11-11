@@ -4,9 +4,10 @@ build_hard_hat.py  --  خوذة أمان صفراء عالية الدقة (Blend
 التشغيل داخل بلندر:  Scripting  ->  Open  ->  build_hard_hat.py  ->  Run Script
 أو من الطرفية:        blender --python build_hard_hat.py
 
-كل القياسات بالمليمتر في القاموس P بالأسفل، والمشهد يُبنى بالمتر (مقياس حقيقي).
-الخوذة مصمَّمة لمحيط رأس 58 سم: فتحة الخوذة الداخلية = محيط الرأس + خلوص 12 مم
-من كل جهة (المسافة القياسية بين الرأس وجدار خوذة الأمان).
+المقاس يُضبط بقيمة واحدة: inner_circumference = محيط فتحة الخوذة من الداخل (58 سم).
+الشكل مرسوم بمقاس تصميم ثابت طابقناه مع الصورة المرجعية، ثم تُصغَّر الخوذة كلها بنسبة
+واحدة حتى يصير محيط فتحتها الداخلية بالضبط inner_circumference، فتبقى نسبها مثل الصورة.
+سماكة الجدار t_shell تبقى بقيمتها الحقيقية بعد التصغير. المشهد بالمتر (مقياس حقيقي).
 
 الشكل كله معرَّف بدوال رياضية تُعيَّن على شبكة رباعية كثيفة (بدون قطب في القمة):
   - القبة: سطح بيضوي فائق  ((f/A)^2 + (s/B)^2)^(n/2) + (z/H)^n = 1
@@ -23,10 +24,8 @@ import numpy as np
 #  القياسات (مم)
 # --------------------------------------------------------------------------- #
 P = dict(
-    head_circumference=580.0,   # محيط الرأس المطلوب
-    head_ratio=0.80,            # عرض الرأس / طوله
-    clearance=12.0,             # الخلوص بين الرأس والجدار الداخلي
-    t_shell=3.0,                # سماكة الجدار
+    inner_circumference=580.0,  # محيط فتحة الخوذة من الداخل (مم) — هذا ما يلبس على الرأس
+    t_shell=3.0,                # سماكة الجدار الحقيقية (مم)
 
     # القبة (السطح الخارجي الأساسي). A و B تُحسبان من محيط الرأس في derive()
     A=None, B=None,
@@ -94,16 +93,24 @@ def inner_offset(p):
     return p['t_shell'] + max(p['g_front'], p['g_top'], 0.0)
 
 
+# مقاس التصميم: الشكل كله (القبة والعُرف والرفرف والشريط) مرسوم ومطابَق مع الصورة بهذه
+# الفتحة الداخلية، ثم يُصغَّر أو يُكبَّر بنسبة واحدة إلى inner_circumference.
+_DESIGN_UNIT = ellipse_perimeter(1.0, 0.80)
+DESIGN_INNER_A = 580.0 / _DESIGN_UNIT + 12.0               # نصف طول الفتحة الداخلية (مم)
+DESIGN_INNER_B = 0.80 * 580.0 / _DESIGN_UNIT + 12.0        # نصف عرضها (مم)
+
+
 def derive(p):
-    """يحسب أبعاد الرأس والقبة من محيط الرأس."""
+    """يحسب أبعاد القبة ونسبة التصغير من محيط الفتحة الداخلية المطلوب."""
     p = dict(p)
-    unit = ellipse_perimeter(1.0, p['head_ratio'])
-    p['head_a'] = p['head_circumference'] / unit          # نصف طول الرأس
-    p['head_b'] = p['head_a'] * p['head_ratio']           # نصف عرض الرأس
+    p['scale'] = p['inner_circumference'] / ellipse_perimeter(DESIGN_INNER_A, DESIGN_INNER_B)
+    p['t_shell_mm'] = p['t_shell']
+    p['t_shell'] = p['t_shell'] / p['scale']               # بوحدات التصميم، فتصير t_shell_mm بعد التصغير
+    p['head_a'], p['head_b'] = DESIGN_INNER_A, DESIGN_INNER_B   # الرأس المرجعي = الفتحة الداخلية
     if p['A'] is None:
-        p['A'] = p['head_a'] + p['clearance'] + inner_offset(p)
+        p['A'] = DESIGN_INNER_A + inner_offset(p)
     if p['B'] is None:
-        p['B'] = p['head_b'] + p['clearance'] + inner_offset(p)
+        p['B'] = DESIGN_INNER_B + inner_offset(p)
     return p
 
 
@@ -472,9 +479,9 @@ def build_head(p, n_u=96, n_v=40):
     return v, np.array(quads), z_band
 
 
-def to_blender(v):
-    """(f, s, z) مم  ->  (x, y, z) متر : الأمام = -Y ، الأعلى = +Z"""
-    return np.stack([v[:, 1], -v[:, 0], v[:, 2]], axis=-1) * 0.001
+def to_blender(v, scale=1.0):
+    """(f, s, z) بوحدات التصميم  ->  (x, y, z) متر بالمقاس الحقيقي : الأمام = -Y ، الأعلى = +Z"""
+    return np.stack([v[:, 1], -v[:, 0], v[:, 2]], axis=-1) * (0.001 * scale)
 
 
 # --------------------------------------------------------------------------- #
@@ -530,11 +537,14 @@ def look_at(bpy, ob, target):
     ob.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 
 
-def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.0, diff=1.0, roll=0.0):
+def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.0, diff=1.0, roll=0.0,
+             k=1.0):
+    """k: نسبة تصغير الخوذة؛ الاستوديو كله يتحجّم معها فتبقى الإضاءة واللمعات كما هي."""
+    loc, target = tuple(v * k for v in loc), tuple(v * k for v in target)
     li = bpy.data.lights.new(name, 'AREA')
     li.shape = 'RECTANGLE'
-    li.size, li.size_y = size
-    li.energy = power
+    li.size, li.size_y = size[0] * k, size[1] * k
+    li.energy = power * k * k
     li.color = color
     li.specular_factor = spec
     li.diffuse_factor = diff
@@ -547,7 +557,10 @@ def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.
     return ob
 
 
-def setup_camera(bpy, coll, cam=CAMERA):
+def setup_camera(bpy, coll, cam=CAMERA, scale=1.0):
+    """الكاميرا والهدف يتحركان مع نسبة التصغير، فيبقى الكادر مطابقًا للصورة."""
+    cam = dict(cam, dist=cam['dist'] * scale, scale=cam['scale'] / scale,
+               target=tuple(v * scale for v in cam['target']))
     az, el = math.radians(cam['az']), math.radians(cam['el'])
     t = cam['target']
     c = (math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el))
@@ -590,12 +603,13 @@ def build_scene(bpy, p=None, with_head=True):
     rv, rq = build_rails(p)
     verts = np.concatenate([sv, rv])
     quads = np.concatenate([sq, rq + len(sv)])
-    hat = make_object(bpy, 'HardHat', to_blender(verts), quads, c_hat)
+    k = p['scale']
+    hat = make_object(bpy, 'HardHat', to_blender(verts, k), quads, c_hat)
     hat.data.materials.append(make_plastic(bpy))
 
     if with_head:
         hv, hq, _ = build_head(p)
-        head = make_object(bpy, 'Head_58cm_reference', to_blender(hv), hq, c_ref)
+        head = make_object(bpy, 'Head_reference', to_blender(hv, k), hq, c_ref)
         head.hide_render = True
         head.display_type = 'WIRE'
         c_ref.hide_render = True
@@ -604,12 +618,12 @@ def build_scene(bpy, p=None, with_head=True):
     # الاستوديو
     tgt = (0.0, 0.0, 0.07)
     # صناديق إضاءة كبيرة موضوعة بحيث تنعكس في نفس أماكن اللمعات في الصورة المرجعية
-    add_area(bpy, c_studio, 'Softbox_Left', (-0.47, 0.55, 0.72), (-0.07, -0.02, 0.08), (1.10, 0.85), 15.0, spec=2.4, diff=1.0)
-    add_area(bpy, c_studio, 'Softbox_Front', (0.54, -0.68, 0.69), (0.0, -0.10, 0.07), (1.35, 0.62), 13.0, spec=3.0, diff=0.9,
+    add_area(bpy, c_studio, 'Softbox_Left', (-0.47, 0.55, 0.72), (-0.07, -0.02, 0.08), (1.10, 0.85), 15.0, spec=2.4, diff=1.0, k=k)
+    add_area(bpy, c_studio, 'Softbox_Front', (0.54, -0.68, 0.69), (0.0, -0.10, 0.07), (1.35, 0.62), 13.0, spec=3.0, diff=0.9, k=k,
              roll=-8.0)
-    add_area(bpy, c_studio, 'Softbox_Top', (0.02, 0.42, 0.98), (-0.04, -0.02, 0.10), (0.45, 0.95), 7.5, spec=2.4, diff=1.0)
-    add_area(bpy, c_studio, 'Softbox_Right', (0.66, 0.20, 0.78), (0.0, -0.08, 0.05), (0.70, 0.55), 7.5, spec=2.5, diff=0.8)
-    cam = setup_camera(bpy, c_studio)
+    add_area(bpy, c_studio, 'Softbox_Top', (0.02, 0.42, 0.98), (-0.04, -0.02, 0.10), (0.45, 0.95), 7.5, spec=2.4, diff=1.0, k=k)
+    add_area(bpy, c_studio, 'Softbox_Right', (0.66, 0.20, 0.78), (0.0, -0.08, 0.05), (0.70, 0.55), 7.5, spec=2.5, diff=0.8, k=k)
+    cam = setup_camera(bpy, c_studio, scale=k)
     scene.camera = cam
 
     world = scene.world or bpy.data.worlds.new('World')
@@ -642,12 +656,16 @@ def build_scene(bpy, p=None, with_head=True):
 
 
 def report(p):
-    inner_a = p['A'] - inner_offset(p)
-    inner_b = p['B'] - inner_offset(p)
-    print('محيط الرأس المرجعي      : %.1f مم' % ellipse_perimeter(p['head_a'], p['head_b']))
-    print('الرأس (طول × عرض)       : %.1f × %.1f مم' % (2 * p['head_a'], 2 * p['head_b']))
-    print('فتحة الخوذة (طول × عرض)  : %.1f × %.1f مم  (محيط %.1f مم)' % (
-        2 * inner_a, 2 * inner_b, ellipse_perimeter(inner_a, inner_b)))
+    k = p['scale']
+    ia, ib = (p['A'] - inner_offset(p)) * k, (p['B'] - inner_offset(p)) * k
+    sv, _ = build_shell(dict(p, N=48, M=32))
+    rv, _ = build_rails(p)
+    v = np.concatenate([sv, rv]) * k
+    print('فتحة الخوذة الداخلية (طول × عرض) : %.1f × %.1f مم  (محيط %.1f مم)' % (
+        2 * ia, 2 * ib, ellipse_perimeter(ia, ib)))
+    print('العمق الداخلي (من الحافة إلى السقف): %.1f مم' % ((p['H'] - inner_offset(p)) * k))
+    print('الحجم الكلي (طول × عرض × ارتفاع)  : %.0f × %.0f × %.0f مم' % tuple(v.max(0) - v.min(0)))
+    print('سماكة الجدار                      : %.1f مم   (نسبة التصغير %.3f)' % (p['t_shell_mm'], k))
 
 
 if __name__ == '__main__':
