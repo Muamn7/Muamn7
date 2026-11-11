@@ -40,8 +40,11 @@ P = dict(
     w_front=41.0,               # نصف عرضه عند القاعدة من الأمام
     w_back=37.0,                # نصف عرضه عند القاعدة من الخلف
     flare_p=0.8,
-    hc_hi=5.5, hc_lo=2.6,       # ارتفاع الدرجة: فوق / عند القاعدة
-    ramp_c=9.0,                 # عرض الدرجة المقعّرة (للخارج)
+    hc_hi=5.5, hc_lo=5.0,       # ارتفاع الدرجة: فوق / عند القاعدة
+    ramp_c=5.0,                 # عرض جدار الدرجة
+    h_rim=1.5, w_rim=4.2,       # إطار مدوّر بارز على حافة العُرف
+    g_front=2.4, g_top=0.6, w_groove=7.0,   # أخدود عند قدم الدرجة: عمقه من الأمام / فوق القمة
+    h_plate=1.6, w_plate=2.0,   # اللوحة الأمامية: بروز إضافي يبدأ عند الكسرة العلوية
 
     # الحزام الأوسط (درجة ثانية أخفض، تتلاشى نزولًا)
     s_band=54.0, h_band=3.2, ramp_b=3.2,   # حافته الخارجية عند |s| = s_band
@@ -52,7 +55,6 @@ P = dict(
 
     # كسرات اللوحة الأمامية (خطّان عرضيان على العُرف)
     c1=0.89, c2=0.745, c3=0.10, sag1=1.0, sag2=4.2,
-    h_crease=0.45, w_crease=1.3,   # خرزة رفيعة على خط الكسرة العلوي
 
     # الحافة السفلية + الرفرف الأمامي
     w_lip=9.5, w_lip_back=7.6,    # عرض الحافة الصغيرة (+ زيادة في الخلف)
@@ -65,7 +67,7 @@ P = dict(
     c_fillet=1.2, c_fillet_brim=3.2, c_inner=1.5,
 
     # دقة الشبكة
-    N=176, M=112,
+    N=208, M=132,
 )
 
 # الشريط الجانبي: (بداية τ°، نهاية τ°، z0، z1، البروز، نصف قطر التدوير، يُعكس؟)
@@ -124,6 +126,11 @@ def cove(e, w, eps=0.07):
     return (1.0 - np.clip(soft, 0.0, 1.0)) ** 2
 
 
+def cos_bump(t):
+    """نتوء ناعم: 1 عند t=0 ويهبط إلى 0 عند |t|=1."""
+    return np.cos(0.5 * np.pi * np.clip(t, -1.0, 1.0)) ** 2
+
+
 def normalize(v):
     return v / np.linalg.norm(v, axis=-1, keepdims=True)
 
@@ -177,8 +184,13 @@ def displacement(pt, p):
     s_edge = p['w_top'] + (wb - p['w_top']) * flare
     e = a - s_edge
     hc = p['hc_lo'] + (p['hc_hi'] - p['hc_lo']) * sstep(0.12, 0.60, zn)
-    crest = cove(e, p['ramp_c'])
-    d = hc * crest
+    crest = step_in(e - 0.5 * p['ramp_c'], p['ramp_c'])           # 1 داخل العُرف، 0 خارجه
+    front = sstep(15.0, 45.0, f)
+    plate = front * step_in((zn - p['c1']) * p['H'], p['w_plate'])  # اللوحة الأمامية تحت الكسرة العلوية
+    depth = p['g_top'] + (p['g_front'] - p['g_top']) * (1.0 - sstep(0.80, 0.95, zn))
+    d = ((hc + p['h_plate'] * plate) * crest
+         + p['h_rim'] * cos_bump((e + 0.85 * p['w_rim']) / p['w_rim'])
+         - depth * cos_bump((e - 5.0) / p['w_groove']))
 
     # الحزام الأوسط
     fade = sstep(p['band_z0'], p['band_z1'], zn)
@@ -190,13 +202,12 @@ def displacement(pt, p):
     d = d + p['h_rib'] * step_in(sd, p['ramp_r'])
 
     # كسرات اللوحة الأمامية
-    inside = crest * sstep(15.0, 45.0, f)
+    inside = crest * front
     t1 = (zn - p['c2']) / (p['c1'] - p['c2'])
     t2 = (zn - p['c3']) / (p['c2'] - p['c3'])
     sag = np.where((t1 > 0) & (t1 < 1), p['sag1'] * 4.0 * t1 * (1.0 - t1), 0.0)
     sag = sag + np.where((t2 > 0) & (t2 < 1), p['sag2'] * 6.75 * t2 * t2 * (1.0 - t2), 0.0)
-    bead = p['h_crease'] * np.exp(-0.5 * ((zn - p['c1']) * p['H'] / p['w_crease']) ** 2)
-    return d - inside * (sag - bead)
+    return d - inside * sag
 
 
 def shell_points(d, p, inner=False):
@@ -496,7 +507,7 @@ def make_plastic(bpy):
                 bsdf.inputs[nm].default_value = value
                 return
 
-    setv(['Base Color'], (1.0, 0.58, 0.0, 1.0))
+    setv(['Base Color'], (1.0, 0.45, 0.0, 1.0))
     setv(['Roughness'], 0.16)
     setv(['IOR'], 1.50)
     setv(['Specular IOR Level', 'Specular'], 0.5)
@@ -511,7 +522,7 @@ def look_at(bpy, ob, target):
     ob.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 
 
-def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.0, diff=1.0):
+def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.0, diff=1.0, roll=0.0):
     li = bpy.data.lights.new(name, 'AREA')
     li.shape = 'RECTANGLE'
     li.size, li.size_y = size
@@ -523,6 +534,8 @@ def add_area(bpy, coll, name, loc, target, size, power, color=(1, 1, 1), spec=1.
     ob.location = loc
     coll.objects.link(ob)
     look_at(bpy, ob, target)
+    if roll:
+        ob.rotation_euler.rotate_axis('Z', math.radians(roll))
     return ob
 
 
@@ -583,10 +596,11 @@ def build_scene(bpy, p=None, with_head=True):
     # الاستوديو
     tgt = (0.0, 0.0, 0.07)
     # صناديق إضاءة كبيرة موضوعة بحيث تنعكس في نفس أماكن اللمعات في الصورة المرجعية
-    add_area(bpy, c_studio, 'Softbox_Left', (-0.62, 0.48, 0.70), (-0.07, -0.02, 0.08), (0.80, 0.55), 8.5, spec=3.6, diff=1.0)
-    add_area(bpy, c_studio, 'Softbox_Front', (0.56, -0.66, 0.60), (0.0, -0.10, 0.07), (0.85, 0.95), 7.5, spec=4.0, diff=0.9)
-    add_area(bpy, c_studio, 'Softbox_Top', (0.02, 0.42, 0.98), (-0.04, -0.02, 0.10), (0.45, 0.95), 5.5, spec=3.6, diff=1.0)
-    add_area(bpy, c_studio, 'Softbox_Right', (0.66, 0.20, 0.78), (0.0, -0.08, 0.05), (0.70, 0.55), 5.0, spec=3.6, diff=0.8)
+    add_area(bpy, c_studio, 'Softbox_Left', (-0.47, 0.55, 0.72), (-0.07, -0.02, 0.08), (1.10, 0.85), 15.0, spec=2.4, diff=1.0)
+    add_area(bpy, c_studio, 'Softbox_Front', (0.54, -0.68, 0.69), (0.0, -0.10, 0.07), (1.35, 0.62), 13.0, spec=3.0, diff=0.9,
+             roll=-8.0)
+    add_area(bpy, c_studio, 'Softbox_Top', (0.02, 0.42, 0.98), (-0.04, -0.02, 0.10), (0.45, 0.95), 7.5, spec=2.4, diff=1.0)
+    add_area(bpy, c_studio, 'Softbox_Right', (0.66, 0.20, 0.78), (0.0, -0.08, 0.05), (0.70, 0.55), 7.5, spec=2.5, diff=0.8)
     cam = setup_camera(bpy, c_studio)
     scene.camera = cam
 
