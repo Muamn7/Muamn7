@@ -42,21 +42,24 @@ def V(x, y, z):
 #  Palette (sRGB hex, taken from the reference picture)
 # --------------------------------------------------------------------------
 COL = {
-    "alpha":     "#8B4FD0",   # purple  α
-    "beta":      "#2D6CDB",   # blue    β
-    "gamma":     "#F5C518",   # yellow  γ
-    "channel":   "#2FA81C",   # green pore
-    "ion":       "#7CF02E",   # bright green Cl- ions
-    "gaba":      "#E21B26",   # red GABA ligand
-    "diazepam":  "#36A9F2",   # light blue diazepam
-    "head":      "#F7C81E",   # lipid heads
-    "tail":      "#F5F3EE",   # lipid tails
-    "navy":      "#1C3A8C",   # base + title panel
-    "white":     "#F8F8F6",
-    "ink":       "#14213D",   # dark label text
-    "red_rim":   "#D8232E",
-    "blue_rim":  "#2C7FDA",
-    "wall":      "#CFCDC8",
+    "alpha":      "#8E52D8",   # purple  α (front piece)
+    "alpha_back": "#6E3CB6",   # darker purple (back piece of α)
+    "beta":       "#2F6FDB",   # blue    β
+    "gamma":      "#F3C300",   # yellow  γ
+    "channel":    "#22A82A",   # green pore
+    "ion":        "#86F23A",   # bright green Cl- ions
+    "gaba":       "#E0161F",   # red GABA ligand
+    "diazepam":   "#3AB0F2",   # light-blue diazepam
+    "head":       "#F5C400",   # lipid heads
+    "tail":       "#F4F2EE",   # lipid tails
+    "navy":       "#16265E",   # base
+    "title":      "#1A2E6E",   # title panel
+    "title_rim":  "#2B4796",   # title panel outline
+    "white":      "#F8F8F6",
+    "ink":        "#172554",   # dark label text
+    "red_rim":    "#D62835",
+    "blue_rim":   "#2A78D6",
+    "wall":       "#BEBAB4",
 }
 
 
@@ -125,17 +128,16 @@ def set_in(node, names, value):
             return
 
 
-def mat_clay(name, hexcol, rough=0.42, sss=0.10, coat=0.30, bump=0.12,
-             emit=0.0, noise_scale=420.0):
-    """Soft plastic / polymer-clay look with a very fine surface texture."""
+def mat_clay(name, hexcol, rough=0.5, sss=0.12, coat=0.08, bump=0.22, emit=0.0):
+    """Matte polymer-clay look: fine grain + slight hand-made unevenness."""
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
     nt.nodes.clear()
     out = nt.nodes.new("ShaderNodeOutputMaterial")
-    out.location = (600, 0)
+    out.location = (700, 0)
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.location = (300, 0)
+    bsdf.location = (400, 0)
     col = hex_rgba(hexcol)
     set_in(bsdf, "Base Color", col)
     set_in(bsdf, "Roughness", rough)
@@ -143,26 +145,32 @@ def mat_clay(name, hexcol, rough=0.42, sss=0.10, coat=0.30, bump=0.12,
     set_in(bsdf, "Subsurface Scale", 0.003)
     set_in(bsdf, "Subsurface Radius", Vector((1.0, 0.5, 0.35)))
     set_in(bsdf, ["Coat Weight", "Clearcoat"], coat)
-    set_in(bsdf, ["Coat Roughness", "Clearcoat Roughness"], 0.25)
+    set_in(bsdf, ["Coat Roughness", "Clearcoat Roughness"], 0.3)
+    set_in(bsdf, ["Sheen Weight", "Sheen"], 0.15)
     if emit > 0:
         set_in(bsdf, ["Emission Color", "Emission"], col)
         set_in(bsdf, "Emission Strength", emit)
     nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
-
     if bump > 0:
         tc = nt.nodes.new("ShaderNodeTexCoord")
-        tc.location = (-600, 0)
-        nz = nt.nodes.new("ShaderNodeTexNoise")
-        nz.location = (-400, 0)
-        nz.inputs["Scale"].default_value = noise_scale
-        nz.inputs["Detail"].default_value = 6.0
-        bp = nt.nodes.new("ShaderNodeBump")
-        bp.location = (-150, 0)
-        bp.inputs["Strength"].default_value = bump
-        bp.inputs["Distance"].default_value = 0.0004
-        nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
-        nt.links.new(nz.outputs["Fac"], bp.inputs["Height"])
-        nt.links.new(bp.outputs["Normal"], bsdf.inputs["Normal"])
+        tc.location = (-800, 0)
+        prev = None
+        for i, (scale, strength, dist) in enumerate(((14.0, bump * 0.35, 0.002),
+                                                     (260.0, bump, 0.0004))):
+            nz = nt.nodes.new("ShaderNodeTexNoise")
+            nz.location = (-550, -i * 250)
+            nz.inputs["Scale"].default_value = scale
+            nz.inputs["Detail"].default_value = 5.0
+            bp = nt.nodes.new("ShaderNodeBump")
+            bp.location = (-250 + i * 200, -i * 250)
+            bp.inputs["Strength"].default_value = strength
+            bp.inputs["Distance"].default_value = dist
+            nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+            nt.links.new(nz.outputs["Fac"], bp.inputs["Height"])
+            if prev:
+                nt.links.new(prev.outputs["Normal"], bp.inputs["Normal"])
+            prev = bp
+        nt.links.new(prev.outputs["Normal"], bsdf.inputs["Normal"])
     return m
 
 
@@ -184,8 +192,8 @@ def mat_wood(name="Wood_Table"):
     wave.inputs["Detail"].default_value = 4.0
     wave.inputs["Detail Scale"].default_value = 2.0
     ramp = nt.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].color = hex_rgba("#A47E57")
-    ramp.color_ramp.elements[1].color = hex_rgba("#C9A57C")
+    ramp.color_ramp.elements[0].color = hex_rgba("#B8946B")
+    ramp.color_ramp.elements[1].color = hex_rgba("#D6B892")
     nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
     nt.links.new(mp.outputs["Vector"], wave.inputs["Vector"])
     nt.links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
@@ -240,42 +248,6 @@ def sphere(name, r, loc, collection, mat, seg=48):
     me.materials.append(mat)
     ob = link(bpy.data.objects.new(name, me), collection)
     ob.location = V(*loc)
-    return ob
-
-
-def blob(name, elements, collection, mat, res=0.11, threshold=0.6):
-    """Organic clay shape from metaball elements, converted to a real mesh.
-
-    elements: list of (centre_xyz_cm, semi_axes_xyz_cm)  -> ellipsoids
-    (a single isolated ellipsoid reaches ~0.575 * radius * size on each axis;
-     neighbours blend together and grow slightly)
-    """
-    mb = bpy.data.metaballs.new(name + "_mb")
-    mb.resolution = res * S
-    mb.render_resolution = res * S
-    mb.threshold = threshold
-    for co, semi in elements:
-        R = max(semi) / 0.575
-        el = mb.elements.new(type="ELLIPSOID")
-        el.co = V(*co)
-        el.radius = R * S
-        el.size_x, el.size_y, el.size_z = (a / (0.575 * R) for a in semi)
-        el.stiffness = 2.0
-    tmp = link(bpy.data.objects.new("MB" + name.replace("_", "").replace(".", ""), mb),
-               collection)
-    bpy.context.view_layer.update()
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = bpy.data.meshes.new_from_object(tmp.evaluated_get(dg))
-    me.name = name
-    bpy.data.objects.remove(tmp, do_unlink=True)
-    bpy.data.metaballs.remove(mb)
-    smooth(me)
-    me.materials.append(mat)
-    ob = link(bpy.data.objects.new(name, me), collection)
-    # tiny relax for an even "hand-modelled" surface
-    cs = ob.modifiers.new("Relax", "CORRECTIVE_SMOOTH")
-    cs.iterations = 4
-    cs.use_only_smooth = True
     return ob
 
 
@@ -346,10 +318,13 @@ FONT = None
 
 def load_font():
     cands = [
+        r"C:\Windows\Fonts\seguibl.ttf",          # Segoe UI Black
+        r"C:\Windows\Fonts\segoeuib.ttf",         # Segoe UI Bold
         r"C:\Windows\Fonts\arialbd.ttf",
-        r"C:\Windows\Fonts\segoeuib.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Black.ttf",
         "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
         "/Library/Fonts/Arial Bold.ttf",
+        "/usr/share/fonts/opentype/inter/Inter-ExtraBold.otf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
@@ -409,16 +384,86 @@ def place_row(pieces, center, frame, gap=0.25, normal_off=0.0):
         cursor += w + gap
 
 
-def surface_y(ob, x, z, y_from=-40.0):
-    """Ray-cast from the front (-Y) to find the visible surface depth (cm)."""
-    bpy.context.view_layer.update()
-    inv = ob.matrix_world.inverted()
-    o = inv @ V(x, y_from, z)
-    d = (inv.to_3x3() @ Vector((0, 1, 0))).normalized()
-    hit, loc, nor, idx = ob.ray_cast(o, d)
-    if not hit:
-        return None
-    return (ob.matrix_world @ loc).y / S
+# --------------------------------------------------------------------------
+#  2-D outline  ->  thick clay slab  (flat front, fully rounded edges)
+# --------------------------------------------------------------------------
+def rrect_pts(w, h, r, cx=0.0, cz=0.0, seg=10):
+    """Rounded rectangle outline (cm)."""
+    pts = []
+    corners = [(w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90),
+               (-w / 2 + r, -h / 2 + r, 180), (w / 2 - r, -h / 2 + r, 270)]
+    for x0, z0, a0 in corners:
+        for i in range(seg + 1):
+            a = math.radians(a0 + 90 * i / seg)
+            pts.append((cx + x0 + r * math.cos(a), cz + z0 + r * math.sin(a)))
+    return pts
+
+
+def blob_pts(cx, cz, rx, rz, n=48, squash_top=0.0, bulge=0.0):
+    """Soft super-ellipse outline (for β): a little flatter on top."""
+    pts = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        c, s_ = math.cos(a), math.sin(a)
+        e = 2.4                                      # >2 = squarer
+        x = rx * math.copysign(abs(c) ** (2 / e), c) * (1 + bulge * s_)
+        z = rz * math.copysign(abs(s_) ** (2 / e), s_)
+        if z > 0:
+            z *= (1 - squash_top)
+        pts.append((cx + x, cz + z))
+    return pts
+
+
+def slab(name, pts, collection, mat, front_y, depth, bevel, smooth_curve=True,
+         mirror=False):
+    """Extruded, bevelled 2-D outline in the XZ plane.
+
+    pts      : outline points (x, z) in cm - this IS the final silhouette
+    front_y  : y of the front face (camera looks toward +Y)
+    depth    : total thickness;  bevel: edge rounding radius
+    smooth_curve: True = Bezier/auto handles through the points, False = polyline
+    """
+    if mirror:
+        pts = [(-x, z) for x, z in reversed(pts)]
+    cu = bpy.data.curves.new(name, "CURVE")
+    cu.dimensions = "2D"
+    cu.fill_mode = "BOTH"
+    cu.bevel_depth = bevel * S
+    cu.bevel_resolution = 8
+    cu.extrude = max(depth / 2 - bevel, 0.0005) * S
+    cu.offset = -bevel * S
+    cu.resolution_u = 24 if smooth_curve else 2
+    if smooth_curve:
+        sp = cu.splines.new("BEZIER")
+        sp.bezier_points.add(len(pts) - 1)
+        for bp, (x, z) in zip(sp.bezier_points, pts):
+            bp.co = (x * S, z * S, 0)
+            bp.handle_left_type = bp.handle_right_type = "AUTO"
+    else:
+        sp = cu.splines.new("POLY")
+        sp.points.add(len(pts) - 1)
+        for p, (x, z) in zip(sp.points, pts):
+            p.co = (x * S, z * S, 0, 1)
+    sp.use_cyclic_u = True
+    sp.use_smooth = True
+    cu.materials.append(mat)
+    ob = link(bpy.data.objects.new(name, cu), collection)
+    ob.rotation_euler = (math.radians(90), 0, 0)
+    ob.location = V(0, front_y + depth / 2, 0)
+    return ob
+
+
+# ==========================================================================
+#  SHAPES  (traced from the reference picture; x,z in cm, left side)
+# ==========================================================================
+ALPHA_FRONT = [(-8.4, 14.0), (-7.8, 15.8), (-6.2, 16.5), (-4.7, 16.0), (-3.0, 15.0),
+               (-1.75, 14.1), (-1.45, 12.4), (-1.5, 9.8), (-1.65, 7.2), (-2.1, 5.1),
+               (-3.1, 4.2), (-4.3, 4.3), (-5.1, 5.4), (-5.6, 7.4), (-6.2, 9.4),
+               (-7.0, 10.9), (-8.0, 12.2)]
+ALPHA_BACK = [(-6.9, 11.4), (-5.8, 12.0), (-4.8, 10.4), (-4.4, 7.8), (-4.55, 5.7),
+              (-5.0, 4.75), (-5.75, 4.55), (-6.35, 5.2), (-6.6, 7.0), (-6.8, 9.4)]
+GAMMA = [(-2.05, 18.4), (-1.5, 19.45), (0, 19.7), (1.5, 19.45), (2.05, 18.4),
+         (1.75, 16.4), (1.1, 14.6), (0, 14.1), (-1.1, 14.6), (-1.75, 16.4)]
 
 
 # ==========================================================================
@@ -441,81 +486,55 @@ def build():
     C_lab = coll("04_Labels")
     C_env = coll("05_Studio")
 
-    M = {k: mat_clay("M_" + k, v) for k, v in COL.items()
-         if k not in ("wall", "ion", "channel")}
-    M["navy"] = mat_clay("M_navy", COL["navy"], rough=0.35, coat=0.45, bump=0.05)
-    M["white"] = mat_clay("M_white", COL["white"], rough=0.35, coat=0.4, bump=0.04)
-    M["channel"] = mat_clay("M_channel", COL["channel"], rough=0.35, emit=0.25)
-    M["ion"] = mat_clay("M_ion", COL["ion"], rough=0.25, coat=0.6, emit=0.9, bump=0.03)
-    M["gaba"] = mat_clay("M_gaba", COL["gaba"], rough=0.25, coat=0.7, bump=0.03)
-    M["diazepam"] = mat_clay("M_diazepam", COL["diazepam"], rough=0.25, coat=0.7, bump=0.03)
+    M = {k: mat_clay("M_" + k, v) for k, v in COL.items() if k != "wall"}
+    M["channel"] = mat_clay("M_channel", COL["channel"], emit=0.15)
+    M["ion"] = mat_clay("M_ion", COL["ion"], rough=0.35, emit=0.8, bump=0.05)
+    M["gaba"] = mat_clay("M_gaba", COL["gaba"], rough=0.35, coat=0.3, bump=0.05)
+    M["diazepam"] = mat_clay("M_diazepam", COL["diazepam"], rough=0.35, coat=0.3, bump=0.05)
+    M["navy"] = mat_clay("M_navy", COL["navy"], rough=0.45, bump=0.10)
+    M["white"] = mat_clay("M_white", COL["white"], rough=0.45, bump=0.06)
+    M["ink"] = mat_clay("M_ink", COL["ink"], rough=0.45, bump=0.03)
+    up = Matrix.Identity(3)
 
     # ------------------------------------------------------------------ BASE
-    # stepped pedestal, 30 cm wide, sloped front face carrying the plaques
-    prof = [(-8.0, 0.0), (-8.0, 1.0), (-6.4, 3.5), (4.5, 3.5), (4.5, 0.0)]
-    me = bpy.data.meshes.new("Base_Pedestal")
-    bm = bmesh.new()
-    left = [bm.verts.new(V(-15.0, y, z)) for y, z in prof]
-    f = bm.faces.new(left)
-    res = bmesh.ops.extrude_face_region(bm, geom=[f])
-    nv = [g for g in res["geom"] if isinstance(g, bmesh.types.BMVert)]
-    bmesh.ops.translate(bm, verts=nv, vec=V(30.0, 0, 0))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bm.to_mesh(me)
-    bm.free()
-    smooth(me)
-    me.materials.append(M["navy"])
-    base = link(bpy.data.objects.new("Base_Pedestal", me), C_base)
-    bv = base.modifiers.new("Bevel", "BEVEL")
-    bv.width = 0.35 * S
-    bv.segments = 6
-    bv.limit_method = "ANGLE"
-    flat_normals_fix(base)
-
-    rbox("Base_MembranePlatform", (25.0, 5.0, 3.0), (0, 1.0, 5.0), C_base, M["navy"],
-         bevel=0.3)
+    rbox("Base_Pedestal", (30.0, 12.0, 4.0), (0, -1.0, 2.0), C_base, M["navy"],
+         bevel=0.45, seg=8)
+    rbox("Base_MembranePlatform", (24.7, 5.0, 3.5), (0, 1.3, 5.75), C_base, M["navy"],
+         bevel=0.3, seg=6)
 
     # ------------------------------------------------------------- MEMBRANE
-    head_r = 0.55
-    xs = []
-    x = 6.4
-    while x <= 13.3:
-        xs.append(x)
-        x += 1.1
-    rows_y = [-1.0, 0.1, 1.2, 2.3]
-    z_top, z_bot = 14.0, 7.0
-
+    head_r = 0.7
+    z_top, z_bot = 13.0, 8.15
+    rows_y = [-0.5, 0.8, 2.1, 3.3]
     hm = bpy.data.meshes.new("Lipid_Heads")
     bm = bmesh.new()
     tails = bpy.data.curves.new("Lipid_Tails", "CURVE")
     tails.dimensions = "3D"
-    tails.bevel_depth = 0.11 * S
+    tails.bevel_depth = 0.15 * S
     tails.bevel_resolution = 3
     tails.use_fill_caps = True
-    k = 0
     for side in (-1, 1):
         for ri, y in enumerate(rows_y):
-            stagger = 0.55 if ri % 2 else 0.0
-            for xi in xs:
-                xx = side * (xi + stagger)
-                if abs(xx) > 13.4:
-                    continue
+            x = 5.6 + (0.69 if ri % 2 else 0.0)
+            while x <= 13.7:
+                xx = side * x
                 for zc, sgn in ((z_top, -1), (z_bot, 1)):
                     bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=12,
                                               radius=head_r * S,
                                               matrix=Matrix.Translation(V(xx, y, zc)))
-                    for t in (-0.17, 0.17):
+                    for t in (-0.2, 0.2):
                         sp = tails.splines.new("NURBS")
-                        n = 6
-                        sp.points.add(n - 1)
-                        for i in range(n):
-                            f_ = i / (n - 1)
-                            wig = 0.10 * (1 if (i + k) % 2 else -1) if 0 < i < n - 1 else 0
-                            pz = zc + sgn * (head_r * 0.6 + f_ * 2.8)
-                            sp.points[i].co = (*(V(xx + t + wig, y, pz)), 1.0)
+                        prof = [0.0, 0.10, 0.02, 0.12, 0.04]      # gentle S-wave
+                        sp.points.add(len(prof) - 1)
+                        for i, off in enumerate(prof):
+                            f_ = i / (len(prof) - 1)
+                            pz = zc + sgn * (head_r * 0.7 + f_ * 1.75)
+                            px = xx + t + math.copysign(off, t)
+                            sp.points[i].co = (*(V(px, y, pz)), 1.0)
                         sp.order_u = 3
                         sp.use_endpoint_u = True
-                    k += 1
+                        sp.use_smooth = True
+                x += 1.38
     bm.to_mesh(hm)
     bm.free()
     smooth(hm)
@@ -525,158 +544,108 @@ def build():
     link(bpy.data.objects.new("Lipid_Tails", tails), C_mem)
 
     # ------------------------------------------------------------- RECEPTOR
-    # α subunits (left / right) - kidney-shaped clay blobs
-    alphas = []
+    A_FRONT_Y = -3.2
     for side, nm in ((-1, "L"), (1, "R")):
-        o = side          # outward direction
-        cx = 4.7 * side
-        el = [
-            ((cx + o * 0.20, -0.4, 14.2), (3.1, 2.2, 2.0)),    # top lobe
-            ((cx + o * 0.40, -0.4, 11.4), (2.7, 2.2, 2.2)),    # upper body
-            ((cx - o * 0.30, -0.4, 8.5), (2.2, 2.1, 2.2)),     # waist
-            ((cx - o * 0.70, -0.4, 5.8), (1.8, 2.0, 1.7)),     # foot
-            ((cx + o * 1.00, 1.3, 10.6), (2.2, 1.6, 4.4)),     # back layer
-        ]
-        alphas.append(blob("Alpha_" + nm, el, C_rec, M["alpha"]))
+        mir = side > 0
+        slab("Alpha_" + nm, ALPHA_FRONT, C_rec, M["alpha"], A_FRONT_Y, 3.2, 1.0,
+             mirror=mir)
+        slab("Alpha_" + nm + "_Back", ALPHA_BACK, C_rec, M["alpha_back"], -2.4, 2.6,
+             0.6, mirror=mir)
+        slab("Beta_" + nm, blob_pts(side * 3.55, 16.4, 2.5, 2.4, squash_top=0.06),
+             C_rec, M["beta"], -2.3, 2.8, 1.0, smooth_curve=False)
+    slab("Gamma", GAMMA, C_rec, M["gamma"], -1.5, 2.6, 0.9)
+    slab("Channel_Pore", rrect_pts(4.0, 10.4, 1.2, 0, 9.7), C_rec, M["channel"],
+         -1.0, 2.2, 0.6, smooth_curve=False)
 
-    # β subunits (behind the α tops)
-    for side, nm in ((-1, "L"), (1, "R")):
-        cx = 3.6 * side
-        el = [
-            ((cx, 0.6, 16.6), (2.4, 2.0, 2.1)),
-            ((cx + side * 0.7, 0.6, 15.4), (1.7, 1.8, 1.5)),
-        ]
-        blob("Beta_" + nm, el, C_rec, M["beta"])
+    sphere("Cl_Ion_1", 0.62, (0, -1.2, 12.2), C_rec, M["ion"])
+    sphere("Cl_Ion_2", 0.62, (0, -1.2, 9.5), C_rec, M["ion"])
+    flat_arrow("Channel_Arrow", 1.7, C_rec, M["ion"], (0, -1.2, 7.4), up,
+               shaft=0.3, head_w=1.0, head_l=0.75, depth=0.3, angle_deg=-90)
+    sphere("Cl_Ion_Exit", 1.3, (0, -3.0, 5.1), C_rec, M["ion"])
 
-    # γ subunit (top centre)
-    gamma = blob("Gamma", [
-        ((0, -0.2, 17.9), (2.0, 1.9, 1.6)),
-        ((0, -0.2, 15.9), (1.75, 1.8, 2.0)),
-    ], C_rec, M["gamma"])
+    gaba = sphere("GABA_Ligand", 0.82, (-5.7, A_FRONT_Y + 0.15, 15.85), C_rec, M["gaba"])
+    diaz = sphere("Diazepam_Ligand", 0.8, (5.75, A_FRONT_Y + 0.15, 15.05), C_rec,
+                  M["diazepam"])
 
-    # Cl- channel (pore) between the two α
-    rbox("Channel_Pore", (3.0, 2.6, 10.0), (0, 0.4, 8.9), C_rec, M["channel"],
-         bevel=0.8, seg=8)
-    sphere("Cl_Ion_1", 0.6, (0, -1.0, 12.0), C_rec, M["ion"])
-    sphere("Cl_Ion_2", 0.6, (0, -1.0, 9.7), C_rec, M["ion"])
-    flat_arrow("Channel_Arrow", 1.9, C_rec, M["ion"], (0, -0.95, 7.55),
-               Matrix.Identity(3), shaft=0.28, head_w=0.85, head_l=0.7, depth=0.2,
-               angle_deg=-90)
-    cl_ball = sphere("Cl_Ion_Exit", 1.15, (0, -2.4, 4.75), C_rec, M["ion"])
-
-    # ligands sitting on the surface
-    gaba_x, gaba_z = -5.7, 15.7
-    dz_x, dz_z = 5.7, 15.1
-    gy = surface_y(alphas[0], gaba_x, gaba_z) or -2.5
-    dy = surface_y(alphas[1], dz_x, dz_z) or -2.5
-    gaba = sphere("GABA_Ligand", 0.85, (gaba_x, gy + 0.25, gaba_z), C_rec, M["gaba"])
-    diaz = sphere("Diazepam_Ligand", 0.80, (dz_x, dy + 0.25, dz_z), C_rec, M["diazepam"])
-
-    # ---------------------------------------------------------- GREEK LETTERS
-    Mw = M["white"]
-    Mink = mat_clay("M_ink", COL["ink"], rough=0.4, bump=0.02)
-    up = Matrix.Identity(3)
-    for ob, xx, zz, ch, mat, sz in (
-        (alphas[0], -5.6, 11.3, "α", Mw, 2.4),
-        (alphas[1], 5.6, 11.3, "α", Mw, 2.4),
-        (bpy.data.objects["Beta_L"], -3.7, 17.0, "β", Mw, 2.0),
-        (bpy.data.objects["Beta_R"], 3.7, 17.0, "β", Mw, 2.0),
-        (gamma, 0.0, 17.9, "γ", Mink, 2.0),
+    # greek letters on the flat front faces
+    for nm, ch, x, z, sz, fy, mat in (
+        ("Alpha_L", "α", -4.5, 12.2, 2.9, A_FRONT_Y, M["white"]),
+        ("Alpha_R", "α", 4.5, 12.2, 2.9, A_FRONT_Y, M["white"]),
+        ("Beta_L", "β", -3.6, 16.9, 2.2, -2.3, M["white"]),
+        ("Beta_R", "β", 3.6, 16.9, 2.2, -2.3, M["white"]),
+        ("Gamma", "γ", 0.0, 18.0, 2.4, -1.5, M["ink"]),
     ):
-        sy = surface_y(ob, xx, zz) or -2.5
-        t = text("Letter_" + ch + "_" + ob.name, ch, sz, C_lab, mat, extrude=0.12)
-        place_row([(t, None, 0)], (xx, sy - 0.02, zz), up)
+        t = text("Letter_" + nm, ch, sz, C_lab, mat, extrude=0.08)
+        place_row([(t, None, 0)], (x, fy - 0.06, z), up)
+
+    t = text("Ion_Cl_Text", "Cl", 1.2, C_lab, M["white"], extrude=0.05)
+    m = text("Ion_Cl_minus", "−", 0.75, C_lab, M["white"], extrude=0.05)
+    place_row([(t, None, -0.05), (m, None, 0.42)], (0.05, -4.27, 5.1), up, gap=0.1)
 
     # ------------------------------------------------------------------ TITLE
-    rbox("Title_Stand", (1.2, 0.8, 7.0), (0, 1.8, 17.8), C_lab, M["white"], bevel=0.3)
-    rbox("Title_Panel_Rim", (21.4, 0.8, 2.9), (0, 1.2, 21.9), C_lab, M["navy"], bevel=0.6)
-    rbox("Title_Panel", (21.0, 0.8, 2.5), (0, 1.05, 21.9), C_lab,
-         mat_clay("M_navy_panel", "#1E3F93", rough=0.3, coat=0.5, bump=0.03), bevel=0.5)
-    t1 = text("Title_GABA", "GABA", 1.95, C_lab, Mw, extrude=0.1)
-    t2 = text("Title_sub_A", "A", 1.2, C_lab, Mw, extrude=0.1)
-    t3 = text("Title_Receptor", "Receptor", 1.95, C_lab, Mw, extrude=0.1)
-    w2 = text_width_cm(t2)
-    place_row([(t1, None, 0.0), (t2, w2 + 0.3, -0.5), (t3, None, 0.0)],
-              (0, 0.55, 21.9), up, gap=0.12)
+    rbox("Title_Stand", (5.0, 1.0, 6.0), (0, 1.8, 18.0), C_lab, M["white"], bevel=0.3)
+    slab("Title_Panel_Rim", rrect_pts(19.2, 2.75, 0.95, 0, 21.75), C_lab,
+         M["title_rim"], 0.55, 0.9, 0.25, smooth_curve=False)
+    slab("Title_Panel", rrect_pts(18.8, 2.4, 0.8, 0, 21.75), C_lab, M["title"],
+         0.4, 0.9, 0.25, smooth_curve=False)
+    t1 = text("Title_GABA", "GABA", 2.25, C_lab, M["white"], extrude=0.08)
+    t2 = text("Title_sub_A", "A", 1.35, C_lab, M["white"], extrude=0.08)
+    t3 = text("Title_Receptor", "Receptor", 2.25, C_lab, M["white"], extrude=0.08)
+    place_row([(t1, None, 0.0), (t2, text_width_cm(t2) + 0.6, -0.62), (t3, None, 0.0)],
+              (0, 0.33, 21.8), up, gap=0.05)
 
     # ------------------------------------------------------------- CALLOUTS
-    def callout(name, label, center, w, rim_mat):
-        cx, cy, cz = center
-        rbox(name + "_Rim", (w, 0.5, 2.0), (cx, cy, cz), C_lab, rim_mat, bevel=0.45)
-        rbox(name + "_Face", (w - 0.42, 0.5, 1.58), (cx, cy - 0.07, cz), C_lab,
-             M["white"], bevel=0.3)
-        t = text(name + "_Text", label, 1.2, C_lab, Mink, extrude=0.06)
-        place_row([(t, None, 0)], (cx, cy - 0.35, cz), up)
+    def callout(name, label, cx, cz, w, rim_mat):
+        h = 1.9
+        slab(name + "_Rim", rrect_pts(w, h, 0.8, cx, cz), C_lab, rim_mat, -2.2, 0.7,
+             0.15, smooth_curve=False)
+        slab(name + "_Face", rrect_pts(w - 0.36, h - 0.36, 0.62, cx, cz), C_lab,
+             M["white"], -2.28, 0.7, 0.12, smooth_curve=False)
+        t = text(name + "_Text", label, 1.4, C_lab, M["ink"], extrude=0.05)
+        place_row([(t, None, 0)], (cx, -2.33, cz), up)
 
-    rim_red = mat_clay("M_rim_red", COL["red_rim"], rough=0.3, coat=0.5, bump=0.03)
-    rim_blue = mat_clay("M_rim_blue", COL["blue_rim"], rough=0.3, coat=0.5, bump=0.03)
-    callout("Callout_GABA", "GABA", (-12.4, -1.6, 18.4), 5.2, rim_red)
-    callout("Callout_Diazepam", "Diazepam", (11.4, -1.6, 18.7), 6.6, rim_blue)
+    callout("Callout_GABA", "GABA", -10.3, 18.2, 5.2, M["red_rim"])
+    callout("Callout_Diazepam", "Diazepam", 11.3, 18.1, 6.5, M["blue_rim"])
 
-    def pointer(name, start, target_ob, r, mat):
-        tgt = target_ob.location / S
+    def pointer(name, start, ball, r, mat):
+        tgt = ball.location / S
         d = (tgt - Vector(start)).normalized()
-        tube_arrow(name, start, tgt - d * (r + 0.05), C_lab, mat)
+        tube_arrow(name, start, tgt - d * (r + 0.05), C_lab, mat, r=0.16,
+                   head_r=0.45, head_l=0.9)
 
-    pointer("Arrow_GABA", (-10.6, -1.7, 17.5), gaba, 0.85, rim_red)
-    pointer("Arrow_Diazepam", (9.6, -1.7, 17.8), diaz, 0.80, rim_blue)
+    pointer("Arrow_GABA", (-8.1, -2.5, 17.35), gaba, 0.82, M["red_rim"])
+    pointer("Arrow_Diazepam", (8.6, -2.5, 17.25), diaz, 0.8, M["blue_rim"])
 
-    # ------------------------------------------------- BOTTOM PLAQUES (slope)
-    p0, p1 = Vector((-8.0, 1.0)), Vector((-6.4, 3.5))          # slope (y,z)
-    mid = (p0 + p1) / 2
-    tilt = math.atan2(p1.x - p0.x, p1.y - p0.y)                # from vertical
-    frame = Matrix.Rotation(-tilt, 3, "X")
-    nrm = frame @ Vector((0, -1, 0))
-    upv = frame @ Vector((0, 0, 1))
-    slope_c = Vector((0, mid.x, mid.y))
+    # ------------------------------------------------- PLAQUES (base front)
+    FY = -7.0                                    # base front face
+    slab("Plaque_Cl", rrect_pts(6.4, 2.1, 0.8, -5.7, 1.8), C_lab, M["white"],
+         FY - 0.4, 0.8, 0.15, smooth_curve=False)
+    ua = flat_arrow("Plaque_UpArrow", 1.5, C_lab, M["ink"], (0, 0, 0), up,
+                    shaft=0.26, head_w=0.85, head_l=0.6, depth=0.08, angle_deg=90)
+    tcl = text("Plaque_Cl_Text", "Cl", 1.75, C_lab, M["ink"], extrude=0.05)
+    tmn = text("Plaque_Cl_minus", "−", 1.1, C_lab, M["ink"], extrude=0.05)
+    place_row([(ua, 0.85, 0.0), (tcl, None, 0.0), (tmn, None, 0.5)],
+              (-5.7, FY - 0.43, 1.8), up, gap=0.3)
 
-    def plaque(name, cx, w):
-        c = slope_c + Vector((cx, 0, 0)) + nrm * 0.18
-        rbox(name, (w, 0.36, 1.95), tuple(c), C_lab, M["white"], bevel=0.3,
-             rot=frame.to_euler())
-        return c
+    slab("Plaque_Inhibition", rrect_pts(8.6, 2.1, 0.8, 5.25, 1.8), C_lab, M["white"],
+         FY - 0.4, 0.8, 0.15, smooth_curve=False)
+    ti = text("Plaque_Inhibition_Text", "Inhibition", 1.75, C_lab, M["ink"], extrude=0.05)
+    place_row([(ti, None, 0.0)], (5.25, FY - 0.43, 1.8), up)
 
-    # "↑ Cl-"   plaque
-    c = plaque("Plaque_Cl", -5.6, 6.2)
-    up_arrow = flat_arrow("Plaque_UpArrow", 1.3, C_lab, Mink, (0, 0, 0), frame,
-                          shaft=0.22, head_w=0.75, head_l=0.55, depth=0.08,
-                          angle_deg=90)
-    tcl = text("Plaque_Cl_Text", "Cl", 1.35, C_lab, Mink, extrude=0.05)
-    tmn = text("Plaque_Cl_minus", "\u2212", 0.85, C_lab, Mink, extrude=0.05)
-    place_row([(up_arrow, 0.75, 0.0), (tcl, None, 0.0), (tmn, None, 0.42)],
-              tuple(c + nrm * 0.2), frame, gap=0.35)
+    flat_arrow("Plaque_RightArrow", 2.0, C_lab, M["white"], (-0.8, FY - 0.1, 1.8), up,
+               shaft=0.22, head_w=0.8, head_l=0.6, depth=0.3, angle_deg=0)
 
-    # "→"  between plaques (white, embossed on the base)
-    ar = flat_arrow("Plaque_RightArrow", 2.1, C_lab, M["white"], (0, 0, 0), frame,
-                    shaft=0.3, head_w=0.95, head_l=0.75, depth=0.12, angle_deg=0)
-    ar.matrix_world = Matrix.Translation((slope_c + Vector((-1.2, 0, 0)) + nrm * 0.06) * S) \
-        @ frame.to_4x4()
-
-    # "Inhibition"   plaque
-    c = plaque("Plaque_Inhibition", 5.0, 8.6)
-    ti = text("Plaque_Inhibition_Text", "Inhibition", 1.35, C_lab, Mink, extrude=0.05)
-    place_row([(ti, None, 0.0)], tuple(c + nrm * 0.2), frame)
-
-    # Cl- on the big exit ion
-    tcx = text("Ion_Cl_Text", "Cl", 0.95, C_lab, Mw, extrude=0.05)
-    tcm = text("Ion_Cl_minus", "\u2212", 0.65, C_lab, Mw, extrude=0.05)
-    cy = surface_y(cl_ball, 0, 4.75) or -2.85
-    place_row([(tcx, None, 0), (tmn2 := tcm, None, 0.3)], (0.0, cy - 0.04, 4.72), up,
-              gap=0.03)
-
-    # ---------------------------------------------------------------- STUDIO
     build_studio(C_env)
 
 
 def build_studio(C_env):
     sc = bpy.context.scene
 
-    # table + wall
     me = bpy.data.meshes.new("Table")
     bm = bmesh.new()
     bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=1.0)
     for v in bm.verts:
-        v.co = Vector((v.co.x * 1.2, v.co.y * 0.6 + 0.2, 0))
+        v.co = Vector((v.co.x * 1.4, v.co.y * 0.6 + 0.2, 0))
     bm.to_mesh(me)
     bm.free()
     me.materials.append(mat_wood())
@@ -686,13 +655,12 @@ def build_studio(C_env):
     bm = bmesh.new()
     bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=1.0)
     for v in bm.verts:
-        v.co = Vector((v.co.x * 1.5, 0.45, (v.co.y + 1) * 0.8))
+        v.co = Vector((v.co.x * 1.6, 0.40, (v.co.y + 1) * 0.8))
     bm.to_mesh(me)
     bm.free()
     me.materials.append(mat_matte("M_wall", COL["wall"], 0.95))
     link(bpy.data.objects.new("Wall", me), C_env)
 
-    # lights
     def area(name, loc, target, size, power, color=(1, 1, 1)):
         ld = bpy.data.lights.new(name, "AREA")
         ld.shape = "DISK"
@@ -705,49 +673,44 @@ def build_studio(C_env):
         ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
         return ob
 
-    area("Key_Light", (-45, -55, 60), (0, 0, 10), 45, 14, (1.0, 0.97, 0.93))
-    area("Fill_Light", (55, -45, 30), (0, 0, 10), 60, 6, (0.93, 0.96, 1.0))
-    area("Top_Light", (0, -10, 75), (0, 0, 10), 50, 7)
-    area("Rim_Light", (0, 35, 45), (0, 0, 14), 40, 5)
+    area("Key_Light", (-40, -70, 55), (0, 0, 10), 60, 16, (1.0, 0.98, 0.95))
+    area("Fill_Light", (50, -60, 25), (0, 0, 10), 70, 8, (0.95, 0.97, 1.0))
+    area("Top_Light", (0, -15, 70), (0, 0, 10), 50, 5)
+    area("Rim_Light", (0, 30, 40), (0, 0, 14), 40, 3)
 
     w = sc.world or bpy.data.worlds.new("World")
     sc.world = w
     w.use_nodes = True
     bg = w.node_tree.nodes.get("Background")
     bg.inputs[0].default_value = hex_rgba("#D9D8D4")
-    bg.inputs[1].default_value = 0.25
+    bg.inputs[1].default_value = 0.3
 
-    # camera
     cd = bpy.data.cameras.new("Camera")
-    cd.lens = 70
+    cd.lens = 62
     cd.sensor_width = 36
     cd.dof.use_dof = True
-    cd.dof.aperture_fstop = 11
+    cd.dof.aperture_fstop = 16
     cam = link(bpy.data.objects.new("Camera", cd), C_env)
-    cam.location = V(0, -80, 24)
-    tgt = V(0, -1, 11.0)
+    cam.location = V(0, -66, 24)
+    tgt = V(0, -1, 10.9)
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
     cd.dof.focus_distance = (tgt - cam.location).length
     sc.camera = cam
 
-    # render settings
     sc.render.engine = "CYCLES"
     sc.cycles.samples = 256
     sc.cycles.use_denoising = True
     sc.render.resolution_x = 1920
     sc.render.resolution_y = 1280
-    sc.render.film_transparent = False
-    # "Standard" keeps the saturated toy/clay colours of the reference
     sc.view_settings.view_transform = "Standard"
     sc.view_settings.look = "None"
-    sc.view_settings.exposure = -0.35
+    sc.view_settings.exposure = -0.9
 
 
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
     build()
-    # pack the font so the .blend opens anywhere
-    for f in bpy.data.fonts:
+    for f in bpy.data.fonts:                    # pack font -> .blend opens anywhere
         if f.filepath and not f.packed_file:
             try:
                 f.pack()
