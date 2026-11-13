@@ -34,3 +34,13 @@ assets/audio-cache/
 
 # Blender backup files
 *.blend1
+
+# Trimble S6 model converted from 3D Warehouse (licence forbids redistribution).
+# Regenerate with blender/trimble_s6/skp_to_blender.py from the original .skp.
+blender/trimble_s6/*.blend
+blender/trimble_s6/*.fbx
+blender/trimble_s6/*.glb
+blender/trimble_s6/*.obj
+blender/trimble_s6/*.mtl
+blender/trimble_s6/*.stl
+blender/trimble_s6/*.skp
