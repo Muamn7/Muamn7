@@ -37,6 +37,23 @@
 blender -b -P skp_to_blender.py -- MODEL.skp OUT_DIR --render
 ```
 
+## نسخة الأرجل القصيرة (مثل الصورة)
+
+![compare](renders_short/compare_photo.png)
+
+`shorten_legs.py` يقصّر **الأرجل فقط**: كل رجل تنضغط على محورها هي، فتبقى زاوية الفتح (25°)
+وسماكة القضبان ومواضع المشابك والأحذية كما هي، وكل شيء فوق المفصلات (رأس الترايبود، التريبراك، الجهاز) لم يتغير.
+
+- النسبة مأخوذة من الصورة: ارتفاع رأس الترايبود = 1.66 × ارتفاع الجهاز فوقه.
+- رأس الترايبود نزل من 1.42 م إلى **0.515 م**، وطول الرجل من 1.41 م إلى 0.41 م.
+- الارتفاع الكلي أصبح **0.857 م** (كان 1.761 م).
+- الملفات: `Trimble_S6_Tripod_short.blend / .fbx / .glb / .obj` و `Trimble_S6_Tripod_short_200mm.stl`.
+
+```bash
+blender -b -P shorten_legs.py -- Trimble_S6_Tripod.blend OUT_DIR --render            # نسبة الصورة
+blender -b -P shorten_legs.py -- Trimble_S6_Tripod.blend OUT_DIR --head 0.7          # أو ارتفاع رأس تختاره (متر)
+```
+
 ## المصدر والترخيص
 
 الموديل الأصلي من **3D Warehouse** (المؤلف: **D.Sosserov**، Model ID `85f16dd3-0274-4ce2-9082-785059b921a7`).

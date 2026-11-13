@@ -44,3 +44,4 @@ blender/trimble_s6/*.obj
 blender/trimble_s6/*.mtl
 blender/trimble_s6/*.stl
 blender/trimble_s6/*.skp
+blender/trimble_s6/__pycache__/
