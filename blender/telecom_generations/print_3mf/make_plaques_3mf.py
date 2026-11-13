@@ -184,12 +184,59 @@ class FlattenPen(BasePen):
     _endPath = _closePath
 
 
+def inside(pt, c):
+    """even-odd point in polygon"""
+    x, y = pt
+    res = False
+    for i in range(len(c)):
+        (x1, y1), (x2, y2) = c[i - 1], c[i]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            res = not res
+    return res
+
+
+def triangulate(cs):
+    """triangles (indices into the concatenated contours), one outline + its holes at a time"""
+    depth = [sum(inside(c[0], o) for j, o in enumerate(cs) if j != i) for i, c in enumerate(cs)]
+    starts = [0]
+    for c in cs:
+        starts.append(starts[-1] + len(c))
+    tris = []
+    for i, c in enumerate(cs):
+        if depth[i] % 2:
+            continue                                   # a hole, handled with its outline
+        group = [i] + [j for j, h in enumerate(cs)
+                       if depth[j] == depth[i] + 1 and inside(h[0], c)]
+        local = [k for g in group for k in range(starts[g], starts[g + 1])]
+        for a, b, d in tessellate_polygon([[(x, y, 0.0) for x, y in cs[g]] for g in group]):
+            tris.append((local[a], local[b], local[d]))
+    return tris
+
+
 def solid(name, path, z0, z1):
     """extrude a clean 2D path (outer contours + holes) into a closed mesh"""
     pen = FlattenPen()
     path.draw(pen)
-    cs = pen.contours
-    tris = tessellate_polygon([[(x, y, 0.0) for x, y in c] for c in cs])
+
+    def area(c):
+        return abs(sum(c[i][0] * c[i - 1][1] - c[i - 1][0] * c[i][1] for i in range(len(c)))) / 2
+
+    def drop_collinear(c):
+        """remove points lying on a straight edge (they give zero-area triangles)"""
+        changed = True
+        while changed and len(c) > 3:
+            changed = False
+            for i in range(len(c)):
+                a, b, d = c[i - 1], c[i], c[(i + 1) % len(c)]
+                if abs((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0])) < 1e-6:
+                    c = c[:i] + c[i + 1:]
+                    changed = True
+                    break
+        return c
+
+    cs = [drop_collinear(c) for c in pen.contours]
+    cs = [c for c in cs if area(c) > 0.01]               # drop sliver contours (mm^2)
+    tris = triangulate(cs)
     flat = [p for c in cs for p in c]
     bm = bmesh.new()
     lo = [bm.verts.new((x, y, z0)) for x, y in flat]
@@ -204,6 +251,8 @@ def solid(name, path, z0, z1):
             j = (i + 1) % n
             bm.faces.new((lo[off + i], lo[off + j], hi[off + j], hi[off + i]))
         off += n
+    # contours that touch at a point share it: weld so caps and walls use one vertex
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
