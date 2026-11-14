@@ -37,6 +37,9 @@ from skimage.measure import marching_cubes
 HEAD_TOP_M = 0.95          # top of the tripod head plate in the shortened model (m)
 HOLE_D, HOLE_DEPTH = 3.2, 4.0
 PIN_D, PIN_L = 3.0, 7.6
+LEG_CUT_Z = 127.0        # leg/head cut height on the leg axis (mm, below the hinge blocks)
+PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
+TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
 
 
 def arg(argv, name, default):
@@ -255,67 +258,167 @@ def main(argv):
     split = HEAD_TOP_M * k + 0.05
     print(f"[print] scale x{k:.2f} -> {height:.0f} mm, split at z = {split:.2f} mm", flush=True)
 
+    # ---- leg axes (fitted to the original leg vertices below the hinges) ----
+    legs = []
+    V = np.unique(tris.reshape(-1, 3), axis=0)
+    tip_xy = [np.array([t.x - axis.x, t.y - axis.y]) * k for t in tips]
+    for t in tip_xy:
+        az = math.atan2(t[1], t[0])
+        d = np.abs(np.angle(np.exp(1j * (np.arctan2(V[:, 1], V[:, 0]) - az))))
+        P = V[(V[:, 2] < 115.0) & (d < 0.6)]
+        c = P.mean(0)
+        u = np.linalg.svd(P - c)[2][0]
+        u = -u if u[2] > 0 else u                       # down the leg
+        C = c + u * ((LEG_CUT_Z - c[2]) / u[2])         # cut point on the axis
+        Tg = np.array([-math.sin(az), math.cos(az), 0.0])
+        Tg -= u * (Tg @ u)
+        Tg /= np.linalg.norm(Tg)
+        legs.append(dict(az=az, u=u, C=C, T=Tg, N=np.cross(u, Tg)))
+
     results = {}
-    for name, voxel, zlo, zhi, target in (("Tripod", 0.25, -1.0, split + 3.0, 350000),
-                                          ("Instrument", 0.12, split - 3.0, height + 1.0, 250000)):
+    for name, voxel, zlo, zhi in (("Tripod", 0.25, -1.0, split + 3.0),
+                                  ("Instrument", 0.12, split - 3.0, height + 1.0)):
         zt = tris[:, :, 2]
         sel = (zt.max(1) >= zlo) & (zt.min(1) <= zhi)
         part = tris[sel]
         lo = part.reshape(-1, 3).min(0)
         hi = part.reshape(-1, 3).max(0)
         solid, origin = solidify(part, lo, hi, voxel)
-        zc = origin[2] + (np.arange(solid.shape[2]) + 0.5) * voxel
-        if name == "Tripod":
-            solid[:, :, zc >= split] = False
-        else:
-            solid[:, :, zc < split] = False
         xc = origin[0] + (np.arange(solid.shape[0]) + 0.5) * voxel
         yc = origin[1] + (np.arange(solid.shape[1]) + 0.5) * voxel
-        if name == "Tripod":
-            # solid core under the head plate: joins the loose centring screw to the head
-            core = xc[:, None] ** 2 + yc[None, :] ** 2 < 10.5 ** 2
-            solid[:, :, (zc > split - 10.0) & (zc < split)] |= core[:, :, None]
-        # locating hole on the axis, 4 mm into the cut face
+        zc = origin[2] + (np.arange(solid.shape[2]) + 0.5) * voxel
         r2 = xc[:, None] ** 2 + yc[None, :] ** 2 < (HOLE_D / 2) ** 2
-        zm = (zc > split - HOLE_DEPTH) & (zc < split) if name == "Tripod" else \
-             (zc >= split) & (zc < split + HOLE_DEPTH)
-        solid[np.ix_(r2.any(1), r2.any(0), zm)] &= ~r2[np.ix_(r2.any(1), r2.any(0))][:, :, None]
-        solid, ncomp, dropped = keep_main(solid)
-        ob = to_mesh(solid, origin, voxel, name)
+        rows, cols_ = r2.any(1), r2.any(0)
+        if name == "Instrument":
+            solid[:, :, zc < split] = False
+            zm = (zc >= split) & (zc < split + HOLE_DEPTH)
+            solid[np.ix_(rows, cols_, zm)] &= ~r2[np.ix_(rows, cols_)][:, :, None]
+            solid, ncomp, dropped = keep_main(solid)
+            results["Instrument"] = (solid, origin, voxel, ncomp)
+            continue
+        solid[:, :, zc >= split] = False
+        core = xc[:, None] ** 2 + yc[None, :] ** 2 < 10.5 ** 2   # joins the loose centring screw
+        solid[:, :, (zc > split - 10.0) & (zc < split)] |= core[:, :, None]
+        zm = (zc > split - HOLE_DEPTH) & (zc < split)
+        solid[np.ix_(rows, cols_, zm)] &= ~r2[np.ix_(rows, cols_)][:, :, None]
+
+        # ---- cut the three legs off the head, perpendicular to each leg ----
+        X, Y = np.meshgrid(xc, yc, indexing="ij")
+        azg = np.arctan2(Y, X)
+        leg_masks = [np.zeros(solid.shape, bool) for _ in legs]
+        for kz, z in enumerate(zc):
+            if z > LEG_CUT_Z + 15:
+                break
+            for L, m in zip(legs, leg_masks):
+                s_ = (X - L["C"][0]) * L["u"][0] + (Y - L["C"][1]) * L["u"][1] + (z - L["C"][2]) * L["u"][2]
+                sector = np.abs(np.angle(np.exp(1j * (azg - L["az"])))) < math.radians(55)
+                m[:, :, kz] = solid[:, :, kz] & (s_ > 0) & sector
+        head = solid.copy()
+        for m in leg_masks:
+            head &= ~m
         del solid
-        decimate(ob, target)
+        # ---- filament-pin holes (one per rail) across every leg joint ----
+        nholes = []
+        for L, m in zip(legs, leg_masks):
+            ci = np.round((L["C"] - origin) / voxel - 0.5).astype(int)
+            r = int(14 / voxel)
+            sl = tuple(slice(max(0, ci[a] - r), ci[a] + r) for a in range(3))
+            box_o = origin + np.array([s.start for s in sl]) * voxel
+            Hs, Ms = head[sl], m[sl]
+            g = [box_o[a] + (np.arange(Hs.shape[a]) + 0.5) * voxel for a in range(3)]
+            G = np.stack(np.meshgrid(*g, indexing="ij"), -1) - L["C"]
+            along = G @ L["u"]
+            slab = Ms & (along < 1.0)                     # leg cross-section at the cut
+            lab, n = ndimage.label(slab)
+            edt = ndimage.distance_transform_edt(Ms | Hs) * voxel
+            count = 0
+            for c_ in range(1, n + 1):
+                cand = np.where(lab == c_)
+                best = np.argmax(edt[cand])
+                if edt[cand][best] < PEG_D / 2 + 0.4:
+                    continue
+                P0 = np.array([g[a][cand[a][best]] for a in range(3)]) - L["C"]
+                P0 -= L["u"] * (P0 @ L["u"])              # centre on the cut plane
+                D = G - P0
+                al = D @ L["u"]
+                perp = np.linalg.norm(D - al[..., None] * L["u"], axis=-1)
+                drill = (perp < PEG_D / 2) & (np.abs(al) < PEG_DEPTH)
+                Hs &= ~drill
+                Ms &= ~drill
+                count += 1
+            nholes.append(count)
+        print(f"[print] leg joints: filament-pin holes per leg {nholes}", flush=True)
+        head, ncomp, dropped = keep_main(head)
+        results["Head"] = (head, origin, voxel, ncomp)
+        for i_, m in enumerate(leg_masks, 1):
+            m, ncomp, dropped = keep_main(m)
+            results[f"Leg{i_}"] = (m, origin, voxel, ncomp)
+
+    from mathutils import Matrix
+    meshes = {}
+    for name, (solid, origin, voxel, ncomp) in results.items():
+        ob = to_mesh(solid, origin, voxel, name)
+        decimate(ob, TARGET_TRIS.get(name[:3], 150000))
         n, nm, vol, plo, phi = check(ob)
-        if vol < 0:                                   # make normals point outwards
+        if vol < 0:
             ob.data.flip_normals()
             vol = -vol
-        print(f"[print] {name}: {ncomp} solid pieces ({dropped} specks removed), {n} triangles, "
-              f"non-manifold edges {nm}, volume {vol / 1000:.1f} cm3, size "
-              f"{phi[0]-plo[0]:.1f} x {phi[1]-plo[1]:.1f} x {phi[2]-plo[2]:.1f} mm", flush=True)
         cols = []
         for p in ob.data.polygons:
             hit = bvh.find_nearest(p.center)
             cols.append(colours[hit[2]] if hit[2] is not None else "9A9A9A")
-        results[name] = (ob, cols)
+        print(f"[print] {name}: {ncomp} solid piece(s), {n} triangles, non-manifold edges {nm}, "
+              f"volume {vol / 1000:.2f} cm3", flush=True)
+        meshes[name] = (ob, cols)
 
-    # print orientation: tripod upside-down on its head plate, instrument on its base
-    from mathutils import Matrix
-    tob, tcols = results["Tripod"]
-    tob.data.transform(Matrix.Translation((0, 0, split)) @ Matrix.Rotation(math.pi, 4, 'X')
-                       @ Matrix.Translation((0, 0, -split)))
-    tob.data.transform(Matrix.Translation((0, 0, -split)))
-    tob.data.transform(Matrix.Translation((0, 0, -min(v.co.z for v in tob.data.vertices))))
-    iob, icols = results["Instrument"]
-    iob.data.transform(Matrix.Translation((0, 0, -min(v.co.z for v in iob.data.vertices))))
+    # ---- print orientation ----
+    hob, _ = meshes["Head"]                         # upside-down on the head plate
+    hob.data.transform(Matrix.Rotation(math.pi, 4, 'X'))
+    for i_, L in enumerate(legs, 1):                # lying flat, best face down
+        ob, _ = meshes[f"Leg{i_}"]
+        best = None
+        for sgn in (1, -1):
+            R = Matrix(((*L["u"], 0), (*(sgn * L["T"]), 0), (*(sgn * L["N"]), 0), (0, 0, 0, 1)))
+            zs = [(R @ v.co).z for v in ob.data.vertices]
+            z0 = min(zs)
+            area = sum(p.area for p in ob.data.polygons
+                       if all(zs[vi] < z0 + 0.3 for vi in p.vertices))
+            if best is None or area > best[0]:
+                best = (area, R)
+        ob.data.transform(best[1])
+    for name, (ob, _) in meshes.items():
+        vs = ob.data.vertices
+        lo = [min(v.co[a] for v in vs) for a in range(3)]
+        ob.data.transform(Matrix.Translation((-lo[0], -lo[1], -lo[2])))   # min corner at origin
     pin = pin_mesh()
-    pcols = ["B4B4B4"] * len(pin.data.polygons)
+    meshes["Pin"] = (pin, ["B4B4B4"] * len(pin.data.polygons))
+
+    def size(name):
+        vs = meshes[name][0].data.vertices
+        return [max(v.co[a] for v in vs) for a in range(2)]
+
+    # simple plate layout (mm): legs side by side, head / instrument / pin in a row above
+    place, y = {}, 0.0
+    for name in ("Leg1", "Leg2", "Leg3"):
+        place[name] = (0.0, y)
+        y += size(name)[1] + 6
+    x = 0.0
+    for name in ("Head", "Instrument", "Pin"):
+        place[name] = (x, y + 4)
+        x += size(name)[0] + 8
 
     os.makedirs(out_dir, exist_ok=True)
-    write_3mf(os.path.join(out_dir, "S6_Tripod.3mf"), [("Tripod", tob, tcols, (0, 0))])
-    write_3mf(os.path.join(out_dir, "S6_Instrument.3mf"),
-              [("Instrument", iob, icols, (0, 0)), ("Pin", pin, pcols, (25, 0))])
-    write_3mf(os.path.join(out_dir, "S6_All_Parts.3mf"),
-              [("Tripod", tob, tcols, (0, 0)), ("Instrument", iob, icols, (95, 0)),
-               ("Pin", pin, pcols, (95, 30))])
+    item = lambda n, off=(0, 0): (n, meshes[n][0], meshes[n][1], off)
+    write_3mf(os.path.join(out_dir, "S6_All_Parts.3mf"), [item(n, place[n]) for n in place])
+    write_3mf(os.path.join(out_dir, "S6_Head.3mf"), [item("Head")])
+    for n in ("Leg1", "Leg2", "Leg3"):
+        write_3mf(os.path.join(out_dir, f"S6_{n}.3mf"), [item(n)])
+    write_3mf(os.path.join(out_dir, "S6_Legs_x3.3mf"), [item(n, place[n]) for n in ("Leg1", "Leg2", "Leg3")])
+    write_3mf(os.path.join(out_dir, "S6_Instrument.3mf"), [item("Instrument"), item("Pin", (size("Instrument")[0] + 8, 0))])
+    for n, (x_, y_) in place.items():
+        print(f"[print] plate {n:10s} at ({x_:6.1f}, {y_:6.1f})  footprint "
+              f"{size(n)[0]:.1f} x {size(n)[1]:.1f} mm, height "
+              f"{max(v.co.z for v in meshes[n][0].data.vertices):.1f} mm", flush=True)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(os.path.join(out_dir, "S6_print_parts.blend")))
     print("[print] wrote", out_dir, flush=True)
 
