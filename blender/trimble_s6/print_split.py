@@ -42,6 +42,7 @@ HEAD_BOTTOM_Z = 137.5    # legs (with hinge blocks) end at 137 mm, the head disc
 BASE_R = 14.1            # base disc radius (mm) = original tripod head plate
 TENON_H = 3.0            # leg tenon height / socket depth (mm)
 BASE_COLOUR = "B9BCBF"
+SMOOTH_ITERS = 35        # Taubin smoothing passes on every printed part
 LEG_PEGS = False         # leg tops are too small for consistent peg holes: glue them to the head
 PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
 TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
@@ -116,10 +117,97 @@ def keep_main(solid, min_frac=0.002):
     return np.isin(lab, keep), n, n - len(keep)
 
 
-def to_mesh(solid, origin, voxel, name):
-    f = ndimage.gaussian_filter(np.pad(solid, 1).astype(np.float32), 0.65)
+def taubin(verts, faces, iters, lam=0.5, mu=-0.53):
+    """Taubin smoothing: removes the voxel staircase without shrinking the part."""
+    from scipy import sparse
+    n = len(verts)
+    e = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    e = np.concatenate([e, e[:, ::-1]])
+    A = sparse.csr_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(n, n))
+    A.data[:] = 1.0
+    deg = np.asarray(A.sum(1)).ravel()
+    deg[deg == 0] = 1
+    v = verts.astype(np.float64)
+    for _ in range(iters):
+        v = v + lam * ((A @ v) / deg[:, None] - v)
+        v = v + mu * ((A @ v) / deg[:, None] - v)
+    return v
+
+
+def _prism_obj(name, pts, z0, z1):
+    bm = bmesh.new()
+    bot = [bm.verts.new((x, y, z0)) for x, y in pts]
+    top = [bm.verts.new((x, y, z1)) for x, y in pts]
+    bm.faces.new(list(reversed(bot)))
+    bm.faces.new(top)
+    for i in range(len(pts)):
+        j = (i + 1) % len(pts)
+        bm.faces.new((bot[i], bot[j], top[j], top[i]))
+    bmesh.ops.triangulate(bm, faces=bm.faces)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    return ob
+
+
+def _cut(ob, cutter):
+    md = ob.modifiers.new("cut", 'BOOLEAN')
+    md.operation = 'DIFFERENCE'
+    md.solver = 'EXACT'
+    md.object = cutter
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    old = ob.data
+    ob.modifiers.clear()
+    ob.data = me
+    bpy.data.meshes.remove(old)
+    bpy.data.objects.remove(cutter, do_unlink=True)
+
+
+def build_base(feet, x0, y0, voxel, split):
+    """Exact base: bevelled cylinder, one socket per leg footprint, pin hole."""
+    from skimage.measure import find_contours
+    h = split - HEAD_BOTTOM_Z
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=180,
+                          radius1=BASE_R, radius2=BASE_R, depth=h)
+    bmesh.ops.translate(bm, vec=(0, 0, HEAD_BOTTOM_Z + h / 2), verts=bm.verts)
+    rims = [e for e in bm.edges if e.calc_face_angle(0) > 1.0]
+    bmesh.ops.bevel(bm, geom=rims, offset=0.4, segments=3, affect='EDGES', profile=0.5)
+    bmesh.ops.triangulate(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("Head")
+    bm.to_mesh(me)
+    bm.free()
+    base = bpy.data.objects.new("Head", me)
+    bpy.context.scene.collection.objects.link(base)
+    for k_, foot in enumerate(feet):
+        f = ndimage.gaussian_filter(np.pad(foot, 2).astype(np.float32), 0.7)
+        cs = find_contours(f, 0.5)
+        c = max(cs, key=len)[:-1]
+        pts = [(x0 + (i - 2) * voxel, y0 + (j - 2) * voxel) for i, j in c[::2]]
+        _cut(base, _prism_obj(f"sock{k_}", pts, HEAD_BOTTOM_Z - 1.0, HEAD_BOTTOM_Z + TENON_H + 0.3))
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=64, radius1=HOLE_D / 2, radius2=HOLE_D / 2,
+                          depth=HOLE_DEPTH + 1)
+    bmesh.ops.translate(bm, vec=(0, 0, split - (HOLE_DEPTH - 1) / 2), verts=bm.verts)
+    me = bpy.data.meshes.new("hole")
+    bm.to_mesh(me)
+    bm.free()
+    hole = bpy.data.objects.new("hole", me)
+    bpy.context.scene.collection.objects.link(hole)
+    _cut(base, hole)
+    return base
+
+
+def to_mesh(solid, origin, voxel, name, sigma=0.65):
+    f = ndimage.gaussian_filter(np.pad(solid, 1).astype(np.float32), sigma)
     verts, faces, _, _ = marching_cubes(f, 0.5, spacing=(voxel,) * 3)
     verts += origin - voxel
+    verts = taubin(verts, faces, SMOOTH_ITERS)
     me = bpy.data.meshes.new(name)
     me.vertices.add(len(verts))
     me.vertices.foreach_set("co", verts.astype(np.float32).ravel())
@@ -333,9 +421,11 @@ def main(argv):
         ztenon = (zc >= HEAD_BOTTOM_Z) & (zc < HEAD_BOTTOM_Z + TENON_H)
         zsock = (zc >= HEAD_BOTTOM_Z) & (zc < HEAD_BOTTOM_Z + TENON_H + 0.3)
         cross = ndimage.generate_binary_structure(2, 1)
+        feet_2d = []
         for L, m in zip(legs, leg_masks):
             foot = m[:, :, kz - 1] | m[:, :, kz - 2]
             foot = ndimage.binary_fill_holes(foot)
+            feet_2d.append(foot)
             tenon = ndimage.binary_erosion(foot, cross, iterations=1) & disc
             m[:, :, ztenon] |= tenon[:, :, None]
             head[:, :, zsock] &= ~foot[:, :, None]
@@ -362,8 +452,8 @@ def main(argv):
                 count += 1
             nholes.append(count)
         print(f"[print] leg joints: filament-pin holes per leg {nholes}", flush=True)
-        head, ncomp, dropped = keep_main(head)
-        results["Head"] = (head, origin, voxel, ncomp)
+        # base built as exact geometry (not voxels): smooth cylinder + sockets
+        results["Head"] = ("OBJ", build_base(feet_2d, xc[0], yc[0], voxel, split), None, 1)
         for i_, m in enumerate(leg_masks, 1):
             m, ncomp, dropped = keep_main(m)
             results[f"Leg{i_}"] = (m, origin, voxel, ncomp)
@@ -371,8 +461,11 @@ def main(argv):
     from mathutils import Matrix
     meshes = {}
     for name, (solid, origin, voxel, ncomp) in results.items():
-        ob = to_mesh(solid, origin, voxel, name)
-        decimate(ob, TARGET_TRIS.get(name[:3], 150000))
+        if isinstance(solid, str):
+            ob = origin                                   # already an exact mesh
+        else:
+            ob = to_mesh(solid, origin, voxel, name, sigma=0.85 if name.startswith("Leg") else 0.65)
+            decimate(ob, TARGET_TRIS.get(name[:3], 150000))
         n, nm, vol, plo, phi = check(ob)
         if vol < 0:
             ob.data.flip_normals()
