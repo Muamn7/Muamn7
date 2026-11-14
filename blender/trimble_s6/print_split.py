@@ -45,10 +45,11 @@ BASE_COLOUR = "B9BCBF"
 # four filaments (AMS slots): every triangle is mapped to the nearest one
 FILAMENTS = [("Yellow", "F2C318"), ("Orange", "F06A14"), ("Grey", "B9BCBF"), ("Black", "222222")]
 PAINT = ["4", "8", "0C", "1C"]   # Bambu/Orca "paint_color" = Prusa "mmu_segmentation" codes, filament 1..4
-SMOOTH_ITERS = 4         # Taubin smoothing passes on every printed part
+SMOOTH_ITERS = 8         # Taubin smoothing passes on every printed part
 LEG_PEGS = False         # leg tops are too small for consistent peg holes: glue them to the head
 PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
-TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
+TARGET_TRIS = {"Hea": 120000, "Leg": 200000, "Ins": 400000}
+FINE_VOXEL = 0.08         # final surface resolution for legs and instrument (mm)
 
 
 def arg(argv, name, default):
@@ -204,6 +205,45 @@ def build_base(feet, x0, y0, voxel, split):
     bpy.context.scene.collection.objects.link(hole)
     _cut(base, hole)
     return base
+
+
+def fine_solid(tris_w, R, voxel, clip, close_mm=0.75):
+    """Solidify triangles in a rotated frame (rows of R = local axes) on a fine
+    grid; clip(xw, yw, zw, keep) edits each z-slice using WORLD coordinates."""
+    loc = tris_w @ R.T
+    lo = loc.reshape(-1, 3).min(0)
+    hi = loc.reshape(-1, 3).max(0)
+    solid, origin = solidify(loc, lo, hi, voxel, close_mm)
+    g = [origin[a_] + (np.arange(solid.shape[a_]) + 0.5) * voxel for a_ in range(3)]
+    GX, GY = np.meshgrid(g[0], g[1], indexing="ij")
+    for kz, z in enumerate(g[2]):
+        W = np.stack([GX, GY, np.full_like(GX, z)], -1) @ R          # local -> world
+        solid[:, :, kz] = clip(W[..., 0], W[..., 1], W[..., 2], solid[:, :, kz])
+    solid, n, _ = keep_main(solid)
+    return solid, origin, n
+
+
+def mask_mesh(solid, origin, voxel, R, name):
+    idx = np.argwhere(solid)
+    lo = np.maximum(idx.min(0) - 2, 0)
+    hi = np.minimum(idx.max(0) + 3, solid.shape)
+    m = np.pad(solid[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]], 1)
+    f = ndimage.gaussian_filter(m.astype(np.float32), 0.6)
+    verts, faces, _, _ = marching_cubes(f, 0.5, spacing=(voxel,) * 3)
+    verts += origin + (lo - 1) * voxel
+    verts = taubin(verts, faces, SMOOTH_ITERS)
+    verts = verts @ R                                                  # back to world
+    me = bpy.data.meshes.new(name)
+    me.vertices.add(len(verts))
+    me.vertices.foreach_set("co", verts.astype(np.float32).ravel())
+    me.loops.add(faces.size)
+    me.loops.foreach_set("vertex_index", faces[:, ::-1].astype(np.int32).ravel())
+    me.polygons.add(len(faces))
+    me.polygons.foreach_set("loop_start", np.arange(0, faces.size, 3, dtype=np.int32))
+    me.update()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    return ob
 
 
 def to_mesh(solid, origin, voxel, name, bvh):
@@ -491,6 +531,7 @@ def main(argv):
         zsock = (zc >= HEAD_BOTTOM_Z) & (zc < HEAD_BOTTOM_Z + TENON_H + 0.3)
         cross = ndimage.generate_binary_structure(2, 1)
         feet_2d = []
+        trip_x0, trip_y0 = xc[0], yc[0]
         for L, m in zip(legs, leg_masks):
             foot = m[:, :, kz - 1] | m[:, :, kz - 2]
             foot = ndimage.binary_fill_holes(foot)
@@ -528,12 +569,63 @@ def main(argv):
             results[f"Leg{i_}"] = (m, origin, voxel, ncomp)
 
     from mathutils import Matrix
+    FV = FINE_VOXEL
+    fcoarse = dict(x0=trip_x0, y0=trip_y0, v=0.25)
+
+    def foot_lookup(mask2d, xw, yw):
+        fi = (xw - fcoarse["x0"]) / fcoarse["v"]
+        fj = (yw - fcoarse["y0"]) / fcoarse["v"]
+        return ndimage.map_coordinates(mask2d.astype(np.float32), [fi, fj], order=1, cval=0) > 0.5
+
+    def coarse_core(name):
+        """Coarse solid of the part, shrunk 0.5 mm: fills interiors the fine pass
+        leaves hollow (open SketchUp boxes) without touching the fine surface."""
+        m, o, v, _ = results[name]
+        core = ndimage.binary_erosion(m, ndimage.generate_binary_structure(3, 1), iterations=2)
+
+        def look(xw, yw, zw):
+            idx = [(c - o[a_]) / v - 0.5 for a_, c in enumerate((xw, yw, zw))]
+            return ndimage.map_coordinates(core, idx, order=0, cval=0).astype(bool)
+        return look
+
+    def fine_part(name):
+        core = coarse_core(name)
+        if name == "Instrument":
+            sel = tris[:, :, 2].max(1) >= split - 3.0
+            R = np.eye(3)
+
+            def clip(xw, yw, zw, keep):
+                keep &= zw >= split
+                keep &= ~((xw ** 2 + yw ** 2 < (HOLE_D / 2) ** 2) & (zw < split + HOLE_DEPTH))
+                return keep
+        else:
+            k_ = int(name[3:]) - 1
+            L = legs[k_]
+            cen = tris.mean(1)
+            d = np.abs(np.angle(np.exp(1j * (np.arctan2(cen[:, 1], cen[:, 0]) - L["az"]))))
+            sel = (d < math.radians(62)) & (tris[:, :, 2].min(1) < HEAD_BOTTOM_Z + 2.0)
+            R = np.array([L["T"], L["N"], -L["u"]])
+            tenon = ndimage.binary_erosion(feet_2d[k_], ndimage.generate_binary_structure(2, 1), iterations=1)
+
+            def clip(xw, yw, zw, keep, L=L, tenon=tenon, k_=k_):
+                sector = np.abs(np.angle(np.exp(1j * (np.arctan2(yw, xw) - L["az"])))) < math.radians(60)
+                keep &= (zw < HEAD_BOTTOM_Z) & sector
+                band = (zw >= HEAD_BOTTOM_Z) & (zw < HEAD_BOTTOM_Z + TENON_H)
+                if band.any():
+                    keep |= band & foot_lookup(tenon, xw, yw) & (xw ** 2 + yw ** 2 < BASE_R ** 2)
+                return keep
+        def clip2(xw, yw, zw, keep, clip=clip):
+            return clip(xw, yw, zw, keep | core(xw, yw, zw))
+        solid, origin, n = fine_solid(tris[sel], R, FV, clip2)
+        print(f"[print]   {name}: fine grid {FV} mm {solid.shape}, {n} piece(s)", flush=True)
+        return mask_mesh(solid, origin, FV, R, name)
+
     meshes = {}
     for name, (solid, origin, voxel, ncomp) in results.items():
         if isinstance(solid, str):
             ob = origin                                   # already an exact mesh
         else:
-            ob = to_mesh(solid, origin, voxel, name, bvh)
+            ob = fine_part(name)
             decimate(ob, TARGET_TRIS.get(name[:3], 150000))
         n, nm, vol, plo, phi = check(ob)
         if vol < 0:
