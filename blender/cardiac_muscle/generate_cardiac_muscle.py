@@ -11,8 +11,8 @@ What it builds / ماذا يبني:
     on the fibres (each branch is cut to the fibre shape so they fit together)
   * Real geometric striations (cross stripes) following each fibre
   * Intercalated discs (zig-zag step grooves) between cells
-  * Purple oval nuclei as SEPARATE grains (one object each), one per cell,
-    each sitting in a matching socket carved into the fibre
+  * Purple oval nuclei as SEPARATE grains (one object each), one per cell
+  * 3-colour 3MF export (red muscle, white disc lines, purple nuclei)
   * Materials (Cycles / EEVEE), lights and a camera
   * Fibres stand vertically, cut flat and level at top and bottom
   * Real-world size: total HEIGHT = 20 cm (change TARGET_HEIGHT_M)
@@ -37,14 +37,20 @@ SEED = 7
 VOXEL = 0.05                # remesh voxel size in fibre-radius units (smaller = more detail)
 STRIATION_PITCH = 0.30      # distance between striations (fibre-radius units)
 STRIATION_DEPTH = 0.035     # deep enough to show on a 3D print
-DISC_DEPTH = 0.12
+DISC_DEPTH = 0.06            # shallow groove; the disc lines are printed WHITE
 DISC_WIDTH = 0.05
+BAND_HALF = 0.07            # half width of the white disc line (~1.3 mm wide)
+BAND_DEPTH = 0.22           # how deep the white goes into the fibre (~2 mm)
+BRANCH_SPAN = (2.4, 3.4)    # short, steep diagonal branches (cut cleanly at both fibres)
 BRANCH_CLEARANCE = -0.03    # negative = branch sinks ~0.3 mm into the fibre, so the model prints as one solid
 NUCLEUS_HEIGHT = 0.24       # how far each nucleus grain sticks out of the fibre (fibre-radius units)
 NUCLEUS_SINK = 0.05         # grain sits slightly into its seat
 NUCLEUS_CLEARANCE = -0.02   # negative = grain overlaps its seat ~0.2 mm (prints attached, no floating parts)
 DO_RENDER = False           # set True to render a preview PNG next to the .blend
-EXPORT_DIR = ""             # e.g. "//print" -> writes the STL files for 3D printing
+EXPORT_3MF = ""             # e.g. "//cardiac_muscle_3colors.3mf" -> 3-colour print file
+COLOR_RED = "#B3261E"       # filament 1: fibres + branches
+COLOR_WHITE = "#F2F2F2"     # filament 2: intercalated disc lines
+COLOR_PURPLE = "#7B3FA0"    # filament 3: nuclei
 RENDER_PATH = "//cardiac_muscle_render.png"
 
 random.seed(SEED)
@@ -148,7 +154,7 @@ def make_centerlines(fibres):
         a, b = fibres[i], fibres[j]
         lo = -X_CUT + 1.2
         hi = X_CUT - 1.2
-        span = random.uniform(4.5, 6.0)
+        span = random.uniform(*BRANCH_SPAN)
         if hi - lo < span + 0.5:
             continue
         for _try in range(10):
@@ -160,18 +166,17 @@ def make_centerlines(fibres):
         if random.random() < 0.5:
             a, b = b, a
         x1 = x0 + span
+        # straight diagonal bridge from axis to axis: once the fibres are
+        # subtracted it becomes a short piece with clean saddle-shaped cuts
         p0, p3 = a.pos(x0), b.pos(x1)
-        h = span * 0.42
-        p1 = p0 + a.tangent(x0) * h
-        p2 = p3 - b.tangent(x1) * h
-        ra, rb = a.radius(x0) * 0.86, b.radius(x1) * 0.86
-        n = 60
+        ra, rb = a.radius(x0) * 0.84, b.radius(x1) * 0.84
+        n = 40
         pts = []
         for k in range(n + 1):
             t = k / n
             r = ra * (1 - t) + rb * t
-            r *= 1.0 - 0.10 * math.sin(math.pi * t)
-            pts.append((bezier(p0, p1, p2, p3, t), r))
+            r *= 1.0 - 0.08 * math.sin(math.pi * t)
+            pts.append((p0.lerp(p3, t), r))
         lines.append(pts)
         used.append((i, j, x0))
         n_branch += 1
@@ -281,11 +286,30 @@ def keep_main_islands(me, min_share=0.03):
 # --------------------------------------------------------------------------
 # Surface detail: striations + intercalated discs
 # --------------------------------------------------------------------------
-def build_axis_samples(lines):
+def build_axis_samples(lines, n_main):
     samples = []        # (fid, u, pos, t, N, B, r)
     discs = []          # per line: list of (u, amp, n, phase)
     Z = Vector((0, 0, 1))
+    # branch axes, to keep the (white) disc lines away from branch joints
+    br_pts = [(co, r) for pts in lines[n_main:] for (co, r) in pts]
+    kd_b = kdtree.KDTree(max(1, len(br_pts)))
+    for i, (co, r) in enumerate(br_pts):
+        kd_b.insert(co, i)
+    kd_b.balance()
+
+    def disc_clear(start, u):
+        _, co, t, N, B, r = min(((abs(s_[1] - u),) + s_[2:] for s_ in samples[start:]
+                                 if abs(s_[1] - u) < 0.06), key=lambda q: q[0])
+        for i in range(24):
+            a = 2 * math.pi * i / 24
+            p = co + (N * math.cos(a) + B * math.sin(a)) * (r + 0.1)
+            _, j, dist = kd_b.find(p)
+            if br_pts and dist < br_pts[j][1] + 0.35:
+                return False
+        return True
+
     for fid, pts in enumerate(lines):
+        start = len(samples)
         u = 0.0
         total = sum((pts[k + 1][0] - pts[k][0]).length for k in range(len(pts) - 1))
         for k, (co, r) in enumerate(pts):
@@ -297,12 +321,15 @@ def build_axis_samples(lines):
             N = (Z - Z.dot(t) * t).normalized()
             B = t.cross(N)
             samples.append((fid, u, co.copy(), t, N, B, r))
-        # intercalated discs every 4 - 6.5 radii
+        # intercalated discs every 4 - 6.5 radii (straight fibres only)
         d = []
         pos = random.uniform(2.0, 4.0)
-        while pos < total - 1.5:
-            d.append((pos, random.uniform(0.08, 0.16), random.choice((2, 3, 4)),
-                      random.uniform(0, 6.28)))
+        while fid < n_main and pos < total - 1.5:
+            amp, nz, ph = random.uniform(0.08, 0.16), random.choice((2, 3, 4)), random.uniform(0, 6.28)
+            for shift in (0.0, 0.6, -0.6, 1.2, -1.2):
+                if 0.5 < pos + shift < total - 0.5 and disc_clear(start, pos + shift):
+                    d.append((pos + shift, amp, nz, ph))
+                    break
             pos += random.uniform(4.0, 6.5)
         discs.append(d)
     return samples, discs
@@ -484,7 +511,7 @@ def sculpt_detail(me, samples, discs, n_main, mode):
     # baked vertex colour too (for GLB / viewport / other software)
     base = np.array((0.52, 0.07, 0.05))
     dark = np.array((0.20, 0.015, 0.012))
-    pale = np.array((0.24, 0.06, 0.06))
+    pale = np.array((0.90, 0.88, 0.86))
     c = base + (dark - base) * stria[:, None]
     c = c + (pale - c) * disc_a[:, None]
     purple = np.array((0.30, 0.16, 0.42))
@@ -518,6 +545,43 @@ def cut_flat_ends(me):
     bm.to_mesh(me)
     bm.free()
     me.update()
+
+
+# --------------------------------------------------------------------------
+# White intercalated-disc bands (zig-zag rings, used for the 3-colour print)
+# --------------------------------------------------------------------------
+def make_disc_bands(samples, discs, n_main, steps=256):
+    by_f = {}
+    for s_ in samples:
+        by_f.setdefault(s_[0], []).append(s_)
+    bm = bmesh.new()
+    prof = ((-BAND_HALF, -BAND_DEPTH), (BAND_HALF, -BAND_DEPTH),
+            (BAND_HALF, 0.10), (-BAND_HALF, 0.10))
+    for f_i in range(n_main):
+        ss = by_f[f_i]
+        us = np.array([s_[1] for s_ in ss])
+        for (pu, amp, nz, ph) in discs[f_i]:
+            rings = []
+            for i in range(steps):
+                th = 2 * math.pi * i / steps
+                uc = pu + amp * math.tanh(4.0 * math.sin(nz * th + ph))
+                ring = []
+                for du, dr in prof:
+                    u = uc + du
+                    _, _, c, t, N, B, r = ss[int(np.argmin(np.abs(us - u)))]
+                    p = c + t * (u - ss[int(np.argmin(np.abs(us - u)))][1]) \
+                        + (N * math.cos(th) + B * math.sin(th)) * (r + dr)
+                    ring.append(bm.verts.new(p))
+                rings.append(ring)
+            for i in range(steps):
+                a, b = rings[i], rings[(i + 1) % steps]
+                for j in range(4):
+                    bm.faces.new((a[j], b[j], b[(j + 1) % 4], a[(j + 1) % 4]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new("Disc_Bands")
+    bm.to_mesh(me)
+    bm.free()
+    return me
 
 
 # --------------------------------------------------------------------------
@@ -578,7 +642,7 @@ def material_fibre():
     L.new(str_ramp.outputs['Result'], m1.inputs['Factor'])
 
     m2 = nt.nodes.new('ShaderNodeMix'); m2.data_type = 'RGBA'
-    m2.inputs['B'].default_value = (0.24, 0.06, 0.06, 1)
+    m2.inputs['B'].default_value = (0.90, 0.88, 0.86, 1)   # white disc lines
     L.new(m1.outputs['Result'], m2.inputs['A'])
     L.new(a_dsc.outputs['Fac'], m2.inputs['Factor'])
 
@@ -708,76 +772,167 @@ def setup_stage(height):
 
 
 # --------------------------------------------------------------------------
-# 3D-print export
+# 3D-print export: one 3MF, three colours (red / white / purple)
 # --------------------------------------------------------------------------
-def export_print_files(folder):
-    """One-piece STL (everything fused) + one STL per part for multi-colour printing.
-    All files share the same coordinates (mm), so the parts line up when loaded together."""
-    import os
-    folder = bpy.path.abspath(folder)
-    os.makedirs(folder, exist_ok=True)
-    fib = bpy.data.objects["Cardiac_Fibres"]
-    parts = list(bpy.data.collections["Branches"].objects) + list(bpy.data.collections["Nuclei"].objects)
+def _tri_copy(me, name):
+    c = me.copy()
+    c.name = name
+    bm = bmesh.new()
+    bm.from_mesh(c)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    bm.to_mesh(c)
+    bm.free()
+    return c
 
-    def stl(objs, name):
-        for o in bpy.context.view_layer.objects:
-            o.select_set(False)
-        for o in objs:
-            o.select_set(True)
-        bpy.context.view_layer.objects.active = objs[0]
-        bpy.ops.wm.stl_export(filepath=os.path.join(folder, name), global_scale=1000.0,
-                              export_selected_objects=True, apply_modifiers=True)
 
-    def tri_copy(me):
-        c = me.copy()
-        bm = bmesh.new()
-        bm.from_mesh(c)
-        bmesh.ops.triangulate(bm, faces=bm.faces[:])
-        bm.to_mesh(c)
-        bm.free()
-        return c
-
-    # fused single solid (inputs triangulated first -> clean, watertight union)
-    tmp = bpy.data.collections.new("_union")
-    tmp_objs = []
-    for o in parts:
-        to = bpy.data.objects.new("_u_" + o.name, tri_copy(o.data))
-        to.matrix_world = o.matrix_world
-        tmp.objects.link(to)
-        tmp_objs.append(to)
-    one = bpy.data.objects.new("Cardiac_OnePiece", tri_copy(fib.data))
-    bpy.context.scene.collection.objects.link(one)
-    mod = one.modifiers.new("Union", 'BOOLEAN')
-    mod.operation = 'UNION'
-    mod.operand_type = 'COLLECTION'
-    mod.collection = tmp
-    solvers = mod.bl_rna.properties['solver'].enum_items.keys()
-    mod.solver = 'MANIFOLD' if 'MANIFOLD' in solvers else 'EXACT'
+def _boolean_stack(base_me, ops):
+    """Apply (operation, mesh-or-list-of-meshes) booleans in order (Manifold solver)."""
+    sc = bpy.context.scene.collection
+    ob = bpy.data.objects.new("_bool_base", base_me)
+    sc.objects.link(ob)
+    temps = []
+    for k, (op, meshes) in enumerate(ops):
+        coll = bpy.data.collections.new("_bool_%d" % k)
+        for me in (meshes if isinstance(meshes, list) else [meshes]):
+            o = bpy.data.objects.new("_op", me)
+            coll.objects.link(o)
+            temps.append(o)
+        mod = ob.modifiers.new("B%d" % k, 'BOOLEAN')
+        mod.operation = op
+        mod.operand_type = 'COLLECTION'
+        mod.collection = coll
+        solvers = mod.bl_rna.properties['solver'].enum_items.keys()
+        mod.solver = 'MANIFOLD' if 'MANIFOLD' in solvers else 'EXACT'
     dg = bpy.context.evaluated_depsgraph_get()
     dg.update()
-    fused = bpy.data.meshes.new_from_object(one.evaluated_get(dg))
-    old = one.data
-    one.modifiers.clear()
-    one.data = fused
-    bpy.data.meshes.remove(old)
-    for to in tmp_objs:
-        m_ = to.data
-        bpy.data.objects.remove(to, do_unlink=True)
-        bpy.data.meshes.remove(m_)
-    bpy.data.collections.remove(tmp)
+    out = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    for mod in ob.modifiers:
+        bpy.data.collections.remove(mod.collection)
+    bpy.data.objects.remove(ob, do_unlink=True)
+    for o in temps:
+        bpy.data.objects.remove(o, do_unlink=True)
     bm = bmesh.new()
-    bm.from_mesh(fused)
+    bm.from_mesh(out)
     bmesh.ops.triangulate(bm, faces=bm.faces[:])
-    bm.to_mesh(fused)
+    bm.to_mesh(out)
     bm.free()
-    stl([one], "cardiac_muscle_ONE_PIECE_20cm.stl")
-    bpy.data.objects.remove(one, do_unlink=True)
-    bpy.data.meshes.remove(fused)
+    return out
 
-    # separate parts (same coordinates)
-    stl([fib], "part1_fibres.stl")
-    stl(list(bpy.data.collections["Branches"].objects), "part2_branches.stl")
-    stl(list(bpy.data.collections["Nuclei"].objects), "part3_nuclei.stl")
+
+def build_print_parts():
+    """Return [(name, mesh, colour, filament)] - three solids that touch but never overlap."""
+    fib = bpy.data.objects["Cardiac_Fibres"].data
+    bands = bpy.data.objects["Disc_Bands_White"].data
+    branches = [o.data for o in bpy.data.collections["Branches"].objects]
+    nuclei = [o.data for o in bpy.data.collections["Nuclei"].objects]
+    temps = []
+
+    def T(me):
+        c = _tri_copy(me, "_tmp_print")
+        temps.append(c)
+        return c
+
+    # white = fibre material inside the disc bands (minus nuclei)
+    white = _boolean_stack(T(fib), [('INTERSECT', T(bands)),
+                                    ('DIFFERENCE', [T(m) for m in nuclei])])
+    # red = fibres without the white bands + branches, minus nuclei
+    red = _boolean_stack(T(fib), [('DIFFERENCE', T(bands)),
+                                  ('UNION', [T(m) for m in branches]),
+                                  ('DIFFERENCE', [T(m) for m in nuclei])])
+    # purple = the nucleus grains
+    bm = bmesh.new()
+    for m in nuclei:
+        bm.from_mesh(m)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    purple = bpy.data.meshes.new("print_purple")
+    bm.to_mesh(purple)
+    bm.free()
+    for m in temps:
+        if m.users == 0:
+            bpy.data.meshes.remove(m)
+    red.name, white.name = "print_red", "print_white"
+    return [("1_Red_muscle", red, COLOR_RED, 1),
+            ("2_White_discs", white, COLOR_WHITE, 2),
+            ("3_Purple_nuclei", purple, COLOR_PURPLE, 3)]
+
+
+def write_3mf(path, parts, name="Cardiac_Muscle_3colors", plate_center=(128.0, 128.0)):
+    """3MF with one object made of coloured parts. Works in Bambu Studio / OrcaSlicer
+    (per-part filament in Metadata/model_settings.config) and shows colours in any
+    3MF viewer (basematerials)."""
+    import zipfile
+    from xml.sax.saxutils import quoteattr
+    out = []
+    w = out.append
+    w('<?xml version="1.0" encoding="UTF-8"?>\n')
+    w('<model unit="millimeter" xml:lang="en-US" '
+      'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n')
+    w(' <metadata name="Title">Cardiac muscle tissue (3 colours)</metadata>\n')
+    w(' <metadata name="Application">Blender cardiac_muscle generator</metadata>\n')
+    w(' <resources>\n  <basematerials id="1">\n')
+    for pname, _me, col, _f in parts:
+        w('   <base name=%s displaycolor="%sFF"/>\n' % (quoteattr(pname), col))
+    w('  </basematerials>\n')
+    for k, (pname, me, _col, _f) in enumerate(parts):
+        me.calc_loop_triangles()
+        v = np.empty(len(me.vertices) * 3)
+        me.vertices.foreach_get("co", v)
+        v = v.reshape(-1, 3) * 1000.0                       # metres -> mm
+        tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int64)
+        me.loop_triangles.foreach_get("vertices", tri)
+        tri = tri.reshape(-1, 3)
+        w('  <object id="%d" name=%s type="model" pid="1" pindex="%d">\n   <mesh>\n    <vertices>\n'
+          % (k + 2, quoteattr(pname), k))
+        w("".join('     <vertex x="%.4f" y="%.4f" z="%.4f"/>\n' % tuple(r) for r in v.tolist()))
+        w('    </vertices>\n    <triangles>\n')
+        w("".join('     <triangle v1="%d" v2="%d" v3="%d"/>\n' % tuple(t) for t in tri.tolist()))
+        w('    </triangles>\n   </mesh>\n  </object>\n')
+    oid = len(parts) + 2
+    w('  <object id="%d" name=%s type="model">\n   <components>\n' % (oid, quoteattr(name)))
+    for k in range(len(parts)):
+        w('    <component objectid="%d"/>\n' % (k + 2))
+    w('   </components>\n  </object>\n </resources>\n <build>\n')
+    w('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 %.3f %.3f 0"/>\n'
+      % (oid, plate_center[0], plate_center[1]))
+    w(' </build>\n</model>\n')
+
+    cfg = ['<?xml version="1.0" encoding="UTF-8"?>\n<config>\n',
+           '  <object id="%d">\n' % oid,
+           '    <metadata key="name" value=%s/>\n' % quoteattr(name),
+           '    <metadata key="extruder" value="1"/>\n']
+    for k, (pname, _me, _col, fil) in enumerate(parts):
+        cfg += ['    <part id="%d" subtype="normal_part">\n' % (k + 2),
+                '      <metadata key="name" value=%s/>\n' % quoteattr(pname),
+                '      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n',
+                '      <metadata key="extruder" value="%d"/>\n' % fil,
+                '    </part>\n']
+    cfg += ['  </object>\n</config>\n']
+
+    content_types = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+                     ' <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+                     ' <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n'
+                     ' <Default Extension="config" ContentType="text/xml"/>\n'
+                     '</Types>\n')
+    rels = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+            ' <Relationship Target="/3D/3dmodel.model" Id="rel0" '
+            'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
+            '</Relationships>\n')
+    path = bpy.path.abspath(path)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        z.writestr("[Content_Types].xml", content_types)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("3D/3dmodel.model", "".join(out))
+        z.writestr("Metadata/model_settings.config", "".join(cfg))
+    return path
+
+
+def export_3mf(path):
+    parts = build_print_parts()
+    write_3mf(path, parts)
+    for _n, me, _c, _f in parts:
+        bpy.data.meshes.remove(me)
 
 
 # --------------------------------------------------------------------------
@@ -788,7 +943,7 @@ def main():
     fibres = build_layout()
     lines = make_centerlines(fibres)
     nm = len(fibres)
-    samples, discs = build_axis_samples(lines)
+    samples, discs = build_axis_samples(lines, nm)
 
     # straight fibres
     fibre_me = fuse_and_smooth(curve_tube_mesh(lines[:nm]))
@@ -808,6 +963,7 @@ def main():
         piece.name = "Branch_%02d" % (len(branch_meshes) + 1)
         branch_meshes.append(piece)
     bpy.data.meshes.remove(cutter)
+    bands_me = make_disc_bands(samples, discs, nm)
 
     # Stand the fibres up (X -> Z), real size: height = TARGET_HEIGHT_M, base on z = 0
     ys = [v.co.y for v in fibre_me.vertices]
@@ -819,6 +975,7 @@ def main():
          Matrix.Rotation(math.radians(-90), 4, 'Y') @
          Matrix.Translation((0, -cy, -cz)))
     fibre_me.transform(M)
+    bands_me.transform(M)
 
     mat_f = material_fibre()
     fibre_me.materials.append(mat_f)
@@ -848,6 +1005,15 @@ def main():
         ob = bpy.data.objects.new(me.name, me)
         coll_n.objects.link(ob)
 
+    # white disc bands: helper volume for the 3-colour print (hidden)
+    mat_w = bpy.data.materials.new("Disc_White")
+    mat_w.diffuse_color = (0.95, 0.95, 0.95, 1)
+    bands_me.materials.append(mat_w)
+    ob_w = bpy.data.objects.new("Disc_Bands_White", bands_me)
+    coll.objects.link(ob_w)
+    ob_w.hide_render = True
+    ob_w.hide_set(True)
+
     setup_stage(TARGET_HEIGHT_M)
 
     dims = ob_f.dimensions
@@ -855,8 +1021,8 @@ def main():
           % (len(fibre_me.vertices), len(branch_meshes), sculpt_detail.n_nuclei))
     print("Size (cm): X=%.1f  Y=%.1f  Z=%.1f" % (dims.x * 100, dims.y * 100, dims.z * 100))
 
-    if EXPORT_DIR:
-        export_print_files(EXPORT_DIR)
+    if EXPORT_3MF:
+        export_3mf(EXPORT_3MF)
 
     if DO_RENDER:
         bpy.context.scene.render.filepath = RENDER_PATH
