@@ -6,12 +6,13 @@ so the splay angle (~25 deg), the bar cross-sections and every part above
 the hinge (tripod head, tribrach, instrument) stay exactly as they were.
 The whole model is then lowered so the feet stand on z = 0 again.
 
-Default target: the proportions of the reference photo, where the tripod
-head sits 1.66x the instrument height (handle top) above the ground.
+Default target: tripod head at 0.95 m (legs ~37% shorter).  Full photo
+proportions (--head 0.515) made the legs too stubby next to their unchanged
+thickness, so the default keeps a leg length/width ratio close to the photo.
 
 Usage
-  python shorten_legs.py IN.blend OUT_DIR [--head 0.51] [--render]
-  blender -b -P shorten_legs.py -- IN.blend OUT_DIR [--head 0.51] [--render]
+  python shorten_legs.py IN.blend OUT_DIR [--head 0.95] [--render]
+  blender -b -P shorten_legs.py -- IN.blend OUT_DIR [--head 0.95] [--render]
 """
 
 import math
@@ -27,7 +28,7 @@ import skp_to_blender as conv            # noqa: E402  (stage / export / render 
 
 Z_CUT = 1.28        # everything above stays untouched (hinges start at ~1.30 m)
 HEAD_TOP = 1.42     # top of the tripod head plate in the converted model
-PHOTO_RATIO = 1.66  # photo: head height / (handle top - head height)
+DEFAULT_HEAD = 0.95  # m, top of the tripod head after shortening
 
 
 def leg_vertices(co, axis_xy, z_cut):
@@ -61,10 +62,8 @@ def main(argv):
     co = np.array([v.co for v in me.vertices]) @ Mw[:3, :3].T + Mw[:3, 3]
 
     top = co[:, 2].max()
-    yellow_top = max(co[i, 2] for p in me.polygons
-                     if me.materials[p.material_index].name == "Color_D02" for i in p.vertices)
     if head is None:
-        head = PHOTO_RATIO * (yellow_top - HEAD_TOP)
+        head = DEFAULT_HEAD
     # instrument axis = centre of the three feet
     legs_guess = co[co[:, 2] < 0.002]
     axis_xy = legs_guess[:, :2].mean(0)
