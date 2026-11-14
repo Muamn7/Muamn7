@@ -37,7 +37,9 @@ from skimage.measure import marching_cubes
 HEAD_TOP_M = 0.95          # top of the tripod head plate in the shortened model (m)
 HOLE_D, HOLE_DEPTH = 3.2, 4.0
 PIN_D, PIN_L = 3.0, 7.6
-LEG_CUT_Z = 127.0        # leg/head cut height on the leg axis (mm, below the hinge blocks)
+LEG_CUT_Z = 127.0        # (only used to fit the leg axes)
+HEAD_BOTTOM_Z = 137.5    # legs (with hinge blocks) end at 137 mm, the head disc starts at 138 mm
+LEG_PEGS = False         # leg tops are too small for consistent peg holes: glue them to the head
 PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
 TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
 
@@ -298,53 +300,39 @@ def main(argv):
             continue
         solid[:, :, zc >= split] = False
         core = xc[:, None] ** 2 + yc[None, :] ** 2 < 10.5 ** 2   # joins the loose centring screw
-        solid[:, :, (zc > split - 10.0) & (zc < split)] |= core[:, :, None]
+        solid[:, :, (zc > HEAD_BOTTOM_Z + 0.3) & (zc < split)] |= core[:, :, None]
         zm = (zc > split - HOLE_DEPTH) & (zc < split)
         solid[np.ix_(rows, cols_, zm)] &= ~r2[np.ix_(rows, cols_)][:, :, None]
 
-        # ---- cut the three legs off the head, perpendicular to each leg ----
+        # ---- complete legs (with their hinge blocks) below the head disc ----
         X, Y = np.meshgrid(xc, yc, indexing="ij")
         azg = np.arctan2(Y, X)
-        leg_masks = [np.zeros(solid.shape, bool) for _ in legs]
-        for kz, z in enumerate(zc):
-            if z > LEG_CUT_Z + 15:
-                break
-            for L, m in zip(legs, leg_masks):
-                s_ = (X - L["C"][0]) * L["u"][0] + (Y - L["C"][1]) * L["u"][1] + (z - L["C"][2]) * L["u"][2]
-                sector = np.abs(np.angle(np.exp(1j * (azg - L["az"])))) < math.radians(55)
-                m[:, :, kz] = solid[:, :, kz] & (s_ > 0) & sector
-        head = solid.copy()
-        for m in leg_masks:
-            head &= ~m
+        below = zc < HEAD_BOTTOM_Z
+        leg_masks = []
+        for L in legs:
+            sector = np.abs(np.angle(np.exp(1j * (azg - L["az"])))) < math.radians(60)
+            m = solid & sector[:, :, None] & below[None, None, :]
+            leg_masks.append(m)
+        head = solid & ~below[None, None, :]
         del solid
-        # ---- filament-pin holes (one per rail) across every leg joint ----
+        # ---- vertical filament-peg holes through each leg-top / head joint ----
         nholes = []
+        kz = int(np.searchsorted(zc, HEAD_BOTTOM_Z))
+        edt = ndimage.distance_transform_edt(
+            np.any(leg_masks, axis=0)[:, :, max(0, kz - 6):kz])[:, :, -2] * voxel
         for L, m in zip(legs, leg_masks):
-            ci = np.round((L["C"] - origin) / voxel - 0.5).astype(int)
-            r = int(14 / voxel)
-            sl = tuple(slice(max(0, ci[a] - r), ci[a] + r) for a in range(3))
-            box_o = origin + np.array([s.start for s in sl]) * voxel
-            Hs, Ms = head[sl], m[sl]
-            g = [box_o[a] + (np.arange(Hs.shape[a]) + 0.5) * voxel for a in range(3)]
-            G = np.stack(np.meshgrid(*g, indexing="ij"), -1) - L["C"]
-            along = G @ L["u"]
-            slab = Ms & (along < 1.0)                     # leg cross-section at the cut
-            lab, n = ndimage.label(slab)
-            edt = ndimage.distance_transform_edt(Ms | Hs) * voxel
+            top = m[:, :, kz - 2]
+            lab, n = ndimage.label(top)
             count = 0
             for c_ in range(1, n + 1):
-                cand = np.where(lab == c_)
-                best = np.argmax(edt[cand])
-                if edt[cand][best] < PEG_D / 2 + 0.4:
+                e = np.where(lab == c_, edt, 0)
+                bi = np.unravel_index(np.argmax(e), e.shape)
+                if not LEG_PEGS or e[bi] < PEG_D / 2 + 0.4:
                     continue
-                P0 = np.array([g[a][cand[a][best]] for a in range(3)]) - L["C"]
-                P0 -= L["u"] * (P0 @ L["u"])              # centre on the cut plane
-                D = G - P0
-                al = D @ L["u"]
-                perp = np.linalg.norm(D - al[..., None] * L["u"], axis=-1)
-                drill = (perp < PEG_D / 2) & (np.abs(al) < PEG_DEPTH)
-                Hs &= ~drill
-                Ms &= ~drill
+                hole = (X - xc[bi[0]]) ** 2 + (Y - yc[bi[1]]) ** 2 < (PEG_D / 2) ** 2
+                zr = (zc > HEAD_BOTTOM_Z - PEG_DEPTH) & (zc < HEAD_BOTTOM_Z + 3.0)
+                m[:, :, zr] &= ~hole[:, :, None]
+                head[:, :, zr] &= ~hole[:, :, None]
                 count += 1
             nholes.append(count)
         print(f"[print] leg joints: filament-pin holes per leg {nholes}", flush=True)
