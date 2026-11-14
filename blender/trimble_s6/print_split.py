@@ -42,7 +42,10 @@ HEAD_BOTTOM_Z = 137.5    # legs (with hinge blocks) end at 137 mm, the head disc
 BASE_R = 14.1            # base disc radius (mm) = original tripod head plate
 TENON_H = 3.0            # leg tenon height / socket depth (mm)
 BASE_COLOUR = "B9BCBF"
-SMOOTH_ITERS = 35        # Taubin smoothing passes on every printed part
+# four filaments (AMS slots): every triangle is mapped to the nearest one
+FILAMENTS = [("Yellow", "F2C318"), ("Orange", "F06A14"), ("Grey", "B9BCBF"), ("Black", "222222")]
+PAINT = ["4", "8", "0C", "1C"]   # Bambu/Orca "paint_color" = Prusa "mmu_segmentation" codes, filament 1..4
+SMOOTH_ITERS = 4         # Taubin smoothing passes on every printed part
 LEG_PEGS = False         # leg tops are too small for consistent peg holes: glue them to the head
 PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
 TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
@@ -203,10 +206,36 @@ def build_base(feet, x0, y0, voxel, split):
     return base
 
 
-def to_mesh(solid, origin, voxel, name, sigma=0.65):
-    f = ndimage.gaussian_filter(np.pad(solid, 1).astype(np.float32), sigma)
-    verts, faces, _, _ = marching_cubes(f, 0.5, spacing=(voxel,) * 3)
-    verts += origin - voxel
+def to_mesh(solid, origin, voxel, name, bvh):
+    """Surface from a signed distance field: inside/outside from the solid mask,
+    magnitude = true distance to the ORIGINAL triangles near the boundary, so the
+    surface lands exactly on the original faces (crisp, no voxel staircase).
+    Where the mask has no original surface nearby (bridged gaps, tenons) the
+    mask distance is used instead."""
+    idx = np.argwhere(solid)
+    lo = np.maximum(idx.min(0) - 3, 0)
+    hi = np.minimum(idx.max(0) + 4, solid.shape)
+    m = solid[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+    m = np.pad(m, 2)
+    org = origin + (lo - 2) * voxel
+    cross = ndimage.generate_binary_structure(3, 1)
+    band = (m & ~ndimage.binary_erosion(m, cross)) | (ndimage.binary_dilation(m, cross) & ~m)
+    d_in = ndimage.distance_transform_edt(m).astype(np.float32)
+    d_out = ndimage.distance_transform_edt(~m).astype(np.float32)
+    sdf = (np.where(m, -(d_in - 0.5), d_out - 0.5) * voxel).astype(np.float32)
+    bi = np.argwhere(band)
+    pts = org + (bi + 0.5) * voxel
+    sign = np.where(m[tuple(bi.T)], -1.0, 1.0)
+    dist = np.empty(len(bi), np.float32)
+    for n_, p_ in enumerate(pts):
+        hit = bvh.find_nearest(Vector(p_))
+        dist[n_] = hit[3] if hit[0] is not None else 9e9
+    ok = dist < 1.5 * voxel                       # an original face is right here
+    vals = sdf[tuple(bi.T)]
+    vals[ok] = (sign[ok] * np.maximum(dist[ok], 0.02 * voxel)).astype(np.float32)
+    sdf[tuple(bi.T)] = vals
+    verts, faces, _, _ = marching_cubes(sdf, 0.0, spacing=(voxel,) * 3)
+    verts += org + 0.5 * voxel
     verts = taubin(verts, faces, SMOOTH_ITERS)
     me = bpy.data.meshes.new(name)
     me.vertices.add(len(verts))
@@ -218,6 +247,8 @@ def to_mesh(solid, origin, voxel, name, sigma=0.65):
     me.update()
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
+    print(f"[print]   {name}: SDF surface, {ok.mean() * 100:.0f}% of the boundary snapped to the original faces",
+          flush=True)
     return ob
 
 
@@ -274,32 +305,70 @@ def pin_mesh():
 # --------------------------------------------------------------------------
 #  3MF writer (core spec, base materials = per-triangle colours)
 # --------------------------------------------------------------------------
+def filament_of(hexc):
+    r, g, b = (int(hexc[i:i + 2], 16) for i in (0, 2, 4))
+    best, bi = 1e9, 0
+    for i, (_, fh) in enumerate(FILAMENTS):
+        fr, fg, fb = (int(fh[k:k + 2], 16) for k in (0, 2, 4))
+        dd = (r - fr) ** 2 + (g - fg) ** 2 + (b - fb) ** 2
+        if dd < best:
+            best, bi = dd, i
+    return bi
+
+
+def write_obj(path, parts):
+    """OBJ + MTL with one material per filament (Bambu Studio's colour import)."""
+    base = os.path.splitext(path)[0]
+    with open(base + ".mtl", "w") as f:
+        for nm, hx in FILAMENTS:
+            r, g, b = (int(hx[i:i + 2], 16) / 255 for i in (0, 2, 4))
+            f.write(f"newmtl {nm}\nKd {r:.4f} {g:.4f} {b:.4f}\n\n")
+    with open(path, "w") as f:
+        f.write(f"mtllib {os.path.basename(base)}.mtl\n")
+        off = 1
+        for name, ob, cols, (ox, oy) in parts:
+            me = ob.data
+            me.calc_loop_triangles()
+            f.write(f"o {name}\n")
+            f.writelines(f"v {v.co.x + ox:.4f} {v.co.y + oy:.4f} {v.co.z:.4f}\n" for v in me.vertices)
+            fil = [filament_of(c) for c in cols]
+            for k_, (nm, _) in enumerate(FILAMENTS):
+                tri = [t for t in me.loop_triangles if fil[t.polygon_index] == k_]
+                if tri:
+                    f.write(f"usemtl {nm}\n")
+                    f.writelines(f"f {t.vertices[0] + off} {t.vertices[1] + off} {t.vertices[2] + off}\n"
+                                 for t in tri)
+            off += len(me.vertices)
+
+
 def write_3mf(path, parts):
-    """parts: list of (name, object, colours per polygon (hex), (x, y) offset)."""
-    pal = []
-    for _, _, cols, _ in parts:
-        for c in set(cols):
-            if c not in pal:
-                pal.append(c)
-    idx = {c: i for i, c in enumerate(pal)}
+    """parts: list of (name, object, colours per polygon (hex), (x, y) offset).
+    Colours: core-spec base materials (4 filaments) for generic viewers, plus
+    per-triangle filament painting read by Bambu Studio / OrcaSlicer
+    (paint_color) and PrusaSlicer (slic3rpe:mmu_segmentation)."""
     out = ['<?xml version="1.0" encoding="UTF-8"?>',
            '<model unit="millimeter" xml:lang="en-US" '
-           'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
+           'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+           'xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06">',
            '<metadata name="Title">Trimble S6 tripod - print parts</metadata>',
            '<resources>', '<basematerials id="1">']
-    out += [f'<base name="#{c}" displaycolor="#{c}FF"/>' for c in pal]
+    out += [f'<base name="{nm}" displaycolor="#{hx}FF"/>' for nm, hx in FILAMENTS]
     out.append('</basematerials>')
     build = []
     for k, (name, ob, cols, off) in enumerate(parts, start=2):
         me = ob.data
         me.calc_loop_triangles()
-        out.append(f'<object id="{k}" name="{name}" type="model" pid="1" pindex="{idx[cols[0]]}">'
+        fil = [filament_of(c) for c in cols]
+        main = max(set(fil), key=fil.count)
+        out.append(f'<object id="{k}" name="{name}" type="model" pid="1" pindex="{main}">'
                    '<mesh><vertices>')
         out += [f'<vertex x="{v.co.x:.4f}" y="{v.co.y:.4f}" z="{v.co.z:.4f}"/>' for v in me.vertices]
         out.append('</vertices><triangles>')
         for t in me.loop_triangles:
             a, b, c = t.vertices
-            out.append(f'<triangle v1="{a}" v2="{b}" v3="{c}" p1="{idx[cols[t.polygon_index]]}"/>')
+            fi = fil[t.polygon_index]
+            out.append(f'<triangle v1="{a}" v2="{b}" v3="{c}" pid="1" p1="{fi}" '
+                       f'paint_color="{PAINT[fi]}" slic3rpe:mmu_segmentation="{PAINT[fi]}"/>')
         out.append('</triangles></mesh></object>')
         build.append(f'<item objectid="{k}" transform="1 0 0 0 1 0 0 0 1 {off[0]:.3f} {off[1]:.3f} 0"/>')
     out += ['</resources>', '<build>'] + build + ['</build>', '</model>']
@@ -464,7 +533,7 @@ def main(argv):
         if isinstance(solid, str):
             ob = origin                                   # already an exact mesh
         else:
-            ob = to_mesh(solid, origin, voxel, name, sigma=0.85 if name.startswith("Leg") else 0.65)
+            ob = to_mesh(solid, origin, voxel, name, bvh)
             decimate(ob, TARGET_TRIS.get(name[:3], 150000))
         n, nm, vol, plo, phi = check(ob)
         if vol < 0:
@@ -520,6 +589,7 @@ def main(argv):
     os.makedirs(out_dir, exist_ok=True)
     item = lambda n, off=(0, 0): (n, meshes[n][0], meshes[n][1], off)
     write_3mf(os.path.join(out_dir, "S6_All_Parts.3mf"), [item(n, place[n]) for n in place])
+    write_obj(os.path.join(out_dir, "S6_All_Parts_colour.obj"), [item(n, place[n]) for n in place])
     write_3mf(os.path.join(out_dir, "S6_Head.3mf"), [item("Head")])
     for n in ("Leg1", "Leg2", "Leg3"):
         write_3mf(os.path.join(out_dir, f"S6_{n}.3mf"), [item(n)])
