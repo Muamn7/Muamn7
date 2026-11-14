@@ -39,6 +39,9 @@ HOLE_D, HOLE_DEPTH = 3.2, 4.0
 PIN_D, PIN_L = 3.0, 7.6
 LEG_CUT_Z = 127.0        # (only used to fit the leg axes)
 HEAD_BOTTOM_Z = 137.5    # legs (with hinge blocks) end at 137 mm, the head disc starts at 138 mm
+BASE_R = 14.1            # base disc radius (mm) = original tripod head plate
+TENON_H = 3.0            # leg tenon height / socket depth (mm)
+BASE_COLOUR = "B9BCBF"
 LEG_PEGS = False         # leg tops are too small for consistent peg holes: glue them to the head
 PEG_D, PEG_DEPTH = 1.9, 4.0   # holes for 1.75 mm filament pegs (one per rail) at the leg joints
 TARGET_TRIS = {"Hea": 120000, "Leg": 100000, "Ins": 250000}
@@ -97,6 +100,11 @@ def solidify(tris, lo, hi, voxel, close_mm=0.75):
     del lab
     solid = ndimage.binary_erosion(solid, ball, iterations=n, border_value=0)
     return solid, origin
+
+
+def is_orange(hexc):
+    r, g, b = (int(hexc[i:i + 2], 16) for i in (0, 2, 4))
+    return r > 180 and g < 150 and b < 110 and r - g > 70
 
 
 def keep_main(solid, min_frac=0.002):
@@ -315,6 +323,24 @@ def main(argv):
             leg_masks.append(m)
         head = solid & ~below[None, None, :]
         del solid
+        # ---- clean base, rebuilt as a plain disc (no orange) with a socket per leg;
+        #      each leg's top block gets a matching tenon (0.25 mm clearance) ----
+        kz = int(np.searchsorted(zc, HEAD_BOTTOM_Z))
+        disc = (X ** 2 + Y ** 2) < BASE_R ** 2
+        zbase = (zc >= HEAD_BOTTOM_Z) & (zc < split)
+        head = np.zeros(head.shape, bool)
+        head[:, :, zbase] = disc[:, :, None]
+        ztenon = (zc >= HEAD_BOTTOM_Z) & (zc < HEAD_BOTTOM_Z + TENON_H)
+        zsock = (zc >= HEAD_BOTTOM_Z) & (zc < HEAD_BOTTOM_Z + TENON_H + 0.3)
+        cross = ndimage.generate_binary_structure(2, 1)
+        for L, m in zip(legs, leg_masks):
+            foot = m[:, :, kz - 1] | m[:, :, kz - 2]
+            foot = ndimage.binary_fill_holes(foot)
+            tenon = ndimage.binary_erosion(foot, cross, iterations=1) & disc
+            m[:, :, ztenon] |= tenon[:, :, None]
+            head[:, :, zsock] &= ~foot[:, :, None]
+        hole = (X ** 2 + Y ** 2) < (HOLE_D / 2) ** 2
+        head[:, :, (zc > split - HOLE_DEPTH) & (zc < split)] &= ~hole[:, :, None]
         # ---- vertical filament-peg holes through each leg-top / head joint ----
         nholes = []
         kz = int(np.searchsorted(zc, HEAD_BOTTOM_Z))
@@ -354,7 +380,10 @@ def main(argv):
         cols = []
         for p in ob.data.polygons:
             hit = bvh.find_nearest(p.center)
-            cols.append(colours[hit[2]] if hit[2] is not None else "9A9A9A")
+            c = colours[hit[2]] if hit[2] is not None else "9A9A9A"
+            if name == "Head":
+                c = BASE_COLOUR                        # plain base, no orange
+            cols.append(c)
         print(f"[print] {name}: {ncomp} solid piece(s), {n} triangles, non-manifold edges {nm}, "
               f"volume {vol / 1000:.2f} cm3", flush=True)
         meshes[name] = (ob, cols)
