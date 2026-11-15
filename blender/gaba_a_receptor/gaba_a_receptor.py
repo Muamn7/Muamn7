@@ -668,8 +668,8 @@ def build():
     ti = text("Plaque_Inhibition_Text", "Inhibition", 1.75, C_lab, M["ink"], extrude=0.12)
     place_row([(ti, None, 0.0)], (5.25, FY - 0.42, 1.8), up)
 
-    flat_arrow("Plaque_RightArrow", 2.0, C_lab, M["white"], (-0.8, FY - 0.1, 1.8), up,
-               shaft=0.22, head_w=0.8, head_l=0.6, depth=0.3, angle_deg=0)
+    flat_arrow("Plaque_RightArrow", 2.0, C_lab, M["white"], (-0.8, FY, 1.8), up,
+               shaft=0.22, head_w=0.8, head_l=0.6, depth=0.5, angle_deg=0)
 
     build_studio(C_env)
 
@@ -782,6 +782,13 @@ def write_stl(path, tris):
             fh.write(struct.pack("<12fH", *n, *a, *b, *c, 0))
 
 
+def export_raw(outdir):
+    """One STL per object (mm, assembled position) - input for make_print_parts.py"""
+    os.makedirs(outdir, exist_ok=True)
+    for ob, mat, tris, bad in print_meshes():
+        write_stl(os.path.join(outdir, ob.name + ".stl"), tris)
+
+
 def export_print(outdir):
     """full model as one STL + one STL per colour (for multi-colour / painting)."""
     os.makedirs(os.path.join(outdir, "parts_by_color"), exist_ok=True)
@@ -813,6 +820,8 @@ if __name__ == "__main__":
             if bad:
                 print("NON-MANIFOLD", name, n, bad)
         print("STL triangles:", sum(n for _, n, _ in rep))
+    if "--raw" in argv:
+        export_raw(os.path.abspath(argv[argv.index("--raw") + 1]))
     if "--save" in argv:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(argv[argv.index("--save") + 1]))
     if "--render" in argv:

@@ -1,0 +1,761 @@
+{
+ "bed_mm": [
+  256.0,
+  256.0
+ ],
+ "clearance_mm": 0.25,
+ "max_colours_per_plate": 4,
+ "plates": {
+  "1": [
+   "Navy",
+   "Purple",
+   "White",
+   "Yellow"
+  ],
+  "2": [
+   "Blue",
+   "Navy",
+   "Red",
+   "White"
+  ],
+  "3": [
+   "Green",
+   "Lime",
+   "White",
+   "Yellow"
+  ],
+  "4": [
+   "DarkPurple",
+   "LightBlue"
+  ]
+ },
+ "filaments": {
+  "Navy": "#1A2C6B",
+  "White": "#F5F5F2",
+  "Purple": "#8E52D8",
+  "DarkPurple": "#6E3CB6",
+  "Blue": "#2F6FDB",
+  "LightBlue": "#3AB0F2",
+  "Yellow": "#F3C300",
+  "Green": "#22A82A",
+  "Lime": "#86F23A",
+  "Red": "#E0161F"
+ },
+ "parts": [
+  {
+   "no": 1,
+   "id": "BASE_L",
+   "plate": 1,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    150.0,
+    120.0,
+    75.0
+   ],
+   "files": [
+    "P01_BASE_L__Navy.stl"
+   ]
+  },
+  {
+   "no": 2,
+   "id": "DOWEL_1",
+   "plate": 1,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    6.0,
+    6.0,
+    23.0
+   ],
+   "files": [
+    "P02_DOWEL_1__Navy.stl"
+   ]
+  },
+  {
+   "no": 3,
+   "id": "DOWEL_2",
+   "plate": 1,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    6.0,
+    6.0,
+    23.0
+   ],
+   "files": [
+    "P03_DOWEL_2__Navy.stl"
+   ]
+  },
+  {
+   "no": 4,
+   "id": "DOWEL_3",
+   "plate": 1,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    6.0,
+    6.0,
+    23.0
+   ],
+   "files": [
+    "P04_DOWEL_3__Navy.stl"
+   ]
+  },
+  {
+   "no": 5,
+   "id": "ARROW_RIGHT",
+   "plate": 1,
+   "step": 2,
+   "colours": [
+    "White"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    19.7,
+    7.6,
+    5.0
+   ],
+   "files": [
+    "P05_ARROW_RIGHT__White.stl"
+   ]
+  },
+  {
+   "no": 6,
+   "id": "PLAQUE_CL",
+   "plate": 1,
+   "step": 2,
+   "colours": [
+    "White",
+    "Navy"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [
+    [
+     8.0,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    64.0,
+    21.0,
+    9.6
+   ],
+   "files": [
+    "P06_PLAQUE_CL__White.stl",
+    "P06_PLAQUE_CL__Navy.stl"
+   ]
+  },
+  {
+   "no": 7,
+   "id": "PLAQUE_INHIBITION",
+   "plate": 1,
+   "step": 2,
+   "colours": [
+    "White",
+    "Navy"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [
+    [
+     8.0,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    86.0,
+    21.0,
+    9.6
+   ],
+   "files": [
+    "P07_PLAQUE_INHIBITION__White.stl",
+    "P07_PLAQUE_INHIBITION__Navy.stl"
+   ]
+  },
+  {
+   "no": 8,
+   "id": "MEMBRANE_R",
+   "plate": 1,
+   "step": 4,
+   "colours": [
+    "White",
+    "Yellow"
+   ],
+   "start_colour": "Yellow",
+   "colour_change_mm": [
+    [
+     13.5,
+     "White"
+    ],
+    [
+     48.0,
+     "Yellow"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    87.0,
+    52.0,
+    62.0
+   ],
+   "files": [
+    "P08_MEMBRANE_R__White.stl",
+    "P08_MEMBRANE_R__Yellow.stl"
+   ]
+  },
+  {
+   "no": 9,
+   "id": "ALPHA_L",
+   "plate": 1,
+   "step": 7,
+   "colours": [
+    "Purple",
+    "White"
+   ],
+   "start_colour": "Purple",
+   "colour_change_mm": [
+    [
+     32.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    69.9,
+    128.2,
+    34.2
+   ],
+   "files": [
+    "P09_ALPHA_L__Purple.stl",
+    "P09_ALPHA_L__White.stl"
+   ]
+  },
+  {
+   "no": 10,
+   "id": "ALPHA_R",
+   "plate": 1,
+   "step": 7,
+   "colours": [
+    "Purple",
+    "White"
+   ],
+   "start_colour": "Purple",
+   "colour_change_mm": [
+    [
+     32.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    69.9,
+    128.2,
+    34.2
+   ],
+   "files": [
+    "P10_ALPHA_R__Purple.stl",
+    "P10_ALPHA_R__White.stl"
+   ]
+  },
+  {
+   "no": 11,
+   "id": "GAMMA",
+   "plate": 1,
+   "step": 8,
+   "colours": [
+    "Yellow",
+    "Navy"
+   ],
+   "start_colour": "Yellow",
+   "colour_change_mm": [
+    [
+     26.0,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    41.8,
+    56.1,
+    28.1
+   ],
+   "files": [
+    "P11_GAMMA__Yellow.stl",
+    "P11_GAMMA__Navy.stl"
+   ]
+  },
+  {
+   "no": 12,
+   "id": "BASE_R",
+   "plate": 2,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    150.0,
+    120.0,
+    75.0
+   ],
+   "files": [
+    "P12_BASE_R__Navy.stl"
+   ]
+  },
+  {
+   "no": 13,
+   "id": "TITLE_STAND",
+   "plate": 2,
+   "step": 3,
+   "colours": [
+    "White"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    50.0,
+    145.0,
+    10.0
+   ],
+   "files": [
+    "P13_TITLE_STAND__White.stl"
+   ]
+  },
+  {
+   "no": 14,
+   "id": "BETA_L",
+   "plate": 2,
+   "step": 8,
+   "colours": [
+    "Blue",
+    "White"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     28.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    50.0,
+    46.6,
+    30.1
+   ],
+   "files": [
+    "P14_BETA_L__Blue.stl",
+    "P14_BETA_L__White.stl"
+   ]
+  },
+  {
+   "no": 15,
+   "id": "BETA_R",
+   "plate": 2,
+   "step": 8,
+   "colours": [
+    "Blue",
+    "White"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     28.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    50.0,
+    46.6,
+    30.1
+   ],
+   "files": [
+    "P15_BETA_R__Blue.stl",
+    "P15_BETA_R__White.stl"
+   ]
+  },
+  {
+   "no": 16,
+   "id": "GABA_BALL",
+   "plate": 2,
+   "step": 10,
+   "colours": [
+    "Red"
+   ],
+   "start_colour": "Red",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    16.4,
+    16.4,
+    11.7
+   ],
+   "files": [
+    "P16_GABA_BALL__Red.stl"
+   ]
+  },
+  {
+   "no": 17,
+   "id": "TITLE",
+   "plate": 2,
+   "step": 11,
+   "colours": [
+    "Blue",
+    "Navy",
+    "White"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     8.98,
+     "Navy"
+    ],
+    [
+     10.5,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    192.0,
+    27.5,
+    12.6
+   ],
+   "files": [
+    "P17_TITLE__Blue.stl",
+    "P17_TITLE__Navy.stl",
+    "P17_TITLE__White.stl"
+   ]
+  },
+  {
+   "no": 18,
+   "id": "STRUT_DIAZEPAM",
+   "plate": 2,
+   "step": 12,
+   "colours": [
+    "Blue"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    6.0,
+    6.0,
+    35.2
+   ],
+   "files": [
+    "P18_STRUT_DIAZEPAM__Blue.stl"
+   ]
+  },
+  {
+   "no": 19,
+   "id": "STRUT_GABA",
+   "plate": 2,
+   "step": 12,
+   "colours": [
+    "Red"
+   ],
+   "start_colour": "Red",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    6.0,
+    6.0,
+    31.6
+   ],
+   "files": [
+    "P19_STRUT_GABA__Red.stl"
+   ]
+  },
+  {
+   "no": 20,
+   "id": "CALLOUT_DIAZEPAM",
+   "plate": 2,
+   "step": 13,
+   "colours": [
+    "Blue",
+    "White",
+    "Navy"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     7.0,
+     "White"
+    ],
+    [
+     7.8,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    65.0,
+    19.0,
+    9.4
+   ],
+   "files": [
+    "P20_CALLOUT_DIAZEPAM__Blue.stl",
+    "P20_CALLOUT_DIAZEPAM__White.stl",
+    "P20_CALLOUT_DIAZEPAM__Navy.stl"
+   ]
+  },
+  {
+   "no": 21,
+   "id": "CALLOUT_GABA",
+   "plate": 2,
+   "step": 13,
+   "colours": [
+    "Red",
+    "White",
+    "Navy"
+   ],
+   "start_colour": "Red",
+   "colour_change_mm": [
+    [
+     7.0,
+     "White"
+    ],
+    [
+     7.8,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    52.0,
+    19.0,
+    9.4
+   ],
+   "files": [
+    "P21_CALLOUT_GABA__Red.stl",
+    "P21_CALLOUT_GABA__White.stl",
+    "P21_CALLOUT_GABA__Navy.stl"
+   ]
+  },
+  {
+   "no": 22,
+   "id": "ARROW_DIAZEPAM",
+   "plate": 2,
+   "step": 14,
+   "colours": [
+    "Blue"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    10.7,
+    10.7,
+    33.5
+   ],
+   "files": [
+    "P22_ARROW_DIAZEPAM__Blue.stl"
+   ]
+  },
+  {
+   "no": 23,
+   "id": "ARROW_GABA",
+   "plate": 2,
+   "step": 14,
+   "colours": [
+    "Red"
+   ],
+   "start_colour": "Red",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    10.7,
+    10.7,
+    30.1
+   ],
+   "files": [
+    "P23_ARROW_GABA__Red.stl"
+   ]
+  },
+  {
+   "no": 24,
+   "id": "MEMBRANE_L",
+   "plate": 3,
+   "step": 4,
+   "colours": [
+    "White",
+    "Yellow"
+   ],
+   "start_colour": "Yellow",
+   "colour_change_mm": [
+    [
+     13.5,
+     "White"
+    ],
+    [
+     48.0,
+     "Yellow"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    87.0,
+    52.0,
+    62.0
+   ],
+   "files": [
+    "P24_MEMBRANE_L__White.stl",
+    "P24_MEMBRANE_L__Yellow.stl"
+   ]
+  },
+  {
+   "no": 25,
+   "id": "CHANNEL",
+   "plate": 3,
+   "step": 5,
+   "colours": [
+    "Green",
+    "Lime"
+   ],
+   "start_colour": "Green",
+   "colour_change_mm": [
+    [
+     22.0,
+     "Lime"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    40.0,
+    104.0,
+    30.2
+   ],
+   "files": [
+    "P25_CHANNEL__Green.stl",
+    "P25_CHANNEL__Lime.stl"
+   ]
+  },
+  {
+   "no": 26,
+   "id": "EXIT_ION",
+   "plate": 3,
+   "step": 9,
+   "colours": [
+    "Lime",
+    "White"
+   ],
+   "start_colour": "Lime",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    26.0,
+    27.2,
+    24.0
+   ],
+   "files": [
+    "P26_EXIT_ION__Lime.stl",
+    "P26_EXIT_ION__White.stl"
+   ]
+  },
+  {
+   "no": 27,
+   "id": "ALPHA_BACK_L",
+   "plate": 4,
+   "step": 6,
+   "colours": [
+    "DarkPurple"
+   ],
+   "start_colour": "DarkPurple",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    26.8,
+    75.1,
+    26.0
+   ],
+   "files": [
+    "P27_ALPHA_BACK_L__DarkPurple.stl"
+   ]
+  },
+  {
+   "no": 28,
+   "id": "ALPHA_BACK_R",
+   "plate": 4,
+   "step": 6,
+   "colours": [
+    "DarkPurple"
+   ],
+   "start_colour": "DarkPurple",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    26.8,
+    75.1,
+    26.0
+   ],
+   "files": [
+    "P28_ALPHA_BACK_R__DarkPurple.stl"
+   ]
+  },
+  {
+   "no": 29,
+   "id": "DIAZEPAM_BALL",
+   "plate": 4,
+   "step": 10,
+   "colours": [
+    "LightBlue"
+   ],
+   "start_colour": "LightBlue",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    16.0,
+    16.0,
+    11.5
+   ],
+   "files": [
+    "P29_DIAZEPAM_BALL__LightBlue.stl"
+   ]
+  }
+ ],
+ "steps_ar": {
+  "1": "ركّب نصفي القاعدة BASE_L و BASE_R بالمسامير الثلاثة DOWEL + غراء",
+  "2": "ادخل اللوحتين PLAQUE_CL و PLAQUE_INHIBITION والسهم ARROW_RIGHT في جيوبها بواجهة القاعدة",
+  "3": "ادخل عمود اللوحة TITLE_STAND في الفتحة خلف المنصة",
+  "4": "ضع الغشاء MEMBRANE_L و MEMBRANE_R على المنصة (العلامة الخفيفة تحدد مكانهما)",
+  "5": "ادخل القناة الخضراء CHANNEL في جيبها في الوسط",
+  "6": "ضع القطع البنفسجية الغامقة ALPHA_BACK_L/R",
+  "7": "ضع ALPHA_L و ALPHA_R أمامها (أقدامها تدخل في جيوب القاعدة)",
+  "8": "ضع GAMMA ثم BETA_L و BETA_R",
+  "9": "ضع كرة الأيون EXIT_ION على القاعدة تحت القناة",
+  "10": "ادخل كرة GABA الحمراء وكرة Diazepam الزرقاء في جيوبها أعلى α",
+  "11": "ركّب اللوحة العلوية TITLE على رأس العمود",
+  "12": "ادخل الدعامتين STRUT في الثقوب المائلة (تمر عبر β إلى α)",
+  "13": "ركّب البطاقتين CALLOUT على طرف الدعامة",
+  "14": "ادخل السهمين ARROW من ثقب البطاقة إلى جيب الكرة"
+ }
+}
