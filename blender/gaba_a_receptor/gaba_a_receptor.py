@@ -310,6 +310,25 @@ def tube_arrow(name, start, end, collection, mat, r=0.13, head_r=0.38, head_l=0.
     return ob
 
 
+def rod(name, start, end, collection, mat, r=0.3):
+    """Closed cylinder from start to end (cm) - hidden print support strut."""
+    a, b = Vector(start), Vector(end)
+    d = b - a
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=r * S, radius2=r * S,
+                          depth=d.length * S,
+                          matrix=Matrix.Translation(Vector((0, 0, d.length / 2)) * S))
+    bm.to_mesh(me)
+    bm.free()
+    smooth(me)
+    me.materials.append(mat)
+    ob = link(bpy.data.objects.new(name, me), collection)
+    ob.matrix_world = Matrix.Translation(a * S) @ \
+        d.normalized().to_track_quat("Z", "Y").to_matrix().to_4x4()
+    return ob
+
+
 # --------------------------------------------------------------------------
 #  Text helpers
 # --------------------------------------------------------------------------
@@ -458,7 +477,7 @@ def slab(name, pts, collection, mat, front_y, depth, bevel, smooth_curve=True,
 # ==========================================================================
 ALPHA_FRONT = [(-8.4, 14.0), (-7.8, 15.8), (-6.2, 16.5), (-4.7, 16.0), (-3.0, 15.0),
                (-1.75, 14.1), (-1.45, 12.4), (-1.5, 9.8), (-1.65, 7.2), (-2.1, 5.1),
-               (-3.1, 4.2), (-4.3, 4.3), (-5.1, 5.4), (-5.6, 7.4), (-6.2, 9.4),
+               (-3.1, 3.8), (-4.3, 3.9), (-5.1, 5.4), (-5.6, 7.4), (-6.2, 9.4),
                (-7.0, 10.9), (-8.0, 12.2)]
 ALPHA_BACK = [(-6.9, 11.4), (-5.8, 12.0), (-4.8, 10.4), (-4.4, 7.8), (-4.55, 5.7),
               (-5.0, 4.75), (-5.75, 4.55), (-6.35, 5.2), (-6.6, 7.0), (-6.8, 9.4)]
@@ -486,7 +505,8 @@ def build():
     C_lab = coll("04_Labels")
     C_env = coll("05_Studio")
 
-    M = {k: mat_clay("M_" + k, v) for k, v in COL.items() if k != "wall"}
+    M = {k: mat_clay("M_" + k, v) for k, v in COL.items()
+         if k not in ("wall", "channel", "ion", "gaba", "diazepam", "navy", "white", "ink")}
     M["channel"] = mat_clay("M_channel", COL["channel"], emit=0.15)
     M["ion"] = mat_clay("M_ion", COL["ion"], rough=0.35, emit=0.8, bump=0.05)
     M["gaba"] = mat_clay("M_gaba", COL["gaba"], rough=0.35, coat=0.3, bump=0.05)
@@ -503,34 +523,48 @@ def build():
          bevel=0.3, seg=6)
 
     # ------------------------------------------------------------- MEMBRANE
+    # PRINTABLE: the tails are not free-floating strands any more. Each side
+    # is one SOLID white core block; the heads sit half-buried in its top and
+    # bottom, and the front-row tails are raised relief ON the block face.
     head_r = 0.7
     z_top, z_bot = 13.0, 8.15
     rows_y = [-0.5, 0.8, 2.1, 3.3]
+    x_in, x_out = 5.0, 13.6                 # core block span (inner end hides in α)
+    core_front = -0.3
+    for side, nm in ((-1, "L"), (1, "R")):
+        w = x_out - x_in
+        rbox("Lipid_Core_" + nm, (w, 3.3 - core_front + 0.2, z_top - 7.45),
+             (side * (x_in + w / 2), (core_front + 3.5) / 2, (z_top + 7.45) / 2),
+             C_mem, M["tail"], bevel=0.2, seg=4)
+
     hm = bpy.data.meshes.new("Lipid_Heads")
     bm = bmesh.new()
-    tails = bpy.data.curves.new("Lipid_Tails", "CURVE")
+    tails = bpy.data.curves.new("Lipid_Tails_Relief", "CURVE")
     tails.dimensions = "3D"
-    tails.bevel_depth = 0.15 * S
+    tails.bevel_depth = 0.16 * S
     tails.bevel_resolution = 3
     tails.use_fill_caps = True
     for side in (-1, 1):
         for ri, y in enumerate(rows_y):
             x = 5.6 + (0.69 if ri % 2 else 0.0)
-            while x <= 13.7:
+            while x <= 13.0:
                 xx = side * x
                 for zc, sgn in ((z_top, -1), (z_bot, 1)):
-                    bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=12,
+                    bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=20,
                                               radius=head_r * S,
                                               matrix=Matrix.Translation(V(xx, y, zc)))
+                    if ri:                  # only the front row is seen
+                        continue
                     for t in (-0.2, 0.2):
                         sp = tails.splines.new("NURBS")
                         prof = [0.0, 0.10, 0.02, 0.12, 0.04]      # gentle S-wave
                         sp.points.add(len(prof) - 1)
                         for i, off in enumerate(prof):
                             f_ = i / (len(prof) - 1)
-                            pz = zc + sgn * (head_r * 0.7 + f_ * 1.75)
+                            pz = zc + sgn * (head_r * 0.6 + f_ * 1.8)
                             px = xx + t + math.copysign(off, t)
-                            sp.points[i].co = (*(V(px, y, pz)), 1.0)
+                            # centre ON the core face -> half buried, prints as relief
+                            sp.points[i].co = (*(V(px, core_front, pz)), 1.0)
                         sp.order_u = 3
                         sp.use_endpoint_u = True
                         sp.use_smooth = True
@@ -541,7 +575,7 @@ def build():
     hm.materials.append(M["head"])
     link(bpy.data.objects.new("Lipid_Heads", hm), C_mem)
     tails.materials.append(M["tail"])
-    link(bpy.data.objects.new("Lipid_Tails", tails), C_mem)
+    link(bpy.data.objects.new("Lipid_Tails_Relief", tails), C_mem)
 
     # ------------------------------------------------------------- RECEPTOR
     A_FRONT_Y = -3.2
@@ -559,12 +593,12 @@ def build():
 
     sphere("Cl_Ion_1", 0.62, (0, -1.2, 12.2), C_rec, M["ion"])
     sphere("Cl_Ion_2", 0.62, (0, -1.2, 9.5), C_rec, M["ion"])
-    flat_arrow("Channel_Arrow", 1.7, C_rec, M["ion"], (0, -1.2, 7.4), up,
+    flat_arrow("Channel_Arrow", 1.7, C_rec, M["ion"], (0, -1.1, 7.4), up,
                shaft=0.3, head_w=1.0, head_l=0.75, depth=0.3, angle_deg=-90)
     sphere("Cl_Ion_Exit", 1.3, (0, -3.0, 5.1), C_rec, M["ion"])
 
     gaba = sphere("GABA_Ligand", 0.82, (-5.7, A_FRONT_Y + 0.15, 15.85), C_rec, M["gaba"])
-    diaz = sphere("Diazepam_Ligand", 0.8, (5.75, A_FRONT_Y + 0.15, 15.05), C_rec,
+    diaz = sphere("Diazepam_Ligand", 0.8, (5.85, A_FRONT_Y + 0.15, 15.65), C_rec,
                   M["diazepam"])
 
     # greek letters on the flat front faces
@@ -575,24 +609,24 @@ def build():
         ("Beta_R", "β", 3.6, 16.9, 2.2, -2.3, M["white"]),
         ("Gamma", "γ", 0.0, 18.0, 2.4, -1.5, M["ink"]),
     ):
-        t = text("Letter_" + nm, ch, sz, C_lab, mat, extrude=0.08)
-        place_row([(t, None, 0)], (x, fy - 0.06, z), up)
+        t = text("Letter_" + nm, ch, sz, C_lab, mat, extrude=0.15)
+        place_row([(t, None, 0)], (x, fy - 0.05, z), up)
 
-    t = text("Ion_Cl_Text", "Cl", 1.2, C_lab, M["white"], extrude=0.05)
-    m = text("Ion_Cl_minus", "−", 0.75, C_lab, M["white"], extrude=0.05)
-    place_row([(t, None, -0.05), (m, None, 0.42)], (0.05, -4.27, 5.1), up, gap=0.1)
+    t = text("Ion_Cl_Text", "Cl", 1.2, C_lab, M["white"], extrude=0.3)
+    m = text("Ion_Cl_minus", "−", 0.75, C_lab, M["white"], extrude=0.3)
+    place_row([(t, None, -0.05), (m, None, 0.42)], (0.05, -4.1, 5.1), up, gap=0.1)
 
     # ------------------------------------------------------------------ TITLE
-    rbox("Title_Stand", (5.0, 1.0, 6.0), (0, 1.8, 18.0), C_lab, M["white"], bevel=0.3)
+    rbox("Title_Stand", (5.0, 1.0, 14.5), (0, 1.6, 14.25), C_lab, M["white"], bevel=0.3)
     slab("Title_Panel_Rim", rrect_pts(19.2, 2.75, 0.95, 0, 21.75), C_lab,
          M["title_rim"], 0.55, 0.9, 0.25, smooth_curve=False)
     slab("Title_Panel", rrect_pts(18.8, 2.4, 0.8, 0, 21.75), C_lab, M["title"],
          0.4, 0.9, 0.25, smooth_curve=False)
-    t1 = text("Title_GABA", "GABA", 2.25, C_lab, M["white"], extrude=0.08)
-    t2 = text("Title_sub_A", "A", 1.35, C_lab, M["white"], extrude=0.08)
-    t3 = text("Title_Receptor", "Receptor", 2.25, C_lab, M["white"], extrude=0.08)
+    t1 = text("Title_GABA", "GABA", 2.25, C_lab, M["white"], extrude=0.15)
+    t2 = text("Title_sub_A", "A", 1.35, C_lab, M["white"], extrude=0.15)
+    t3 = text("Title_Receptor", "Receptor", 2.25, C_lab, M["white"], extrude=0.15)
     place_row([(t1, None, 0.0), (t2, text_width_cm(t2) + 0.6, -0.62), (t3, None, 0.0)],
-              (0, 0.33, 21.8), up, gap=0.05)
+              (0, 0.35, 21.8), up, gap=0.05)
 
     # ------------------------------------------------------------- CALLOUTS
     def callout(name, label, cx, cz, w, rim_mat):
@@ -601,8 +635,8 @@ def build():
              0.15, smooth_curve=False)
         slab(name + "_Face", rrect_pts(w - 0.36, h - 0.36, 0.62, cx, cz), C_lab,
              M["white"], -2.28, 0.7, 0.12, smooth_curve=False)
-        t = text(name + "_Text", label, 1.4, C_lab, M["ink"], extrude=0.05)
-        place_row([(t, None, 0)], (cx, -2.33, cz), up)
+        t = text(name + "_Text", label, 1.4, C_lab, M["ink"], extrude=0.12)
+        place_row([(t, None, 0)], (cx, -2.3, cz), up)
 
     callout("Callout_GABA", "GABA", -10.3, 18.2, 5.2, M["red_rim"])
     callout("Callout_Diazepam", "Diazepam", 11.3, 18.1, 6.5, M["blue_rim"])
@@ -610,27 +644,29 @@ def build():
     def pointer(name, start, ball, r, mat):
         tgt = ball.location / S
         d = (tgt - Vector(start)).normalized()
-        tube_arrow(name, start, tgt - d * (r + 0.05), C_lab, mat, r=0.16,
-                   head_r=0.45, head_l=0.9)
+        tube_arrow(name, start, tgt - d * (r * 0.4), C_lab, mat, r=0.25,
+                   head_r=0.55, head_l=1.0)
+        s0 = Vector(start)
+        rod(name + "_Strut", (s0.x, -1.25, s0.z), (tgt.x, -1.25, tgt.z), C_lab, mat, r=0.3)
 
-    pointer("Arrow_GABA", (-8.1, -2.5, 17.35), gaba, 0.82, M["red_rim"])
-    pointer("Arrow_Diazepam", (8.6, -2.5, 17.25), diaz, 0.8, M["blue_rim"])
+    pointer("Arrow_GABA", (-8.4, -2.0, 17.5), gaba, 0.82, M["red_rim"])
+    pointer("Arrow_Diazepam", (8.9, -2.0, 17.4), diaz, 0.8, M["blue_rim"])
 
     # ------------------------------------------------- PLAQUES (base front)
     FY = -7.0                                    # base front face
     slab("Plaque_Cl", rrect_pts(6.4, 2.1, 0.8, -5.7, 1.8), C_lab, M["white"],
          FY - 0.4, 0.8, 0.15, smooth_curve=False)
     ua = flat_arrow("Plaque_UpArrow", 1.5, C_lab, M["ink"], (0, 0, 0), up,
-                    shaft=0.26, head_w=0.85, head_l=0.6, depth=0.08, angle_deg=90)
-    tcl = text("Plaque_Cl_Text", "Cl", 1.75, C_lab, M["ink"], extrude=0.05)
-    tmn = text("Plaque_Cl_minus", "−", 1.1, C_lab, M["ink"], extrude=0.05)
+                    shaft=0.26, head_w=0.85, head_l=0.6, depth=0.16, angle_deg=90)
+    tcl = text("Plaque_Cl_Text", "Cl", 1.75, C_lab, M["ink"], extrude=0.12)
+    tmn = text("Plaque_Cl_minus", "−", 1.1, C_lab, M["ink"], extrude=0.12)
     place_row([(ua, 0.85, 0.0), (tcl, None, 0.0), (tmn, None, 0.5)],
-              (-5.7, FY - 0.43, 1.8), up, gap=0.3)
+              (-5.7, FY - 0.42, 1.8), up, gap=0.3)
 
     slab("Plaque_Inhibition", rrect_pts(8.6, 2.1, 0.8, 5.25, 1.8), C_lab, M["white"],
          FY - 0.4, 0.8, 0.15, smooth_curve=False)
-    ti = text("Plaque_Inhibition_Text", "Inhibition", 1.75, C_lab, M["ink"], extrude=0.05)
-    place_row([(ti, None, 0.0)], (5.25, FY - 0.43, 1.8), up)
+    ti = text("Plaque_Inhibition_Text", "Inhibition", 1.75, C_lab, M["ink"], extrude=0.12)
+    place_row([(ti, None, 0.0)], (5.25, FY - 0.42, 1.8), up)
 
     flat_arrow("Plaque_RightArrow", 2.0, C_lab, M["white"], (-0.8, FY - 0.1, 1.8), up,
                shaft=0.22, head_w=0.8, head_l=0.6, depth=0.3, angle_deg=0)
@@ -708,6 +744,59 @@ def build_studio(C_env):
 
 
 # --------------------------------------------------------------------------
+#  3-D PRINT EXPORT  (STL in millimetres: 300 mm wide)
+# --------------------------------------------------------------------------
+PRINT_COLLECTIONS = ("01_Base", "02_Membrane", "03_Receptor", "04_Labels")
+
+
+def print_meshes():
+    """Yield (object, material_name, triangles_mm) for every printable object."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    for cname in PRINT_COLLECTIONS:
+        for ob in bpy.data.collections[cname].objects:
+            if ob.type not in {"MESH", "CURVE", "FONT"}:
+                continue
+            me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=2e-6)
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            bmesh.ops.triangulate(bm, faces=bm.faces)
+            bad = sum(1 for e in bm.edges if not e.is_manifold)
+            mw = ob.matrix_world
+            tris = [tuple(tuple((mw @ v.co) * 1000.0) for v in f.verts) for f in bm.faces]
+            bm.free()
+            bpy.data.meshes.remove(me)
+            mat = ob.active_material.name if ob.active_material else "M_none"
+            yield ob, mat, tris, bad
+
+
+def write_stl(path, tris):
+    import struct
+    with open(path, "wb") as fh:
+        fh.write(b"GABA-A receptor model, units: mm".ljust(80, b" "))
+        fh.write(struct.pack("<I", len(tris)))
+        for a, b, c in tris:
+            n = (Vector(b) - Vector(a)).cross(Vector(c) - Vector(a))
+            n = n.normalized() if n.length > 0 else n
+            fh.write(struct.pack("<12fH", *n, *a, *b, *c, 0))
+
+
+def export_print(outdir):
+    """full model as one STL + one STL per colour (for multi-colour / painting)."""
+    os.makedirs(os.path.join(outdir, "parts_by_color"), exist_ok=True)
+    allt, groups, report = [], {}, []
+    for ob, mat, tris, bad in print_meshes():
+        allt += tris
+        groups.setdefault(mat[2:] if mat.startswith("M_") else mat, []).extend(tris)
+        report.append((ob.name, len(tris), bad))
+    write_stl(os.path.join(outdir, "GABA_A_receptor_300mm.stl"), allt)
+    for k, t in groups.items():
+        write_stl(os.path.join(outdir, "parts_by_color", "GABA_A_%s.stl" % k), t)
+    return report
+
+
+# --------------------------------------------------------------------------
 if __name__ == "__main__":
     build()
     for f in bpy.data.fonts:                    # pack font -> .blend opens anywhere
@@ -718,6 +807,12 @@ if __name__ == "__main__":
                 pass
 
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if "--stl" in argv:
+        rep = export_print(os.path.abspath(argv[argv.index("--stl") + 1]))
+        for name, n, bad in rep:
+            if bad:
+                print("NON-MANIFOLD", name, n, bad)
+        print("STL triangles:", sum(n for _, n, _ in rep))
     if "--save" in argv:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(argv[argv.index("--save") + 1]))
     if "--render" in argv:
