@@ -57,6 +57,12 @@ FONT_CANDIDATES = [
     "/Library/Fonts/Georgia Bold.ttf",
 ]
 
+# printable (watertight) mesh
+PRINT_RES = 0.006         # cm grid step of the printable surface (60 micron)
+PRINT_TEXT_H = 0.09       # cm height of the raised letters
+PRINT_DECIMATE = 0.35     # keep this fraction of triangles on the relief (1 = off)
+BUILD_PRINT_MESH = True   # also create the watertight "Magnet_PRINT" object
+
 # height-map resolution (the relief mesh = BASE grid x 2^SUB subdivision)
 NX_BASE, NY_BASE, SUB_RENDER, SUB_VIEW = 70, 94, 4, 3
 
@@ -526,6 +532,7 @@ def build_heightmap(out_png):
     build_minaret(cv)
     build_ornaments(cv)
     Z = blur(cv.Z, 0.45)
+    cv.Zr = Z.copy()          # relief heights above the plaque face (cm)
     # lift visible parts slightly so they emerge from under the plaque surface
     LIFT = 0.004
     Z = Z + LIFT * smoothstep(0.0, 0.003, Z)
@@ -885,7 +892,200 @@ def build_stage():
     sc.view_settings.exposure = 0.0
 
 
-def main(save=None, render=None, render_angle=None, outdir=None):
+# ---------------------------------------------------------------------------
+#  Watertight single-body mesh for 3D printing
+#  (plaque + relief + letters merged into ONE closed height-field solid)
+# ---------------------------------------------------------------------------
+def _flat_text_triangles(text_obs):
+    """2D triangles (world cm) of the letters, after the arc deformation"""
+    saved = []
+    for ob in text_obs:
+        cu = ob.data
+        saved.append((cu, cu.extrude, cu.bevel_depth))
+        cu.extrude = 0.0
+        cu.bevel_depth = 0.0
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    tris = []
+    for ob in text_obs:
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.calc_loop_triangles()
+        co = np.empty(len(me.vertices) * 3)
+        me.vertices.foreach_get("co", co)
+        co = co.reshape(-1, 3)
+        mw = np.array(ob.matrix_world)
+        co = co @ mw[:3, :3].T + mw[:3, 3]
+        idx = np.empty(len(me.loop_triangles) * 3, dtype=np.int64)
+        me.loop_triangles.foreach_get("vertices", idx)
+        tris.append(co[idx.reshape(-1, 3)][:, :, :2])
+        ev.to_mesh_clear()
+    for cu, e, b in saved:
+        cu.extrude = e
+        cu.bevel_depth = b
+    bpy.context.view_layer.update()
+    return np.concatenate(tris) if tris else np.zeros((0, 3, 2))
+
+
+def _raster_triangles(tris, xs, ys):
+    mask = np.zeros((len(ys), len(xs)), dtype=bool)
+    x0, dx = xs[0], xs[1] - xs[0]
+    y0, dy = ys[0], ys[1] - ys[0]
+    for (ax, ay), (bx, by), (cx, cy) in tris:
+        j0 = max(0, int(math.floor((min(ax, bx, cx) - x0) / dx)))
+        j1 = min(len(xs) - 1, int(math.ceil((max(ax, bx, cx) - x0) / dx)))
+        i0 = max(0, int(math.floor((min(ay, by, cy) - y0) / dy)))
+        i1 = min(len(ys) - 1, int(math.ceil((max(ay, by, cy) - y0) / dy)))
+        den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if j1 < j0 or i1 < i0 or abs(den) < 1e-14:
+            continue
+        X = xs[j0:j1 + 1][None, :]
+        Y = ys[i0:i1 + 1][:, None]
+        l1 = ((by - cy) * (X - cx) + (cx - bx) * (Y - cy)) / den
+        l2 = ((cy - ay) * (X - cx) + (ax - cx) * (Y - cy)) / den
+        e = -1e-9
+        mask[i0:i1 + 1, j0:j1 + 1] |= (l1 >= e) & (l2 >= e) & (1.0 - l1 - l2 >= e)
+    return mask
+
+
+def _sample_canvas(cv, X, Y):
+    """bilinear lookup of the relief height map at world (cm) positions"""
+    jf = ((X / S + CX) - cv.px0) * cv.spp
+    if_ = ((CY - Y / S) - cv.py0) * cv.spp
+    valid = (jf >= 0) & (jf <= cv.W - 1) & (if_ >= 0) & (if_ <= cv.H - 1)
+    jf = np.clip(jf, 0, cv.W - 1.001)
+    if_ = np.clip(if_, 0, cv.H - 1.001)
+    j0 = jf.astype(np.int64)
+    i0 = if_.astype(np.int64)
+    tx, ty = jf - j0, if_ - i0
+    Z = cv.Zr
+    v = (Z[i0, j0] * (1 - tx) * (1 - ty) + Z[i0, j0 + 1] * tx * (1 - ty) +
+         Z[i0 + 1, j0] * (1 - tx) * ty + Z[i0 + 1, j0 + 1] * tx * ty)
+    return np.where(valid, v, 0.0)
+
+
+def build_print_mesh(cv, outline, text_obs, res=PRINT_RES):
+    xs_o = [p[0] for p in outline]
+    ys_o = [p[1] for p in outline]
+    xs = np.arange(min(xs_o) - 2 * res, max(xs_o) + 3 * res, res)
+    ys = np.arange(min(ys_o) - 2 * res, max(ys_o) + 3 * res, res)
+    X, Y = np.meshgrid(xs, ys)                       # row i <-> ys[i]
+    print("print grid", X.shape)
+
+    # plaque: flat top, rounded (quarter-round) edge, vertical sides
+    di = -sdf_poly(outline, X, Y)                    # cm inside distance
+    T, b = PLAQUE_THICK, PLAQUE_BEVEL
+    zp = np.where(di >= b, T, T - b + np.sqrt(np.maximum(0.0, b * b - (b - di) ** 2)))
+    zp = np.where(di > 0, zp, 0.0)
+
+    # relief + letters
+    rel = _sample_canvas(cv, X, Y)
+    mask = _raster_triangles(_flat_text_triangles(text_obs), xs, ys)
+    soft = blur(mask.astype(np.float64), max(0.6, 0.005 / res))
+    txt = PRINT_TEXT_H * smoothstep(0.2, 0.8, soft)
+    top = np.maximum(rel, txt) * smoothstep(b, b + 0.05, di)
+    Z = zp + top
+
+    inside = Z > 0
+    K = inside[:-1, :-1] | inside[1:, :-1] | inside[:-1, 1:] | inside[1:, 1:]
+    for _ in range(20):                               # remove pinch vertices
+        sw, se = K[:-1, :-1], K[:-1, 1:]
+        nw, ne = K[1:, :-1], K[1:, 1:]
+        pinch = (sw & ne & ~se & ~nw) | (se & nw & ~sw & ~ne)
+        if not pinch.any():
+            break
+        K[:-1, :-1] |= pinch
+        K[:-1, 1:] |= pinch
+        K[1:, :-1] |= pinch
+        K[1:, 1:] |= pinch
+
+    ny, nx = Z.shape
+    vid = np.arange(ny * nx).reshape(ny, nx)
+    ci, cj = np.nonzero(K)
+    quads = np.stack([vid[ci, cj], vid[ci, cj + 1], vid[ci + 1, cj + 1], vid[ci + 1, cj]], 1)
+    used = np.unique(quads)
+    remap = np.full(ny * nx, -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    quads = remap[quads]
+    co = np.stack([X.ravel()[used], Y.ravel()[used], Z.ravel()[used]], 1)
+    # split every cell along the diagonal with the higher corners, so that
+    # no triangle ever lies flat on the bottom (z = 0) plane
+    zc = co[:, 2]
+    use_ac = (zc[quads[:, 0]] + zc[quads[:, 2]]) >= (zc[quads[:, 1]] + zc[quads[:, 3]])
+    q = quads
+    t1 = np.where(use_ac[:, None], q[:, [0, 1, 2]], q[:, [0, 1, 3]])
+    t2 = np.where(use_ac[:, None], q[:, [0, 2, 3]], q[:, [1, 2, 3]])
+    tris = np.concatenate([t1, t2])
+
+    me = bpy.data.meshes.new("Magnet_PRINT")
+    me.vertices.add(len(co))
+    me.vertices.foreach_set("co", co.astype(np.float32).ravel())
+    me.loops.add(tris.size)
+    me.loops.foreach_set("vertex_index", tris.astype(np.int32).ravel())
+    me.polygons.add(len(tris))
+    me.polygons.foreach_set("loop_start", (np.arange(len(tris)) * 3).astype(np.int32))
+    me.update(calc_edges=True)
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    # flat bottom: all boundary vertices lie on z = 0
+    border = [e for e in bm.edges if e.is_boundary]
+    filled = bmesh.ops.holes_fill(bm, edges=border, sides=0)["faces"]
+    bmesh.ops.triangulate(bm, faces=filled, quad_method="BEAUTY", ngon_method="BEAUTY")
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("Magnet_PRINT", me)
+    coll = bpy.data.collections.new("PRINT_3D")
+    bpy.context.scene.collection.children.link(coll)
+    coll.objects.link(ob)
+
+    if PRINT_DECIMATE < 1.0:
+        dec = ob.modifiers.new("Decimate", "DECIMATE")
+        dec.decimate_type = "COLLAPSE"
+        dec.ratio = PRINT_DECIMATE
+        bpy.context.view_layer.objects.active = ob
+        with bpy.context.temp_override(object=ob, active_object=ob):
+            bpy.ops.object.modifier_apply(modifier=dec.name)
+    ob.hide_render = True
+    return ob
+
+
+def check_manifold(ob):
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bad_e = sum(1 for e in bm.edges if len(e.link_faces) != 2)
+    bad_v = sum(1 for v in bm.verts if not v.is_manifold)
+    vol = bm.calc_volume(signed=True)
+    nf = len(bm.faces)
+    bm.free()
+    return bad_e, bad_v, vol, nf
+
+
+def export_stl(ob, path, scale=10.0):
+    """binary STL in millimetres (model units are cm)"""
+    me = ob.data
+    me.calc_loop_triangles()
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3) * scale
+    mw = np.array(ob.matrix_world, dtype=np.float32)
+    co = co @ mw[:3, :3].T + mw[:3, 3] * scale
+    idx = np.empty(len(me.loop_triangles) * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("vertices", idx)
+    tri = co[idx.reshape(-1, 3)]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+    rec = np.zeros(len(tri), dtype=[("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    rec["n"] = n
+    rec["v"] = tri
+    with open(path, "wb") as f:
+        f.write(b"Al-Hadba Minaret magnet - units: mm".ljust(80, b" "))
+        f.write(struct.pack("<I", len(tri)))
+        f.write(rec.tobytes())
+
+
+def main(stl=None, save=None, render=None, render_angle=None, outdir=None):
     if outdir is None:
         outdir = os.path.dirname(os.path.abspath(save)) if save else (
             bpy.path.abspath("//") or os.path.dirname(os.path.abspath(__file__)))
@@ -899,8 +1099,18 @@ def main(save=None, render=None, render_angle=None, outdir=None):
     plaque, outline = build_plaque(mat)
     build_relief(mat, png, cv, zmax, lift, outline)
     font = find_font()
-    build_texts(font, mat)
+    texts = build_texts(font, mat)
     build_stage()
+    if BUILD_PRINT_MESH or stl:
+        print("building watertight print mesh ...")
+        pm = build_print_mesh(cv, outline, list(texts[:3]))
+        bad_e, bad_v, vol, nf = check_manifold(pm)
+        print("print mesh: %d tris, non-manifold edges %d, verts %d, volume %.3f cm3"
+              % (nf, bad_e, bad_v, vol))
+        if stl:
+            export_stl(pm, stl)
+            print("exported", stl)
+        pm.hide_set(True)
     if save:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(save), compress=True)
         print("saved", save)
@@ -919,7 +1129,7 @@ def main(save=None, render=None, render_angle=None, outdir=None):
 
 def _cli():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    opts = {"save": None, "render": None, "render_angle": None, "outdir": None}
+    opts = {"stl": None, "save": None, "render": None, "render_angle": None, "outdir": None}
     i = 0
     while i < len(argv):
         k = argv[i].lstrip("-").replace("-", "_")
