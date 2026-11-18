@@ -20,7 +20,8 @@ PARAMS = {
     "base_w":    10.0,  # flat bottom width (1 cm)
     "neck_w":    7.0,   # narrowest stem width between the two pipes
     "wall":      3.0,   # wall thickness of the outer lip around each pipe
-    "opening":   16.0,  # snap opening (must be < pipe_d). smaller = harder to push in, stronger grip
+    "hook_deg":  32.0,  # how far the outer lip (hook) wraps UNDER the pipe, in degrees below the pipe centre.
+                        # bigger = stronger hook but harder to snap in (opening gets smaller)
     "depth":     50.0,  # length of the part (side view 5 cm)
     "segments":  96,    # arc resolution (per full circle)
 }
@@ -42,11 +43,12 @@ def build_profile(p=PARAMS):
     Rw = r + t                          # outer lip radius
     R = cx + Rw                         # dome radius, centre (0, cz)
 
-    if p["opening"] >= 2 * r:
-        raise ValueError("opening must be smaller than the hole diameter")
     a_in = math.atan2(-cz, -dx)                         # foot point angle (around pipe centre)
-    phi = 2 * math.asin(p["opening"] / (2 * r))         # exposed arc
-    a_tip = a_in + phi                                  # lip tip angle
+    a_tip = -math.radians(p["hook_deg"])                # hook tip angle
+    phi = a_tip - a_in                                  # exposed arc (the snap opening)
+    if not (0 < phi < math.pi):
+        raise ValueError("hook_deg out of range")
+    opening = 2 * r * math.sin(phi / 2)
 
     def arc(ccx, ccz, rad, a0, a1):
         n = max(2, int(abs(a1 - a0) / (2 * math.pi) * seg) + 1)
@@ -80,7 +82,7 @@ def build_profile(p=PARAMS):
     if math.dist(out[0], out[-1]) < 1e-6:
         out.pop()
     info = dict(pipe_center=(cx, cz), dome_radius=R, width=2 * R, height=cz + R,
-                wrap_deg=360 - math.degrees(phi), tip_angle_deg=math.degrees(a_tip))
+                wrap_deg=360 - math.degrees(phi), opening=opening)
     return out, info
 
 

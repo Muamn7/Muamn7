@@ -40,6 +40,7 @@ dim(W/2+4, 0, W/2+4, H, f"{H:.1f} mm", (4, 0))
 dim(cx - PARAMS["pipe_d"]/2, cz, cx + PARAMS["pipe_d"]/2, cz, "Ø17.5", (0, 2))
 dim(-cx - PARAMS["pipe_d"]/2, cz, -cx + PARAMS["pipe_d"]/2, cz, "Ø17.5", (0, 2))
 ax.set_aspect("equal"); ax.set_xlim(-W/2-6, W/2+12); ax.set_ylim(-10, H+5)
+ax.text(cx+11, cz-9, f"hook {PARAMS['hook_deg']:.0f}°\nopening {info['opening']:.1f}", fontsize=9, color="#d1352b")
 ax.set_title("Front view (mm)  -  red dashed = pipe"); ax.grid(alpha=.25)
 
 ax3 = fig.add_subplot(1, 2, 2, projection="3d")
