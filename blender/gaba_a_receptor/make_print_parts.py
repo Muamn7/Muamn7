@@ -57,6 +57,12 @@ IDENT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], float)
 #  orient: "front" (face up, flat back) | "up" (as assembled) | "axis" (rod upright)
 #  keep : half-spaces kept (normal, offset): n.x >= offset   (mm, model frame)
 #  "obj@L" / "obj@R" = only the shells of obj on the left / right (x<0 / x>0)
+# lipid heads that stick out of the membrane core overhang the void below them
+# (the lower row sits on the bed on a single point -> "eggs"). Each head gets a
+# 45-degree cone under it, which prints without supports and keeps the round
+# look from the front. Front-row top heads lean their cone back into the face.
+TEARDROP = dict(obj="Lipid_Heads", face_front=-3.0, z_mid=105.0)
+
 PARTS = [
     dict(id="BASE", step=1, orient="up", split=True,
          vols=[("Navy", ["Base_Pedestal", "Base_MembranePlatform"])],
@@ -76,10 +82,12 @@ PARTS = [
     # no loose yellow rows; clean straight cut where the alpha subunit sits.
     dict(id="MEMBRANE_L", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((-1, 0, 0), 50.0)],
          vols=[("White", ["Lipid_Core_L", "Lipid_Tails_Relief@L", "Lipid_Heads@L"])],
-         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_L", "ALPHA_BACK_L"], prism_cut=True),
+         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_L", "ALPHA_BACK_L"], prism_cut=True,
+         teardrop=TEARDROP),
     dict(id="MEMBRANE_R", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((1, 0, 0), 50.0)],
          vols=[("White", ["Lipid_Core_R", "Lipid_Tails_Relief@R", "Lipid_Heads@R"])],
-         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_R", "ALPHA_BACK_R"], prism_cut=True),
+         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_R", "ALPHA_BACK_R"], prism_cut=True,
+         teardrop=TEARDROP),
     dict(id="CHANNEL", step=5, orient="front",
          vols=[("Green", ["Channel_Pore"]),
                ("Lime", ["Cl_Ion_1", "Cl_Ion_2", "Channel_Arrow"])],
@@ -202,6 +210,28 @@ def load(name, raw_dir):
     return union(shells)
 
 
+def teardrop_heads(name, raw_dir, td):
+    """head spheres -> sphere + 45 deg support cone (hull with an apex point)"""
+    load(name, raw_dir)                               # fills the cache
+    base, side = name.split("@")
+    out = []
+    for sh in _CACHE[base]:                           # raw shells = single spheres
+        b = np.array(sh.bounding_box())
+        if ((b[0] + b[3]) / 2 < 0) != (side == "L"):
+            continue
+        b = np.array(sh.bounding_box())
+        c, r = (b[:3] + b[3:]) / 2, (b[3] - b[0]) / 2
+        drop = r * math.sqrt(2.0)                     # apex of the 45 deg cone
+        if c[2] > td["z_mid"] and c[1] < td["face_front"]:
+            back = td["face_front"] + 1.0 - c[1]      # lean the cone into the face
+            apex = (c[0], c[1] + back, c[2] - drop - back)
+        else:
+            apex = (c[0], c[1], c[2] - drop)
+        v = np.asarray(sh.to_mesh().vert_properties)[:, :3]
+        out.append(Manifold.hull_points(np.vstack([v, apex])))
+    return union(out)
+
+
 def union(ms):
     ms = [m for m in ms if m is not None and not m.is_empty()]
     if not ms:
@@ -285,7 +315,9 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     for p in PARTS:
         vols = []
         for i, (fil, objs) in enumerate(p["vols"]):
-            m = union([load(o, raw_dir) for o in objs])
+            td = p.get("teardrop")
+            m = union([teardrop_heads(o, raw_dir, td) if td and o.startswith(td["obj"])
+                       else load(o, raw_dir) for o in objs])
             for n, off in p.get("keep", []):
                 m = m.trim_by_plane(n, off)
             if p["orient"] == "front" and i == 0:
