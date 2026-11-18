@@ -212,7 +212,7 @@ def load(name, raw_dir):
     return union(shells)
 
 
-def teardrop_heads(name, raw_dir, td):
+def teardrop_heads(name, raw_dir, td, intact=None):
     """head spheres -> sphere + 45 deg support cone (hull with an apex point)
     name "Lipid_Heads@R!heads": the balls + the cones of the bottom row (yellow)
          "Lipid_Heads@R!necks": the cones under the top row only (white)"""
@@ -223,6 +223,8 @@ def teardrop_heads(name, raw_dir, td):
     for sh in _CACHE[base]:                           # raw shells = single spheres
         b = np.array(sh.bounding_box())
         if ((b[0] + b[3]) / 2 < 0) != (side == "L"):
+            continue
+        if intact is not None and not intact(sh):
             continue
         b = np.array(sh.bounding_box())
         c, r = (b[:3] + b[3:]) / 2, (b[3] - b[0]) / 2
@@ -324,12 +326,30 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     spec = {p["id"]: p for p in PARTS}
 
     # 1) raw colour volumes, trimmed, rounded backs flattened
-    raw = {}
-    for p in PARTS:
+    #    (membranes last: which lipid heads stay depends on the parts cutting them)
+    raw, grown = {}, {}
+    for p in sorted(PARTS, key=lambda p: bool(p.get("teardrop"))):
+        td = p.get("teardrop")
+        intact = None
+        if td:
+            for c in p.get("cut", []):
+                if c not in grown:
+                    grown[c] = grow(union([m for _, m in raw[c]]))
+            hcut = union([grown[c] for c in p.get("cut", [])])
+            if p.get("prism_cut"):
+                hcut = prism_y(hcut)
+
+            side_keep = [k for k in p.get("keep", []) if k[0][2] == 0]   # not the bed plane
+
+            def intact(sh, hcut=hcut, keep=side_keep):
+                # a head that would be sliced (flat circle / half ball) is left out
+                m = sh
+                for n, off in keep:
+                    m = m.trim_by_plane(n, off)
+                return (m - hcut).volume() >= 0.999 * sh.volume()
         vols = []
         for i, (fil, objs) in enumerate(p["vols"]):
-            td = p.get("teardrop")
-            m = union([teardrop_heads(o, raw_dir, td) if td and o.startswith(td["obj"])
+            m = union([teardrop_heads(o, raw_dir, td, intact) if td and o.startswith(td["obj"])
                        else load(o, raw_dir) for o in objs])
             for n, off in p.get("keep", []):
                 m = m.trim_by_plane(n, off)
@@ -340,7 +360,6 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     solid = {k: union([m for _, m in v]) for k, v in raw.items()}
 
     # 2) pockets / holes / slots for the parts seated into each part
-    grown = {}
     for p in PARTS:
         for c in p.get("cut", []):
             if c not in grown:
