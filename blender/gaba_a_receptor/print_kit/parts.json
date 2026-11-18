@@ -202,20 +202,11 @@
    "plate": 1,
    "step": 4,
    "colours": [
-    "Yellow",
-    "White"
+    "White",
+    "Yellow"
    ],
-   "start_colour": "Yellow",
-   "colour_change_mm": [
-    [
-     13.5,
-     "White"
-    ],
-    [
-     48.0,
-     "Yellow"
-    ]
-   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
    "bodies": 1,
    "size_mm": [
     86.0,
@@ -608,20 +599,11 @@
    "plate": 3,
    "step": 4,
    "colours": [
-    "Yellow",
-    "White"
+    "White",
+    "Yellow"
    ],
-   "start_colour": "Yellow",
-   "colour_change_mm": [
-    [
-     13.5,
-     "White"
-    ],
-    [
-     48.0,
-     "Yellow"
-    ]
-   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
    "bodies": 1,
    "size_mm": [
     86.0,

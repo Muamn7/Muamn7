@@ -77,16 +77,18 @@ PARTS = [
     dict(id="ARROW_RIGHT", step=2, orient="front", vols=[("White", ["Plaque_RightArrow"])]),
     dict(id="TITLE_STAND", step=3, orient="front", vols=[("White", ["Title_Stand"])],
          cut=["GAMMA", "CHANNEL"]),
-    # membrane: ONE clean solid, coloured by height bands (yellow head rows at the
-    # bottom and top, white core between) -> no hemispherical holes in the white,
-    # no loose yellow rows; clean straight cut where the alpha subunit sits.
+    # membrane: two colour parts like the first kit -> YELLOW = only the lipid
+    # heads (+ the 45 deg cones of the bottom row), WHITE = core, tails and the
+    # small 45 deg necks under the top heads; clean straight cut next to alpha.
     dict(id="MEMBRANE_L", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((-1, 0, 0), 50.0)],
-         vols=[("White", ["Lipid_Core_L", "Lipid_Tails_Relief@L", "Lipid_Heads@L"])],
-         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_L", "ALPHA_BACK_L"], prism_cut=True,
+         vols=[("White", ["Lipid_Core_L", "Lipid_Tails_Relief@L", "Lipid_Heads@L!necks"]),
+               ("Yellow", ["Lipid_Heads@L!heads"])],
+         cut=["ALPHA_L", "ALPHA_BACK_L"], prism_cut=True,
          teardrop=TEARDROP),
     dict(id="MEMBRANE_R", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((1, 0, 0), 50.0)],
-         vols=[("White", ["Lipid_Core_R", "Lipid_Tails_Relief@R", "Lipid_Heads@R"])],
-         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_R", "ALPHA_BACK_R"], prism_cut=True,
+         vols=[("White", ["Lipid_Core_R", "Lipid_Tails_Relief@R", "Lipid_Heads@R!necks"]),
+               ("Yellow", ["Lipid_Heads@R!heads"])],
+         cut=["ALPHA_R", "ALPHA_BACK_R"], prism_cut=True,
          teardrop=TEARDROP),
     dict(id="CHANNEL", step=5, orient="front",
          vols=[("Green", ["Channel_Pore"]),
@@ -211,7 +213,10 @@ def load(name, raw_dir):
 
 
 def teardrop_heads(name, raw_dir, td):
-    """head spheres -> sphere + 45 deg support cone (hull with an apex point)"""
+    """head spheres -> sphere + 45 deg support cone (hull with an apex point)
+    name "Lipid_Heads@R!heads": the balls + the cones of the bottom row (yellow)
+         "Lipid_Heads@R!necks": the cones under the top row only (white)"""
+    name, mode = (name.split("!") + ["all"])[:2]
     load(name, raw_dir)                               # fills the cache
     base, side = name.split("@")
     out = []
@@ -228,7 +233,15 @@ def teardrop_heads(name, raw_dir, td):
         else:
             apex = (c[0], c[1], c[2] - drop)
         v = np.asarray(sh.to_mesh().vert_properties)[:, :3]
-        out.append(Manifold.hull_points(np.vstack([v, apex])))
+        tear = Manifold.hull_points(np.vstack([v, apex]))
+        top = c[2] > td["z_mid"]
+        if mode == "heads":
+            out.append(sh if top else tear)
+        elif mode == "necks":
+            if top:
+                out.append(tear)
+        else:
+            out.append(tear)
     return union(out)
 
 
@@ -361,6 +374,8 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
             outer = whole.trim_by_plane((0, 0, -1), -zlo) + whole.trim_by_plane((0, 0, 1), zhi)
             mid = whole.trim_by_plane((0, 0, 1), zlo).trim_by_plane((0, 0, -1), -zhi)
             vols = [(fil_out, outer), (vols[0][0], mid)]
+        # remove sub-1 mm3 specks/slivers that the boolean subtractions leave behind
+        vols = [(f, union([b for b in m.decompose() if b.volume() >= 1.0])) for f, m in vols]
         final[p["id"]] = vols
         p["_bodies"] = len(keep)
 
