@@ -7,26 +7,25 @@
  "max_colours_per_plate": 4,
  "plates": {
   "1": [
-   "Navy",
-   "Purple",
-   "White",
-   "Yellow"
-  ],
-  "2": [
    "Blue",
    "Navy",
    "Red",
    "White"
   ],
-  "3": [
-   "Green",
-   "Lime",
+  "2": [
+   "LightBlue",
+   "Navy",
    "White",
    "Yellow"
   ],
+  "3": [
+   "Green",
+   "Lime",
+   "Purple",
+   "White"
+  ],
   "4": [
-   "DarkPurple",
-   "LightBlue"
+   "DarkPurple"
   ]
  },
  "filaments": {
@@ -124,26 +123,6 @@
   },
   {
    "no": 5,
-   "id": "ARROW_RIGHT",
-   "plate": 1,
-   "step": 2,
-   "colours": [
-    "White"
-   ],
-   "start_colour": "White",
-   "colour_change_mm": [],
-   "bodies": 1,
-   "size_mm": [
-    19.7,
-    7.6,
-    5.0
-   ],
-   "files": [
-    "P05_ARROW_RIGHT__White.stl"
-   ]
-  },
-  {
-   "no": 6,
    "id": "PLAQUE_CL",
    "plate": 1,
    "step": 2,
@@ -165,12 +144,12 @@
     9.6
    ],
    "files": [
-    "P06_PLAQUE_CL__White.stl",
-    "P06_PLAQUE_CL__Navy.stl"
+    "P05_PLAQUE_CL__White.stl",
+    "P05_PLAQUE_CL__Navy.stl"
    ]
   },
   {
-   "no": 7,
+   "no": 6,
    "id": "PLAQUE_INHIBITION",
    "plate": 1,
    "step": 2,
@@ -192,212 +171,68 @@
     9.6
    ],
    "files": [
-    "P07_PLAQUE_INHIBITION__White.stl",
-    "P07_PLAQUE_INHIBITION__Navy.stl"
+    "P06_PLAQUE_INHIBITION__White.stl",
+    "P06_PLAQUE_INHIBITION__Navy.stl"
+   ]
+  },
+  {
+   "no": 7,
+   "id": "BETA_L",
+   "plate": 1,
+   "step": 8,
+   "colours": [
+    "Blue",
+    "White"
+   ],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     28.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    50.0,
+    46.6,
+    30.1
+   ],
+   "files": [
+    "P07_BETA_L__Blue.stl",
+    "P07_BETA_L__White.stl"
    ]
   },
   {
    "no": 8,
-   "id": "MEMBRANE_R",
+   "id": "BETA_R",
    "plate": 1,
-   "step": 4,
+   "step": 8,
    "colours": [
-    "White",
-    "Yellow"
+    "Blue",
+    "White"
    ],
-   "start_colour": "White",
-   "colour_change_mm": [],
+   "start_colour": "Blue",
+   "colour_change_mm": [
+    [
+     28.0,
+     "White"
+    ]
+   ],
    "bodies": 1,
    "size_mm": [
-    86.0,
-    52.0,
-    62.0
+    50.0,
+    46.6,
+    30.1
    ],
    "files": [
-    "P08_MEMBRANE_R__White.stl",
-    "P08_MEMBRANE_R__Yellow.stl"
-   ],
-   "note_ar": "نسخة محسّنة: الألوان بالارتفاع (أصفر/أبيض/أصفر)، قطعة واحدة نظيفة، ذيول محفورة على الجانب والخلف"
+    "P08_BETA_R__Blue.stl",
+    "P08_BETA_R__White.stl"
+   ]
   },
   {
    "no": 9,
-   "id": "ALPHA_L",
-   "plate": 1,
-   "step": 7,
-   "colours": [
-    "Purple",
-    "White"
-   ],
-   "start_colour": "Purple",
-   "colour_change_mm": [
-    [
-     32.0,
-     "White"
-    ]
-   ],
-   "bodies": 1,
-   "size_mm": [
-    69.9,
-    128.2,
-    34.2
-   ],
-   "files": [
-    "P09_ALPHA_L__Purple.stl",
-    "P09_ALPHA_L__White.stl"
-   ]
-  },
-  {
-   "no": 10,
-   "id": "ALPHA_R",
-   "plate": 1,
-   "step": 7,
-   "colours": [
-    "Purple",
-    "White"
-   ],
-   "start_colour": "Purple",
-   "colour_change_mm": [
-    [
-     32.0,
-     "White"
-    ]
-   ],
-   "bodies": 1,
-   "size_mm": [
-    69.9,
-    128.2,
-    34.2
-   ],
-   "files": [
-    "P10_ALPHA_R__Purple.stl",
-    "P10_ALPHA_R__White.stl"
-   ]
-  },
-  {
-   "no": 11,
-   "id": "GAMMA",
-   "plate": 1,
-   "step": 8,
-   "colours": [
-    "Yellow",
-    "Navy"
-   ],
-   "start_colour": "Yellow",
-   "colour_change_mm": [
-    [
-     26.0,
-     "Navy"
-    ]
-   ],
-   "bodies": 1,
-   "size_mm": [
-    41.8,
-    56.1,
-    28.1
-   ],
-   "files": [
-    "P11_GAMMA__Yellow.stl",
-    "P11_GAMMA__Navy.stl"
-   ]
-  },
-  {
-   "no": 12,
-   "id": "BASE_R",
-   "plate": 2,
-   "step": 1,
-   "colours": [
-    "Navy"
-   ],
-   "start_colour": "Navy",
-   "colour_change_mm": [],
-   "bodies": 1,
-   "size_mm": [
-    150.0,
-    120.0,
-    75.0
-   ],
-   "files": [
-    "P12_BASE_R__Navy.stl"
-   ]
-  },
-  {
-   "no": 13,
-   "id": "TITLE_STAND",
-   "plate": 2,
-   "step": 3,
-   "colours": [
-    "White"
-   ],
-   "start_colour": "White",
-   "colour_change_mm": [],
-   "bodies": 1,
-   "size_mm": [
-    50.0,
-    145.0,
-    10.0
-   ],
-   "files": [
-    "P13_TITLE_STAND__White.stl"
-   ]
-  },
-  {
-   "no": 14,
-   "id": "BETA_L",
-   "plate": 2,
-   "step": 8,
-   "colours": [
-    "Blue",
-    "White"
-   ],
-   "start_colour": "Blue",
-   "colour_change_mm": [
-    [
-     28.0,
-     "White"
-    ]
-   ],
-   "bodies": 1,
-   "size_mm": [
-    50.0,
-    46.6,
-    30.1
-   ],
-   "files": [
-    "P14_BETA_L__Blue.stl",
-    "P14_BETA_L__White.stl"
-   ]
-  },
-  {
-   "no": 15,
-   "id": "BETA_R",
-   "plate": 2,
-   "step": 8,
-   "colours": [
-    "Blue",
-    "White"
-   ],
-   "start_colour": "Blue",
-   "colour_change_mm": [
-    [
-     28.0,
-     "White"
-    ]
-   ],
-   "bodies": 1,
-   "size_mm": [
-    50.0,
-    46.6,
-    30.1
-   ],
-   "files": [
-    "P15_BETA_R__Blue.stl",
-    "P15_BETA_R__White.stl"
-   ]
-  },
-  {
-   "no": 16,
    "id": "GABA_BALL",
-   "plate": 2,
+   "plate": 1,
    "step": 10,
    "colours": [
     "Red"
@@ -411,13 +246,13 @@
     11.7
    ],
    "files": [
-    "P16_GABA_BALL__Red.stl"
+    "P09_GABA_BALL__Red.stl"
    ]
   },
   {
-   "no": 17,
+   "no": 10,
    "id": "TITLE",
-   "plate": 2,
+   "plate": 1,
    "step": 11,
    "colours": [
     "Blue",
@@ -442,15 +277,15 @@
     12.6
    ],
    "files": [
-    "P17_TITLE__Blue.stl",
-    "P17_TITLE__Navy.stl",
-    "P17_TITLE__White.stl"
+    "P10_TITLE__Blue.stl",
+    "P10_TITLE__Navy.stl",
+    "P10_TITLE__White.stl"
    ]
   },
   {
-   "no": 18,
+   "no": 11,
    "id": "STRUT_DIAZEPAM",
-   "plate": 2,
+   "plate": 1,
    "step": 12,
    "colours": [
     "Blue"
@@ -464,13 +299,13 @@
     35.2
    ],
    "files": [
-    "P18_STRUT_DIAZEPAM__Blue.stl"
+    "P11_STRUT_DIAZEPAM__Blue.stl"
    ]
   },
   {
-   "no": 19,
+   "no": 12,
    "id": "STRUT_GABA",
-   "plate": 2,
+   "plate": 1,
    "step": 12,
    "colours": [
     "Red"
@@ -484,13 +319,13 @@
     31.6
    ],
    "files": [
-    "P19_STRUT_GABA__Red.stl"
+    "P12_STRUT_GABA__Red.stl"
    ]
   },
   {
-   "no": 20,
+   "no": 13,
    "id": "CALLOUT_DIAZEPAM",
-   "plate": 2,
+   "plate": 1,
    "step": 13,
    "colours": [
     "Blue",
@@ -515,15 +350,15 @@
     9.4
    ],
    "files": [
-    "P20_CALLOUT_DIAZEPAM__Blue.stl",
-    "P20_CALLOUT_DIAZEPAM__White.stl",
-    "P20_CALLOUT_DIAZEPAM__Navy.stl"
+    "P13_CALLOUT_DIAZEPAM__Blue.stl",
+    "P13_CALLOUT_DIAZEPAM__White.stl",
+    "P13_CALLOUT_DIAZEPAM__Navy.stl"
    ]
   },
   {
-   "no": 21,
+   "no": 14,
    "id": "CALLOUT_GABA",
-   "plate": 2,
+   "plate": 1,
    "step": 13,
    "colours": [
     "Red",
@@ -548,15 +383,15 @@
     9.4
    ],
    "files": [
-    "P21_CALLOUT_GABA__Red.stl",
-    "P21_CALLOUT_GABA__White.stl",
-    "P21_CALLOUT_GABA__Navy.stl"
+    "P14_CALLOUT_GABA__Red.stl",
+    "P14_CALLOUT_GABA__White.stl",
+    "P14_CALLOUT_GABA__Navy.stl"
    ]
   },
   {
-   "no": 22,
+   "no": 15,
    "id": "ARROW_DIAZEPAM",
-   "plate": 2,
+   "plate": 1,
    "step": 14,
    "colours": [
     "Blue"
@@ -570,13 +405,13 @@
     33.5
    ],
    "files": [
-    "P22_ARROW_DIAZEPAM__Blue.stl"
+    "P15_ARROW_DIAZEPAM__Blue.stl"
    ]
   },
   {
-   "no": 23,
+   "no": 16,
    "id": "ARROW_GABA",
-   "plate": 2,
+   "plate": 1,
    "step": 14,
    "colours": [
     "Red"
@@ -590,13 +425,33 @@
     30.1
    ],
    "files": [
-    "P23_ARROW_GABA__Red.stl"
+    "P16_ARROW_GABA__Red.stl"
    ]
   },
   {
-   "no": 24,
+   "no": 17,
+   "id": "BASE_R",
+   "plate": 2,
+   "step": 1,
+   "colours": [
+    "Navy"
+   ],
+   "start_colour": "Navy",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    150.0,
+    120.0,
+    75.0
+   ],
+   "files": [
+    "P17_BASE_R__Navy.stl"
+   ]
+  },
+  {
+   "no": 18,
    "id": "MEMBRANE_L",
-   "plate": 3,
+   "plate": 2,
    "step": 4,
    "colours": [
     "White",
@@ -611,13 +466,121 @@
     62.0
    ],
    "files": [
-    "P24_MEMBRANE_L__White.stl",
-    "P24_MEMBRANE_L__Yellow.stl"
-   ],
-   "note_ar": "نسخة محسّنة: الألوان بالارتفاع (أصفر/أبيض/أصفر)، قطعة واحدة نظيفة، ذيول محفورة على الجانب والخلف"
+    "P18_MEMBRANE_L__White.stl",
+    "P18_MEMBRANE_L__Yellow.stl"
+   ]
   },
   {
-   "no": 25,
+   "no": 19,
+   "id": "MEMBRANE_R",
+   "plate": 2,
+   "step": 4,
+   "colours": [
+    "White",
+    "Yellow"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    86.0,
+    52.0,
+    62.0
+   ],
+   "files": [
+    "P19_MEMBRANE_R__White.stl",
+    "P19_MEMBRANE_R__Yellow.stl"
+   ]
+  },
+  {
+   "no": 20,
+   "id": "GAMMA",
+   "plate": 2,
+   "step": 8,
+   "colours": [
+    "Yellow",
+    "Navy"
+   ],
+   "start_colour": "Yellow",
+   "colour_change_mm": [
+    [
+     26.0,
+     "Navy"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    41.8,
+    56.1,
+    28.1
+   ],
+   "files": [
+    "P20_GAMMA__Yellow.stl",
+    "P20_GAMMA__Navy.stl"
+   ]
+  },
+  {
+   "no": 21,
+   "id": "DIAZEPAM_BALL",
+   "plate": 2,
+   "step": 10,
+   "colours": [
+    "LightBlue"
+   ],
+   "start_colour": "LightBlue",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    16.0,
+    16.0,
+    11.5
+   ],
+   "files": [
+    "P21_DIAZEPAM_BALL__LightBlue.stl"
+   ]
+  },
+  {
+   "no": 22,
+   "id": "ARROW_RIGHT",
+   "plate": 3,
+   "step": 2,
+   "colours": [
+    "White"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    19.7,
+    7.6,
+    5.0
+   ],
+   "files": [
+    "P22_ARROW_RIGHT__White.stl"
+   ]
+  },
+  {
+   "no": 23,
+   "id": "TITLE_STAND",
+   "plate": 3,
+   "step": 3,
+   "colours": [
+    "White"
+   ],
+   "start_colour": "White",
+   "colour_change_mm": [],
+   "bodies": 1,
+   "size_mm": [
+    50.0,
+    145.0,
+    10.0
+   ],
+   "files": [
+    "P23_TITLE_STAND__White.stl"
+   ]
+  },
+  {
+   "no": 24,
    "id": "CHANNEL",
    "plate": 3,
    "step": 5,
@@ -639,12 +602,66 @@
     30.2
    ],
    "files": [
-    "P25_CHANNEL__Green.stl",
-    "P25_CHANNEL__Lime.stl"
+    "P24_CHANNEL__Green.stl",
+    "P24_CHANNEL__Lime.stl"
+   ]
+  },
+  {
+   "no": 25,
+   "id": "ALPHA_L",
+   "plate": 3,
+   "step": 7,
+   "colours": [
+    "Purple",
+    "White"
+   ],
+   "start_colour": "Purple",
+   "colour_change_mm": [
+    [
+     32.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    69.9,
+    128.2,
+    34.2
+   ],
+   "files": [
+    "P25_ALPHA_L__Purple.stl",
+    "P25_ALPHA_L__White.stl"
    ]
   },
   {
    "no": 26,
+   "id": "ALPHA_R",
+   "plate": 3,
+   "step": 7,
+   "colours": [
+    "Purple",
+    "White"
+   ],
+   "start_colour": "Purple",
+   "colour_change_mm": [
+    [
+     32.0,
+     "White"
+    ]
+   ],
+   "bodies": 1,
+   "size_mm": [
+    69.9,
+    128.2,
+    34.2
+   ],
+   "files": [
+    "P26_ALPHA_R__Purple.stl",
+    "P26_ALPHA_R__White.stl"
+   ]
+  },
+  {
+   "no": 27,
    "id": "EXIT_ION",
    "plate": 3,
    "step": 9,
@@ -661,12 +678,12 @@
     24.0
    ],
    "files": [
-    "P26_EXIT_ION__Lime.stl",
-    "P26_EXIT_ION__White.stl"
+    "P27_EXIT_ION__Lime.stl",
+    "P27_EXIT_ION__White.stl"
    ]
   },
   {
-   "no": 27,
+   "no": 28,
    "id": "ALPHA_BACK_L",
    "plate": 4,
    "step": 6,
@@ -682,11 +699,11 @@
     26.0
    ],
    "files": [
-    "P27_ALPHA_BACK_L__DarkPurple.stl"
+    "P28_ALPHA_BACK_L__DarkPurple.stl"
    ]
   },
   {
-   "no": 28,
+   "no": 29,
    "id": "ALPHA_BACK_R",
    "plate": 4,
    "step": 6,
@@ -702,27 +719,7 @@
     26.0
    ],
    "files": [
-    "P28_ALPHA_BACK_R__DarkPurple.stl"
-   ]
-  },
-  {
-   "no": 29,
-   "id": "DIAZEPAM_BALL",
-   "plate": 4,
-   "step": 10,
-   "colours": [
-    "LightBlue"
-   ],
-   "start_colour": "LightBlue",
-   "colour_change_mm": [],
-   "bodies": 1,
-   "size_mm": [
-    16.0,
-    16.0,
-    11.5
-   ],
-   "files": [
-    "P29_DIAZEPAM_BALL__LightBlue.stl"
+    "P29_ALPHA_BACK_R__DarkPurple.stl"
    ]
   }
  ],

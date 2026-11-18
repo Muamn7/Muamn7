@@ -57,10 +57,10 @@ IDENT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], float)
 #  orient: "front" (face up, flat back) | "up" (as assembled) | "axis" (rod upright)
 #  keep : half-spaces kept (normal, offset): n.x >= offset   (mm, model frame)
 #  "obj@L" / "obj@R" = only the shells of obj on the left / right (x<0 / x>0)
-# lipid heads that stick out of the membrane core overhang the void below them
-# (the lower row sits on the bed on a single point -> "eggs"). Each head gets a
-# 45-degree cone under it, which prints without supports and keeps the round
-# look from the front. Front-row top heads lean their cone back into the face.
+# lipid heads stay true SPHERES (as in the design). HEAD_CONES = True would add
+# a 45-degree cone under each head so it prints without supports - the owner
+# chose round heads, so the cones are OFF and the heads need tree supports.
+HEAD_CONES = False
 TEARDROP = dict(obj="Lipid_Heads", face_front=-3.0, z_mid=105.0)
 
 PARTS = [
@@ -234,9 +234,13 @@ def teardrop_heads(name, raw_dir, td, intact=None):
             apex = (c[0], c[1] + back, c[2] - drop - back)
         else:
             apex = (c[0], c[1], c[2] - drop)
+        top = c[2] > td["z_mid"]
+        if not HEAD_CONES:                            # plain round heads
+            if mode != "necks":
+                out.append(sh)
+            continue
         v = np.asarray(sh.to_mesh().vert_properties)[:, :3]
         tear = Manifold.hull_points(np.vstack([v, apex]))
-        top = c[2] > td["z_mid"]
         if mode == "heads":
             out.append(sh if top else tear)
         elif mode == "necks":
