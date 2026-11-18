@@ -497,9 +497,11 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     big = sorted([i for i in range(len(kit)) if area(i) > 6000], key=lambda i: -area(i))
     small = sorted([i for i in range(len(kit)) if area(i) <= 6000], key=lambda i: -area(i))
     best, best_key = None, None
-    for t in range(150):                                   # try many orders, keep best
+    for t in range(1500):                                  # try many orders, keep best
         if t:
             rng.shuffle(small)
+            if t % 3 == 0:
+                rng.shuffle(big)
         pls = greedy(big + small)
         key = (len(pls), sum(len(pl[1]) for pl in pls))
         if best is None or key < best_key:
@@ -523,6 +525,7 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     kit.sort(key=lambda k: (k["plate"], k["step"], k["id"]))
     manifest = []
     for n, k in enumerate(kit, 1):
+        k["no"] = n
         d = os.path.join(out_dir, "plate_%d" % k["plate"])
         os.makedirs(d, exist_ok=True)
         files = []
@@ -539,6 +542,107 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
                        plates={str(i + 1): sorted(pl[1]) for i, pl in enumerate(plates)}, filaments=FILAMENT, parts=manifest,
                        steps_ar=STEPS_AR), fh, indent=1, ensure_ascii=False)
     return kit, manifest, final
+
+
+# ------------------------------------------------------------------ 3MF
+# filament slot priority: a colour keeps a low slot number whenever possible
+SLOT_ORDER = ["Navy", "White", "Purple", "Blue", "Red", "Yellow", "Green", "Lime",
+              "DarkPurple", "LightBlue"]
+
+
+def write_3mf(path, objects, slots):
+    """Orca / Bambu / Flashforge-Orca project 3MF.
+
+    objects: [(name, [(filament, Manifold in bed coords)])]  -> ONE object each,
+             every colour volume is a part of it with its own extruder slot.
+    slots  : {filament: 1-based extruder}
+    """
+    import uuid
+    import zipfile
+
+    def u():
+        return str(uuid.uuid4())
+
+    sub, comps, build, cfg = [], [], [], []
+    mid = 0
+    for oi, (name, vols) in enumerate(objects):
+        whole = union([m for _, m in vols])
+        b = whole.bounding_box()
+        cx, cy, z0 = (b[0] + b[3]) / 2, (b[1] + b[4]) / 2, b[2]
+        parts_xml, parts_cfg = [], []
+        for fil, m in vols:
+            if m.is_empty():
+                continue
+            mid += 1
+            mesh = m.to_mesh()
+            v = np.asarray(mesh.vert_properties)[:, :3] - (cx, cy, z0)
+            t = np.asarray(mesh.tri_verts)
+            vx = "".join('<vertex x="%.4f" y="%.4f" z="%.4f"/>' % tuple(r) for r in v)
+            tx = "".join('<triangle v1="%d" v2="%d" v3="%d"/>' % tuple(r) for r in t)
+            sub.append('<object id="%d" p:UUID="%s" type="model"><mesh><vertices>%s'
+                       '</vertices><triangles>%s</triangles></mesh></object>' % (mid, u(), vx, tx))
+            parts_xml.append('<component p:path="/3D/Objects/object_1.model" objectid="%d" '
+                             'p:UUID="%s" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>' % (mid, u()))
+            parts_cfg.append('  <part id="%d" subtype="normal_part">\n'
+                             '   <metadata key="name" value="%s__%s"/>\n'
+                             '   <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
+                             '   <metadata key="extruder" value="%d"/>\n  </part>'
+                             % (mid, name, fil, slots[fil]))
+        oid = 10000 + oi
+        comps.append('<object id="%d" p:UUID="%s" type="model"><components>%s</components>'
+                     '</object>' % (oid, u(), "".join(parts_xml)))
+        build.append('<item objectid="%d" p:UUID="%s" transform="1 0 0 0 1 0 0 0 1 %.4f %.4f %.4f" '
+                     'printable="1"/>' % (oid, u(), cx, cy, z0))
+        cfg.append(' <object id="%d">\n  <metadata key="name" value="%s"/>\n'
+                   '  <metadata key="extruder" value="%d"/>\n%s\n </object>'
+                   % (oid, name, slots[vols[0][0]], "\n".join(parts_cfg)))
+
+    NS = ('xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+          'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" '
+          'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"')
+    model = ('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" %s '
+             'requiredextensions="p">\n<metadata name="Application">BambuStudio-01.09.00.00</metadata>\n'
+             '<metadata name="BambuStudio:3mfVersion">1</metadata>\n'
+             '<metadata name="Title">GABA-A receptor kit</metadata>\n'
+             '<resources>%s</resources>\n<build p:UUID="%s">%s</build>\n</model>\n'
+             % (NS, "".join(comps), u(), "".join(build)))
+    objs = ('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" %s '
+            'requiredextensions="p">\n<metadata name="BambuStudio:3mfVersion">1</metadata>\n'
+            '<resources>%s</resources>\n<build/>\n</model>\n' % (NS, "".join(sub)))
+    ctypes = ('<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/'
+              'package/2006/content-types"><Default Extension="rels" ContentType="application/'
+              'vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" '
+              'ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+              '<Default Extension="config" ContentType="text/xml"/></Types>')
+    rels = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/'
+            'package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" '
+            'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
+    mrels = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/'
+             'package/2006/relationships"><Relationship Target="/3D/Objects/object_1.model" '
+             'Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+             '</Relationships>')
+    conf = '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n%s\n</config>\n' % "\n".join(cfg)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", ctypes)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("3D/3dmodel.model", model)
+        z.writestr("3D/_rels/3dmodel.model.rels", mrels)
+        z.writestr("3D/Objects/object_1.model", objs)
+        z.writestr("Metadata/model_settings.config", conf)
+
+
+def write_plate_3mfs(out_dir, kit, prefix="GABA_A"):
+    """one coloured 3MF per plate; returns {plate: {filament: slot}}"""
+    plates = sorted({k["plate"] for k in kit})
+    slot_maps = {}
+    for pl in plates:
+        ks = [k for k in kit if k["plate"] == pl]
+        fils = sorted({f for k in ks for f, _ in k["vols"]}, key=SLOT_ORDER.index)
+        slots = {f: i + 1 for i, f in enumerate(fils)}
+        objs = [("P%02d_%s" % (k["no"], k["id"]), k["vols"]) for k in ks]
+        write_3mf(os.path.join(out_dir, "%s_plate_%d.3mf" % (prefix, pl)), objs, slots)
+        slot_maps[pl] = slots
+    return slot_maps
 
 
 # ------------------------------------------------------------------ checks
@@ -564,6 +668,13 @@ if __name__ == "__main__":
     mc = int(a[a.index("--max-colours") + 1]) if "--max-colours" in a else 4
     asm = a[a.index("--assembled") + 1] if "--assembled" in a else None
     kit, man, final = build(a[0], a[1], bed, mc, asm)
+    if "--3mf" in a:
+        sm = write_plate_3mfs(a[1], kit)
+        info = json.load(open(os.path.join(a[1], "parts.json")))
+        info["slots_3mf"] = {str(k): v for k, v in sm.items()}
+        json.dump(info, open(os.path.join(a[1], "parts.json"), "w"), indent=1, ensure_ascii=False)
+        for k, v in sm.items():
+            print("3MF plate", k, "slots:", v)
     for p in man:
         print("%2d plate %d  %-18s %-28s %5.0fx%-4.0fx%4.0f bodies=%d  %s" % (
             p["no"], p["plate"], p["id"], "+".join(p["colours"]), *p["size_mm"],
