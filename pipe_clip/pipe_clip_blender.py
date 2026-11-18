@@ -1,7 +1,7 @@
 """
 Pipe Clip (mushroom shape) - Blender script
 ===========================================
-Clip that holds two 17.5 mm pipes (one on each side). Snap-fit.
+Clip that holds two 16.5 mm pipes (one on each side). Snap-fit.
 
 How to use in Blender:
   1. Open Blender -> "Scripting" tab -> New
@@ -15,13 +15,14 @@ All sizes are in millimetres.
 import math
 
 PARAMS = {
-    "pipe_d":    17.5,  # pipe diameter (1.75 cm)
+    "pipe_d":    16.5,  # pipe diameter (1.65 cm)
     "clearance": 0.0,   # added to hole diameter. 0 = tight. -0.2 tighter, +0.2 looser
     "base_w":    10.0,  # flat bottom width (1 cm)
     "neck_w":    7.0,   # narrowest stem width between the two pipes
     "wall":      3.0,   # wall thickness of the outer lip around each pipe
     "hook_deg":  32.0,  # how far the outer lip (hook) wraps UNDER the pipe, in degrees below the pipe centre.
                         # bigger = stronger hook but harder to snap in (opening gets smaller)
+    "tip_deg":   60.0,  # sharp lip edge angle that bites the pipe. 90 = square edge, smaller = sharper
     "depth":     50.0,  # length of the part (side view 5 cm)
     "segments":  96,    # arc resolution (per full circle)
 }
@@ -58,17 +59,29 @@ def build_profile(p=PARAMS):
     right = []
     # 1) hole arc: from the foot point, over the top of the pipe, down to the lip tip
     right += arc(cx, cz, r, a_in, a_tip - 2 * math.pi)
-    # 2) rounded tip (half circle) - acts as a lead-in for snapping the pipe
-    ux, uz = math.cos(a_tip), math.sin(a_tip)           # radial
-    wx, wz = math.sin(a_tip), -math.cos(a_tip)          # toward the opening
-    mx, mz = cx + (r + t / 2) * ux, cz + (r + t / 2) * uz
-    n = seg // 4
-    for i in range(1, n):
-        s = math.pi * i / n
-        right.append((mx + t / 2 * (-math.cos(s) * ux + math.sin(s) * wx),
-                      mz + t / 2 * (-math.cos(s) * uz + math.sin(s) * wz)))
+    # 2) sharp tip: straight cut from the hole edge to the outer lip.
+    #    The outer point is pulled back by `d` so the edge touching the pipe
+    #    has an angle of tip_deg (sharp edge that bites into the pipe).
+    ix, iz = cx + r * math.cos(a_tip), cz + r * math.sin(a_tip)
+
+    def corner_angle(d):
+        ox, oz = cx + Rw * math.cos(a_tip + d), cz + Rw * math.sin(a_tip + d)
+        vx, vz = ox - ix, oz - iz                      # along the cut
+        tx, tz = -math.sin(a_tip), math.cos(a_tip)     # along the hole, back into material
+        c = (vx * tx + vz * tz) / math.hypot(vx, vz)
+        return math.degrees(math.acos(max(-1.0, min(1.0, c))))
+
+    lo, hi = -0.5, 1.2                                  # corner_angle decreases as d grows
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if corner_angle(mid) > p["tip_deg"]:
+            lo = mid
+        else:
+            hi = mid
+    d = (lo + hi) / 2
+    a_out = a_tip + d
     # 3) outer lip arc up to the side of the dome
-    right += arc(cx, cz, Rw, a_tip, 0.0)
+    right += arc(cx, cz, Rw, a_out, 0.0)
 
     dome = arc(0.0, cz, R, 0.0, math.pi)[1:-1]
     left = [(-x, z) for x, z in reversed(right)]
