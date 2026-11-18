@@ -202,8 +202,8 @@
    "plate": 1,
    "step": 4,
    "colours": [
-    "White",
-    "Yellow"
+    "Yellow",
+    "White"
    ],
    "start_colour": "Yellow",
    "colour_change_mm": [
@@ -218,14 +218,15 @@
    ],
    "bodies": 1,
    "size_mm": [
-    87.0,
+    86.0,
     52.0,
     62.0
    ],
    "files": [
     "P08_MEMBRANE_R__White.stl",
     "P08_MEMBRANE_R__Yellow.stl"
-   ]
+   ],
+   "note_ar": "نسخة محسّنة: الألوان بالارتفاع (أصفر/أبيض/أصفر)، قطعة واحدة نظيفة، ذيول محفورة على الجانب والخلف"
   },
   {
    "no": 9,
@@ -607,8 +608,8 @@
    "plate": 3,
    "step": 4,
    "colours": [
-    "White",
-    "Yellow"
+    "Yellow",
+    "White"
    ],
    "start_colour": "Yellow",
    "colour_change_mm": [
@@ -623,14 +624,15 @@
    ],
    "bodies": 1,
    "size_mm": [
-    87.0,
+    86.0,
     52.0,
     62.0
    ],
    "files": [
     "P24_MEMBRANE_L__White.stl",
     "P24_MEMBRANE_L__Yellow.stl"
-   ]
+   ],
+   "note_ar": "نسخة محسّنة: الألوان بالارتفاع (أصفر/أبيض/أصفر)، قطعة واحدة نظيفة، ذيول محفورة على الجانب والخلف"
   },
   {
    "no": 25,

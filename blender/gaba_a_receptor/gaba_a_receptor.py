@@ -569,6 +569,55 @@ def build():
                         sp.use_endpoint_u = True
                         sp.use_smooth = True
                 x += 1.38
+
+    # the same tails ENGRAVED (grooves) into the outer END face and the BACK face:
+    # looks finished from the side / behind and keeps the part's exact size
+    core_back = 3.5
+    eng = bpy.data.curves.new("Lipid_Tails_Engrave", "CURVE")
+    eng.dimensions = "3D"
+    eng.bevel_depth = 0.16 * S
+    eng.bevel_resolution = 3
+    eng.use_fill_caps = True
+
+    def relief_tail(base_xyz, along, t, zc, sgn, k):
+        sp = eng.splines.new("NURBS")
+        prof = [0.0, 0.10, 0.02, 0.12, 0.04]
+        sp.points.add(len(prof) - 1)
+        for i, off in enumerate(prof):
+            f_ = i / (len(prof) - 1)
+            pz = zc + sgn * (head_r * 0.6 + f_ * 1.8)
+            d = t + math.copysign(off, t)
+            p = Vector(base_xyz) + Vector(along) * d
+            sp.points[i].co = (*(V(p.x, p.y, pz)), 1.0)
+        sp.order_u = 3
+        sp.use_endpoint_u = True
+        sp.use_smooth = True
+
+    for side in (-1, 1):
+        for y in (0.45, 1.6, 2.75):                                   # end face
+            for zc, sgn in ((z_top, -1), (z_bot, 1)):
+                for t in (-0.2, 0.2):
+                    relief_tail((side * x_out, y, 0), (0, 1, 0), t, zc, sgn, 0)
+        x = 5.6 + 0.69
+        while x <= 13.0:                                             # back face
+            for zc, sgn in ((z_top, -1), (z_bot, 1)):
+                for t in (-0.2, 0.2):
+                    relief_tail((side * x, core_back, 0), (1, 0, 0), t, zc, sgn, 0)
+            x += 1.38
+    C_help = coll("99_Helpers")
+    eng_ob = link(bpy.data.objects.new("Lipid_Tails_Engrave", eng), C_help)
+    bpy.context.view_layer.update()
+    cut_me = bpy.data.meshes.new_from_object(
+        eng_ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    bpy.data.objects.remove(eng_ob, do_unlink=True)
+    cutter = link(bpy.data.objects.new("Lipid_Engrave_Cutter", cut_me), C_help)
+    cutter.hide_render = True
+    cutter.hide_viewport = True
+    for nm in ("L", "R"):
+        bo = bpy.data.objects["Lipid_Core_" + nm].modifiers.new("Engrave", "BOOLEAN")
+        bo.operation = "DIFFERENCE"
+        bo.object = cutter
+        bo.solver = "EXACT"
     bm.to_mesh(hm)
     bm.free()
     smooth(hm)

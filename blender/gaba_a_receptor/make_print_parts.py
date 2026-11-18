@@ -71,14 +71,15 @@ PARTS = [
     dict(id="ARROW_RIGHT", step=2, orient="front", vols=[("White", ["Plaque_RightArrow"])]),
     dict(id="TITLE_STAND", step=3, orient="front", vols=[("White", ["Title_Stand"])],
          cut=["GAMMA", "CHANNEL"]),
-    dict(id="MEMBRANE_L", step=4, orient="up", keep=[((0, 0, 1), 75.0)],
-         vols=[("White", ["Lipid_Core_L", "Lipid_Tails_Relief@L"]),
-               ("Yellow", ["Lipid_Heads@L"])],
-         cut=["ALPHA_L", "ALPHA_BACK_L"]),
-    dict(id="MEMBRANE_R", step=4, orient="up", keep=[((0, 0, 1), 75.0)],
-         vols=[("White", ["Lipid_Core_R", "Lipid_Tails_Relief@R"]),
-               ("Yellow", ["Lipid_Heads@R"])],
-         cut=["ALPHA_R", "ALPHA_BACK_R"]),
+    # membrane: ONE clean solid, coloured by height bands (yellow head rows at the
+    # bottom and top, white core between) -> no hemispherical holes in the white,
+    # no loose yellow rows; clean straight cut where the alpha subunit sits.
+    dict(id="MEMBRANE_L", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((-1, 0, 0), 50.0)],
+         vols=[("White", ["Lipid_Core_L", "Lipid_Tails_Relief@L", "Lipid_Heads@L"])],
+         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_L", "ALPHA_BACK_L"], prism_cut=True),
+    dict(id="MEMBRANE_R", step=4, orient="up", keep=[((0, 0, 1), 75.0), ((1, 0, 0), 50.0)],
+         vols=[("White", ["Lipid_Core_R", "Lipid_Tails_Relief@R", "Lipid_Heads@R"])],
+         bands=("Yellow", 88.5, 123.0), cut=["ALPHA_R", "ALPHA_BACK_R"], prism_cut=True),
     dict(id="CHANNEL", step=5, orient="front",
          vols=[("Green", ["Channel_Pore"]),
                ("Lime", ["Cl_Ion_1", "Cl_Ion_2", "Channel_Arrow"])],
@@ -213,6 +214,15 @@ def grow(m, c=CLR):
     return m.minkowski_sum(Manifold.sphere(c, 8))
 
 
+def prism_y(m):
+    """straight-walled version of a cutter: its XZ silhouette extruded over its
+    whole Y range -> clean flat cut faces instead of a torn, curvy cut"""
+    r = m.transform(FRONT_UP)
+    b = r.bounding_box()
+    cs = CrossSection(r.project().to_polygons(), m3d.FillRule.Positive)
+    return Manifold.extrude(cs, b[5] - b[2]).translate((0, 0, b[2])).transform(FRONT_UP_INV)
+
+
 def flat_back(m):
     """front-up frame: replace the rounded back half by a straight prism of the
     silhouette, so the part lies flat on the bed (back is hidden anyway)"""
@@ -293,6 +303,8 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
     final, dropped = {}, {}
     for p in PARTS:
         cutter = union([grown[c] for c in p.get("cut", [])])
+        if p.get("prism_cut") and not cutter.is_empty():
+            cutter = prism_y(cutter)
         vols, later = [], Manifold()
         for fil, m0 in reversed(raw[p["id"]]):                 # top volume wins
             m = m0 - later
@@ -311,6 +323,12 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
                                      sum(b.volume() for b in keep), 1)
             k = union(keep)
             vols = [(f, m ^ k) for f, m in vols]
+        if p.get("bands"):
+            fil_out, zlo, zhi = p["bands"]
+            whole = union([m for _, m in vols])
+            outer = whole.trim_by_plane((0, 0, -1), -zlo) + whole.trim_by_plane((0, 0, 1), zhi)
+            mid = whole.trim_by_plane((0, 0, 1), zlo).trim_by_plane((0, 0, -1), -zhi)
+            vols = [(fil_out, outer), (vols[0][0], mid)]
         final[p["id"]] = vols
         p["_bodies"] = len(keep)
 
@@ -364,12 +382,11 @@ def build(raw_dir, out_dir, bed, max_colours=4, assembled_dir=None):
                 h = max(vols[j][1].bounding_box()[5] for j in range(i))
                 changes.append((round(h, 2), vols[i][0]))
         start = vols[0][0]
-        if orient == "up" and len(vols) == 2 and pid.startswith("MEMBRANE"):
-            heads = vols[1][1].decompose()
-            lo = max(h.bounding_box()[5] for h in heads if h.bounding_box()[2] < 1.0)
-            hi = min(h.bounding_box()[2] for h in heads if h.bounding_box()[2] > 1.0)
-            start = vols[1][0]
-            changes = [(round(lo, 2), vols[0][0]), (round(hi, 2), vols[1][0])]
+        bands = spec.get(pid, {}).get("bands")
+        if bands:
+            z0 = spec[pid]["keep"][0][1]
+            start = bands[0]
+            changes = [(round(bands[1] - z0, 2), vols[1][0]), (round(bands[2] - z0, 2), bands[0])]
         kit.append(dict(id=pid, start=start, step=step, orient=orient, vols=vols, bodies=n_bodies,
                         size=(b[3] - b[0], b[4] - b[1], b[5] - b[2]), changes=changes,
                         model=(M, (-b[0], -b[1], -b[2]))))
