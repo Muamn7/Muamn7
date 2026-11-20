@@ -37,7 +37,7 @@ CHAMFER_OUT = 0.6       # شطفة الحافة الخارجية
 # Grip ribs: small vertical ribs inside the bore that get crushed when the
 # pipe is pushed in -> tight grip that tolerates printer inaccuracy.
 # أضلاع شد داخلية: تنضغط عند إدخال البوري فتعطي مسكة قوية
-GRIP_RIBS = True
+GRIP_RIBS = False
 RIB_COUNT = 6
 RIB_R = 0.6             # نصف قطر الضلع
 BORE_CLEAR = 0.2        # خلوص نصف قطري للفتحة (عند تفعيل الأضلاع)
