@@ -1,14 +1,14 @@
 # =====================================================================
-#  Pipe clamp bracket for a 155 mm pipe  —  Blender 4.2+ / 5.x script
-#  قطعة تثبيت بوري قطر 155mm  —  سكربت بلندر بارامتري
+#  Pipe clamp bracket for a 15.5 mm pipe  —  Blender 4.2+ / 5.x script
+#  قطعة تثبيت بوري قطر 15.5mm  —  سكربت بلندر بارامتري
 #
 #  How to use in Blender:
 #     Scripting tab -> Text -> Open -> this file -> Run Script (Alt+P)
-#  It builds one clean, manifold object named "PipeClamp_155" in mm.
+#  It builds one clean, manifold object named "PipeClamp_15_5" in mm.
 #  Change the numbers in PARAMETERS and run again to regenerate.
 #
 #  Command line (optional, exports STL + .blend):
-#     blender -b -P pipe_clamp_155.py -- --out ./export [--tab-align BOTTOM]
+#     blender -b -P pipe_clamp_15_5.py -- --out ./export [--tab-align BOTTOM]
 # =====================================================================
 import bpy
 import bmesh
@@ -17,7 +17,7 @@ import os
 import sys
 
 # ----------------------------- PARAMETERS (mm) -----------------------
-PIPE_D = 155.0          # قطر البوري الخارجي
+PIPE_D = 15.5          # قطر البوري الخارجي 15.5mm
 WALL = 4.0              # سماكة جدار الحلقة
 HEIGHT = 50.0           # ارتفاع الحلقة 5cm
 
@@ -38,13 +38,13 @@ CHAMFER_OUT = 0.6       # شطفة الحافة الخارجية
 # pipe is pushed in -> tight grip that tolerates printer inaccuracy.
 # أضلاع شد داخلية: تنضغط عند إدخال البوري فتعطي مسكة قوية
 GRIP_RIBS = True
-RIB_COUNT = 12
-RIB_R = 0.8             # نصف قطر الضلع
+RIB_COUNT = 6
+RIB_R = 0.6             # نصف قطر الضلع
 BORE_CLEAR = 0.2        # خلوص نصف قطري للفتحة (عند تفعيل الأضلاع)
 RIB_INTERFERENCE = 0.2  # كم يدخل الضلع في سطح البوري (نصف قطري)
 
-SEGMENTS = 256          # دقة الدائرة
-NAME = "PipeClamp_155"
+SEGMENTS = 128          # دقة الدائرة
+NAME = "PipeClamp_15_5"
 # ---------------------------------------------------------------------
 
 
