@@ -1,7 +1,7 @@
 """
 Pipe Clip (mushroom shape) - Blender script
 ===========================================
-Clip that holds two 16.5 mm pipes (one on each side). Snap-fit.
+Clip that holds two 15.5 mm pipes (one on each side). Snap-fit.
 
 How to use in Blender:
   1. Open Blender -> "Scripting" tab -> New
@@ -15,8 +15,10 @@ All sizes are in millimetres.
 import math
 
 PARAMS = {
-    "pipe_d":    16.5,  # pipe diameter (1.65 cm)
-    "clearance": 0.0,   # added to hole diameter. 0 = tight. -0.2 tighter, +0.2 looser
+    "pipe_d":    15.5,  # REAL hole size you want after printing (1.55 cm)
+    "clearance": 0.5,   # printer compensation, added to the hole in the model.
+                        # Measured: model 16.5 -> printed 16.0 (shrinks 0.5), so the model
+                        # hole is 15.5 + 0.5 = 16.0 to print a real 15.5 hole.
     "base_w":    10.0,  # flat bottom width (1 cm)
     "neck_w":    7.0,   # narrowest stem width between the two pipes
     "wall":      3.0,   # wall thickness of the outer lip around each pipe
