@@ -21,7 +21,8 @@ def cyl(r, h, cx, cy, z0, segs=SEGS):
 parts = [box(OX, OY, BASE_T, 0, 0, 0),
          box(OX, WALL_T, WH, 0, -OY/2+WALL_T/2, 0), box(OX, WALL_T, WH, 0, OY/2-WALL_T/2, 0),
          box(WALL_T, OY, WH, -OX/2+WALL_T/2, 0, 0), box(WALL_T, OY, WH, OX/2-WALL_T/2, 0, 0)]
-parts += [cyl(EAR_R, EAR_T, sx*OX/2, sy*OY/2, 0, 48) for sx in (-1,1) for sy in (-1,1)]
+EARS = False
+if EARS: parts += [cyl(EAR_R, EAR_T, sx*OX/2, sy*OY/2, 0, 48) for sx in (-1,1) for sy in (-1,1)]
 holes = []
 x0 = -IX/2 + MARGIN + BRICK_W/2
 y0 = -IY/2 + MARGIN + BRICK_L/2
