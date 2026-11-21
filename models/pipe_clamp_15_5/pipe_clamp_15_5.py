@@ -27,7 +27,10 @@ TAB_T = 4.0             # سماكة اللسان
 TAB_ALIGN = "CENTER"    # "CENTER" مثل الرسم ، "BOTTOM" للطباعة بدون دعامات
 TAB_CORNER_R = 3.0      # تدوير زوايا اللسان الخارجية
 
-HOLE_D = 2.0            # قطر ثقب المسمار
+HOLE_SHAPE = "RECT"     # "RECT" فتحة مربعة ، "ROUND" ثقب دائري
+HOLE_W = 7.2            # عرض الفتحة المربعة (أفقي)
+HOLE_H = 7.8            # ارتفاع الفتحة المربعة (عمودي)
+HOLE_D = 2.0            # قطر الثقب الدائري (عند ROUND)
 HOLE_FROM_WALL = 10.0   # بعد مركز الثقب عن سطح الحلقة (منتصف اللسان)
 
 FILLET_R = 4.0          # تدوير وصلة اللسان مع الحلقة (يمنع الكسر)
@@ -184,17 +187,23 @@ def build(tab_align=TAB_ALIGN):
 
     # ---- 5. screw hole (axis along Y, through the tab) ---------------
     hx, hz, hr = r_out + HOLE_FROM_WALL, (zb + zt) / 2, HOLE_D / 2
-    hs = 48
-    v, f = [], []
-    for y in (-t2 - 2, t2 + 2):
-        v += [(hx + hr * math.cos(2 * math.pi * q / hs), y,
-               hz + hr * math.sin(2 * math.pi * q / hs)) for q in range(hs)]
-    for q in range(hs):
-        q2 = (q + 1) % hs
-        f.append((q, q2, hs + q2, hs + q))
-    f.append(tuple(range(hs - 1, -1, -1)))
-    f.append(tuple(range(hs, 2 * hs)))
-    hole = _obj_from_pydata(NAME + "_hole", v, f)
+    if HOLE_SHAPE == "RECT":
+        w2, h2 = HOLE_W / 2, HOLE_H / 2
+        rect = [(hx - w2, hz - h2), (hx + w2, hz - h2),
+                (hx + w2, hz + h2), (hx - w2, hz + h2)]
+        hole = _prism(NAME + "_hole", rect, -t2 - 2, t2 + 2, "XZ")
+    else:
+        hs = 48
+        v, f = [], []
+        for y in (-t2 - 2, t2 + 2):
+            v += [(hx + hr * math.cos(2 * math.pi * q / hs), y,
+                   hz + hr * math.sin(2 * math.pi * q / hs)) for q in range(hs)]
+        for q in range(hs):
+            q2 = (q + 1) % hs
+            f.append((q, q2, hs + q2, hs + q))
+        f.append(tuple(range(hs - 1, -1, -1)))
+        f.append(tuple(range(hs, 2 * hs)))
+        hole = _obj_from_pydata(NAME + "_hole", v, f)
 
     # ---- 6. booleans ----------------------------------------------------
     coll = bpy.data.collections.new(NAME + "_add")
