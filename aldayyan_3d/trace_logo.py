@@ -10,6 +10,8 @@ DISC_D = 60.0      # mm
 MARGIN = 1.0       # black margin outside the red ring (mm)
 SMOOTH_SIGMA = 6      # contour smoothing (in upscaled px)
 CLOSE_MM = 0.25      # fill slits narrower than 2x this
+EDGE_SMOOTH_MM = 0.38  # 2nd-pass edge smoothing
+CLOSE2_MM = 0.4      # 2nd-pass dent filling
 MIN_WIDTH_MM = 0.4   # remove features thinner than this (nozzle width)
 CX, CY = 621, 603  # ring centre in image px
 R_IN, R_OUT = 542, 566  # ring radii in image px
@@ -70,7 +72,31 @@ letters_mm = letters_mm.buffer(CLOSE_MM, 32).buffer(-CLOSE_MM, 32)          # cl
 letters_mm = letters_mm.buffer(-r, 32).buffer(r, 32)                        # drop slivers < nozzle
 geoms = getattr(letters_mm, "geoms", [letters_mm])
 letters_mm = unary_union([g for g in geoms if g.area > 0.8])
-logo = unary_union([letters_mm, ring_mm]).simplify(0.01)
+
+# second pass: resample every outline at 0.04mm and smooth it (removes nicks/bumps < ~0.7mm)
+def smooth_ring(coords, step=0.04, sigma_mm=EDGE_SMOOTH_MM):
+    from shapely.geometry import LinearRing
+    lr = LinearRing(coords)
+    n = max(int(lr.length / step), 16)
+    pts = np.array([lr.interpolate(i * lr.length / n).coords[0] for i in range(n)])
+    sg = sigma_mm / step
+    if n < 6 * sg:
+        sg = n / 6
+    return np.c_[gaussian_filter1d(pts[:, 0], sg, mode="wrap"), gaussian_filter1d(pts[:, 1], sg, mode="wrap")]
+def smooth_poly(p):
+    return Polygon(smooth_ring(p.exterior.coords), [smooth_ring(h.coords) for h in p.interiors if Polygon(h).area > 0.05]).buffer(0)
+geoms = getattr(letters_mm, "geoms", [letters_mm])
+letters_mm = unary_union([smooth_poly(g) for g in geoms])
+letters_mm = letters_mm.buffer(CLOSE2_MM, 64).buffer(-CLOSE2_MM, 64)  # fill remaining small dents
+# local fixes: fill leftover shallow dips (x, y, radius in mm) with a local convex hull
+PATCHES = [(-3.6, -23.0, 1.4),   # bottom of the ta
+           (14.3, -15.1, 0.7),   # where the lam tail meets the long stroke
+           (11.4, -12.0, 0.9)]   # bottom of the right lam
+for x, y, rad in PATCHES:
+    c = Point(x, y).buffer(rad, 64)
+    letters_mm = unary_union([letters_mm, letters_mm.intersection(c).convex_hull.intersection(c)])
+letters_mm = unary_union([smooth_poly(g) for g in getattr(letters_mm, "geoms", [letters_mm])])  # blend patches in
+logo = unary_union([letters_mm, ring_mm]).simplify(0.002)
 if isinstance(logo, Polygon):
     logo = MultiPolygon([logo])
 
