@@ -2,7 +2,7 @@
 import sys, math
 import numpy as np
 from lib import to_arrays, apply, bevel_hull, union
-import stand1, stand2
+import stand1, stand2, roles
 
 
 def overhangs(m, limit_deg=45.0, bed_tol=0.35):
@@ -23,11 +23,11 @@ def phone(rest, w=78.0, h=165.0, t=9.0, y0=20.0):
 
 
 ok = True
-for mod in (stand1, stand2):
+for mod in (stand1, stand2, roles):
     d = mod.build()
     print('==', d['name'])
     for pname, p in d['parts'].items():
-        both = p['black'] + p['accent']
+        both = p['black'] + p['accent'] + p.get('accent2', p['accent'])
         a, bad = overhangs(both)
         bb = both.bounding_box()
         print('  %-7s size %.0f x %.0f x %.0f mm | overhang area >45deg: %.1f mm2' % (
@@ -43,18 +43,23 @@ for mod in (stand1, stand2):
     for pname, p in d['parts'].items():
         if p['assembly'] is None:
             continue
-        placed = apply(p['black'] + p['accent'], p['assembly'])
+        placed = apply(p['black'] + p['accent'] + p.get('accent2', p['accent']), p['assembly'])
         inter = (placed ^ base).volume()
         print('  %s vs Base overlap volume: %.3f mm3' % (pname, inter))
         if inter > 1.0:
             ok = False
     # phone fit: 78 x 165 x 9 mm phone and a thick 13 mm (with case) variant
     rest = mod.REST if hasattr(mod, 'REST') else mod.F + 2.2
-    plate = d['parts']['Plate']['black'] + d['parts']['Plate']['accent']
-    for t in (9.0, 13.0):
-        ph = phone(rest + 0.05, t=t)
-        inter = (ph ^ plate).volume()
-        print('  phone %.0fmm thick vs plate overlap: %.3f mm3' % (t, inter))
+    for pname, p in d['parts'].items():
+        if not pname.startswith('Plate'):
+            continue
+        plate = p['black'] + p['accent'] + p.get('accent2', p['accent'])
+        for t in (9.0, 13.0):
+            ph = phone(rest + 0.05, t=t)
+            inter = (ph ^ plate).volume()
+            print('  %s: phone %.0fmm thick overlap: %.3f mm3' % (pname, t, inter))
+            if inter > 0.01:
+                ok = False
 
 def edge_check(m):
     v, f = to_arrays(m)
@@ -66,11 +71,11 @@ def edge_check(m):
     _, cnt = np.unique(e, axis=0, return_counts=True)
     return int((cnt != 2).sum())
 
-for mod in (stand1, stand2):
+for mod in (stand1, stand2, roles):
     d = mod.build()
     for pname, p in d['parts'].items():
-        for c in ('black', 'accent'):
-            if p[c].is_empty():
+        for c in ('black', 'accent', 'accent2'):
+            if c not in p or p[c].is_empty():
                 continue
             k = edge_check(p[c])
             if k:

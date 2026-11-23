@@ -25,8 +25,9 @@ def s_glyph(scale=0.95):
     return [ccw(scale2(p, scale)) for p in pieces]
 
 
-def plate():
-    blacks, accents, cut_black, cut_all = [], [], [], []
+def plate(logo=None):
+    """logo=None -> original S stand (all yellow). logo='Roamer' etc. -> role emblem (returns 3 colours)."""
+    blacks, accents, cut_black, cut_all, whites = [], [], [], [], []
     back = ccw([(-HW, YB), (HW, YB), (HW, TOP - 6), (HW - 6, TOP), (-HW + 6, TOP), (-HW, TOP - 6)])
     front = ccw([(-HW + 1.2, YB), (HW - 1.2, YB), (HW - 1.2, TOP - 6.5), (HW - 6.5, TOP - 1.2),
                  (-HW + 6.5, TOP - 1.2), (-HW + 1.2, TOP - 6.5)])
@@ -53,8 +54,14 @@ def plate():
 
     # ---- yellow
     accents.append(ring(octagon(72, cx, cy), octagon(66, cx, cy), F + 0.2, F + 1.8, ct=0.4))
-    for p in s_glyph():
-        accents.append(cprism(translate2(p, cx, cy), F - 0.2, F + 1.8, ct=0.4))
+    if logo is None:
+        for p in s_glyph():
+            accents.append(cprism(translate2(p, cx, cy), F - 0.2, F + 1.8, ct=0.4))
+    else:
+        from logos import ROLES
+        for p, col in ROLES[logo]():
+            piece = cprism(translate2(p, cx, cy), F - 0.2, F + 1.8, ct=0.4)
+            (accents if col == 'y' else whites).append(piece)
 
     shield = ccw([(-42.5, 127), (-28.5, 110.5), (-26.5, 114), (-26, 134.5), (-42.5, 134.5)])
     hexhole = [(-40, 129.5), (-38.2, 126.9), (-32.8, 126.9), (-31, 129.5), (-32.8, 132.1), (-38.2, 132.1)]
@@ -80,7 +87,13 @@ def plate():
     blacks.append(axis_prism_x(bar, -29.5, 29.5, ce=0.0))
     cut_black.append(cprism(rect(-8, 7, 8, 15.5, ch=1.0), F, 17))   # charging cable notch
 
-    return finish(blacks, accents, cut_black, cut_all)
+    if logo is None:
+        return finish(blacks, accents, cut_black, cut_all)
+    white = union(whites)
+    black, yel = finish(blacks + whites, accents, cut_black, cut_all)
+    black = black - white
+    yel = yel - white
+    return black.simplify(0.002), yel.simplify(0.002), white.simplify(0.002)
 
 
 def finish(blacks, accents, cut_black, cut_all, post=()):
