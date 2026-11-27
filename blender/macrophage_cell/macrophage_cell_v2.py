@@ -20,6 +20,14 @@ COMMAND LINE
           [--scale 100] [--save scene.blend]
   With several views, one PNG per view is written (out_front.png, ...)
   plus a 2x2 contact sheet (out_grid.png).
+
+3D PRINTING
+  blender -b -P macrophage_cell_v2.py -- --print macrophage.stl
+          [--print-size 150] [--voxel 0.022]
+  Fuses every part (cell, organelles, bacteria, ECM, pedestal) into ONE
+  watertight manifold solid (voxel remesh), removes any loose island and
+  exports a millimetre STL standing on the build plate. Inside Blender you
+  can call make_print_model([...collections...], 'path.stl') as well.
 """
 
 import bpy
@@ -386,66 +394,101 @@ def build_cell(coll, M):
     add_mod(bl, 'SUBSURF', levels=0, render_levels=1)
 
 
+FLAMES = []        # [(points, radii)] of every flame, used to seat bacteria
+
+
 def build_pseudopodia(coll, M):
-    """Flame-like pseudopodia and the phagocytic cup (metaballs)."""
+    """Layered, flame-like pseudopodia joined by membrane webbing, plus the
+    phagocytic cup. Built from metaballs so everything fuses into one
+    continuous, printable surface."""
     mb = bpy.data.metaballs.new('Pseudopodia')
     mb.resolution = 0.09
     mb.render_resolution = 0.035
     mb.threshold = 0.6
+    K, FLAT = 1.6, 0.55
 
-    def chain(ctrl, r0, r1, step=0.05, k=1.6, flat=0.5, power=1.25):
-        pts = catmull(ctrl, step)
+    def ball(p, r, flat=FLAT):
+        e = mb.elements.new()
+        e.type = 'ELLIPSOID'
+        e.co = p
+        e.radius = r * K
+        e.size_x, e.size_y, e.size_z = 1.0, 1.0, flat
+        e.stiffness = 2.0
+
+    def flame(theta, zr, L, r0, back, curl, wave, power=1.3, phi=None):
+        # root sits on the membrane at `theta`; the flame points along `phi`
+        # (fanned towards the left, like the reference)
+        if phi is None:
+            phi = 0.45 * theta + 0.55 * 178.0
+        t = math.radians(phi)
+        u = Vector((math.cos(t), math.sin(t), 0.0))
+        side = Vector((-u.y, u.x, 0.0))
+        up = Vector((0, 1, 0))
+        bk = Vector((0, 0, -1))
+        p0 = rim_point(theta, zr, 0.88)
+        ctrl = [p0,
+                p0 + u * L * 0.35 + bk * L * back * 0.3 + side * wave * L * 0.08,
+                p0 + u * L * 0.68 + up * L * curl * 0.35 + bk * L * back * 0.6
+                - side * wave * L * 0.1,
+                p0 + u * L * 0.88 + up * L * curl * 0.75 + bk * L * back * 0.85
+                + side * wave * L * 0.06,
+                p0 + u * L * 0.82 + up * L * curl * 1.1 + bk * L * back
+                - u * L * 0.1]
+        pts = catmull(ctrl, 0.045)
         n = len(pts)
+        radii = []
         for i, p in enumerate(pts):
-            t = i / (n - 1)
-            r = r0 + (r1 - r0) * (t ** power)
-            e = mb.elements.new()
-            e.type = 'ELLIPSOID'
-            e.co = p
-            e.radius = r * k
-            e.size_x, e.size_y, e.size_z = 1.0, 1.0, flat
-            e.stiffness = 2.0
+            s = i / (n - 1)
+            r = r0 + (0.015 - r0) * (s ** power)
+            radii.append(r)
+            ball(p, r)
+        FLAMES.append((theta, zr, pts, radii))
+        return pts, radii
 
-    # (control points, root radius, tip radius)  -- local space
-    arms = [
-        # big curling flame above the phagocytic cup
-        ([(-1.6, 1.9, -0.5), (-2.2, 2.6, -0.4), (-2.35, 3.2, -0.3),
-          (-2.0, 3.6, -0.2), (-1.55, 3.75, -0.15)], 0.56, 0.02),
-        # flames sweeping to the left, tips curling upwards
-        ([(-2.5, 1.3, -0.5), (-3.3, 1.6, -0.45), (-4.0, 2.2, -0.35),
-          (-4.3, 2.85, -0.25), (-4.1, 3.2, -0.2)], 0.52, 0.02),
-        ([(-2.85, 0.5, -0.55), (-3.8, 0.55, -0.5), (-4.6, 0.95, -0.4),
-          (-5.0, 1.5, -0.3)], 0.5, 0.02),
-        ([(-2.85, -0.4, -0.55), (-3.8, -0.6, -0.5), (-4.7, -0.45, -0.45),
-          (-5.3, -0.1, -0.4)], 0.48, 0.02),
-        ([(-2.5, -1.25, -0.6), (-3.3, -1.75, -0.6), (-4.1, -1.9, -0.55),
-          (-4.7, -1.7, -0.5)], 0.46, 0.02),
-        ([(-1.9, -1.9, -0.7), (-2.5, -2.5, -0.7), (-3.1, -2.7, -0.65),
-          (-3.5, -2.6, -0.6)], 0.4, 0.02),
-        # flames sweeping backwards (seen in the back / side views)
-        ([(-2.0, 1.0, -1.3), (-3.0, 1.3, -1.9), (-3.7, 1.9, -2.4),
-          (-3.9, 2.5, -2.6)], 0.52, 0.02),
-        ([(-1.8, -0.6, -1.5), (-2.8, -0.8, -2.2), (-3.6, -0.6, -2.8),
-          (-4.0, -0.2, -3.1)], 0.48, 0.02),
-        ([(-0.6, 1.9, -1.2), (-1.1, 2.7, -1.6), (-1.2, 3.3, -1.9),
-          (-0.9, 3.6, -2.0)], 0.42, 0.02),
-        # smaller side flares
-        ([(-3.8, 0.55, -0.5), (-4.15, 0.0, -0.75), (-4.3, -0.35, -0.95)],
-         0.22, 0.02),
-        ([(-3.3, 1.6, -0.45), (-3.6, 2.3, -0.8), (-3.5, 2.75, -1.0)],
-         0.22, 0.02),
-        ([(-3.0, 1.3, -1.9), (-3.4, 0.7, -2.4), (-3.5, 0.3, -2.7)],
-         0.22, 0.02),
-        # feet reaching down to the stand (they blend into the ECM roots)
-        ([(-0.9, -2.0, -1.0), (-1.6, -2.55, -1.5), (-2.4, -2.72, -2.1),
-          (-3.0, -2.75, -2.5)], 0.34, 0.05),
-        ([(1.0, -2.0, -0.9), (1.9, -2.55, -1.3), (2.7, -2.72, -1.8),
-          (3.2, -2.75, -2.1)], 0.32, 0.05),
-        ([(0.2, -2.1, -1.6), (0.3, -2.6, -2.4), (0.4, -2.74, -3.1)],
-         0.32, 0.05),
+    # three staggered layers of flames along the left side
+    layers = [
+        (-0.4, [96, 112, 158, 174, 190, 206, 222, 238, 252], 1.0, 0.15),
+        (-1.1, [104, 122, 140, 166, 184, 200, 216, 232, 246], 1.12, 0.45),
+        (-1.7, [112, 138, 162, 188, 212, 236], 1.05, 0.8),
     ]
-    for ctrl, r0, r1 in arms:
-        chain(ctrl, r0, r1)
+    rnd = random.Random(SEED + 3)
+    for li, (zr, thetas, lscale, back) in enumerate(layers):
+        prev = None
+        for th in thetas:
+            th_j = th + rnd.uniform(-4, 4)
+            phi = 0.45 * th_j + 0.55 * 178.0
+            top = max(0.0, math.sin(math.radians(phi)))
+            L = lscale * rnd.uniform(2.4, 3.0)
+            r0 = rnd.uniform(0.4, 0.5)
+            curl = 0.25 + 0.2 * top
+            pts, radii = flame(th_j, zr, L, r0, back, curl,
+                               rnd.uniform(-1, 1))
+            # membrane webbing between neighbouring flames
+            if prev is not None and abs(th - prev[0]) < 30:
+                a_pts, a_r = prev[1], prev[2]
+                for s in (0.1, 0.18, 0.26):
+                    ia, ib = int(s * len(a_pts)), int(s * len(pts))
+                    pa, pb = a_pts[ia], pts[ib]
+                    rr = 0.55 * min(a_r[ia], radii[ib])
+                    for k in range(1, 6):
+                        ball(pa.lerp(pb, k / 6), rr)
+            prev = (th, pts, radii)
+
+    # tall curling flame above the cup (the signature silhouette)
+    flame(100, -0.25, 2.4, 0.55, 0.1, 0.5, 0.5, phi=122)
+
+    # feet reaching down to the stand (blend into the ECM roots)
+    for ctrl, r0, r1 in [
+            ([(-0.9, -2.0, -1.0), (-1.6, -2.55, -1.5), (-2.4, -2.72, -2.1),
+              (-3.0, -2.75, -2.5)], 0.34, 0.08),
+            ([(1.0, -2.0, -0.9), (1.9, -2.55, -1.3), (2.7, -2.72, -1.8),
+              (3.2, -2.75, -2.1)], 0.32, 0.08),
+            ([(0.2, -2.1, -1.6), (0.3, -2.6, -2.4), (0.4, -2.74, -3.1)],
+             0.32, 0.08)]:
+        pts = catmull(ctrl, 0.05)
+        for i, p in enumerate(pts):
+            s = i / (len(pts) - 1)
+            ball(p, r0 + (r1 - r0) * s, 0.85)
 
     # phagocytic cup: open ring of membrane wrapping a bacteria cluster
     cup_c = Vector((-2.15, 1.75, 0.15))
@@ -458,15 +501,11 @@ def build_pseudopodia(coll, M):
                                          math.sin(a) * 0.62, 0)))
     for i, p in enumerate(ring):
         t = i / (len(ring) - 1)
-        e = mb.elements.new()
-        e.co = p
-        e.radius = (0.16 + 0.1 * math.sin(t * math.pi)) * 1.6
+        ball(p, 0.16 + 0.1 * math.sin(t * math.pi), 1.0)
     for i in range(7):
         a = 2 * math.pi * i / 7
-        e = mb.elements.new()
-        e.co = cup_c + R @ Vector((math.cos(a) * 0.3, math.sin(a) * 0.3,
-                                   -0.42))
-        e.radius = 0.36
+        ball(cup_c + R @ Vector((math.cos(a) * 0.3, math.sin(a) * 0.3, -0.42)),
+             0.225, 1.0)
 
     ob = bpy.data.objects.new('Pseudopodia', mb)
     mb.materials.append(M['membrane'])
@@ -497,10 +536,10 @@ def build_receptors(coll, M):
     for name, sps, tips, mat in (
             ('Receptors_Blue', blue, tips_b, M['receptor_b']),
             ('Receptors_Green', green, tips_g, M['receptor_g'])):
-        curve_object(name, sps, coll, mat, bevel=0.036, bevel_res=4)
+        curve_object(name, sps, coll, mat, bevel=0.05, bevel_res=4)
         bm = bmesh.new()
         for p in tips:
-            add_sphere(bm, p, 0.05, 2)
+            add_sphere(bm, p, 0.07, 2)
         bm_object(name + '_Tips', bm, coll, [mat])
 
 
@@ -552,7 +591,7 @@ def build_mitochondrion(coll, M, name, c, length, radius, angle):
     bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, 0.0),
                            plane_no=(0, 0, 1), clear_outer=True)
     ob = bm_object(name, bm, coll, [M['mito'], M['mito_rim']])
-    add_mod(ob, 'SOLIDIFY', thickness=0.045, offset=-1, use_rim=True,
+    add_mod(ob, 'SOLIDIFY', thickness=0.065, offset=-1, use_rim=True,
             material_offset_rim=1)
     add_mod(ob, 'BEVEL', width=0.015, segments=2, limit_method='ANGLE')
     add_mod(ob, 'SUBSURF', levels=1, render_levels=2)
@@ -569,7 +608,7 @@ def build_mitochondrion(coll, M, name, c, length, radius, angle):
         y = radius * 0.62 * prof * math.sin(i / 8 * math.pi)
         pts.append((x, y, 0))
     cr = curve_object(name + '_Cristae', [(pts, None)], coll, M['cristae'],
-                      bevel=0.016, extrude=radius * 0.32, two_d=True)
+                      bevel=0.026, extrude=radius * 0.32, two_d=True)
     cr.parent = ob
     cr.location = (0, 0, -radius * 0.32)
     bm = bmesh.new()
@@ -615,8 +654,8 @@ def build_golgi(coll, M, name, center, facing_deg, n, base_r, span_deg,
                 a = f + side * (span / 2 + random.uniform(0.05, 0.22))
                 p = arc_c + Vector((math.cos(a), math.sin(a), 0)) * \
                     (R + random.uniform(-0.05, 0.05))
-                add_sphere(bm, (p.x, p.y, FLOOR_Z + random.uniform(0.05, 0.12)),
-                           random.uniform(0.035, 0.065), 2)
+                rv = random.uniform(0.045, 0.07)
+                add_sphere(bm, (p.x, p.y, FLOOR_Z + rv * 0.4), rv, 2)
     bm_object(name + '_Vesicles', bm, coll, [ves_mat])
     mid = arc_c + fd * (base_r + n * gap * 0.5)
     OCCUPIED.append((mid.x, mid.y, n * gap * 0.6 + 0.15))
@@ -651,12 +690,12 @@ def build_rer(coll, M, origin, width, rows, gap=0.15):
         nrm = Vector((-t.y, t.x, 0))
         for side in (-1, 1):
             if random.random() < 0.85:
-                q = p + nrm * side * random.uniform(0.055, 0.065)
+                q = p + nrm * side * random.uniform(0.042, 0.048)
                 add_sphere(bm, (q.x, q.y, FLOOR_Z + 0.05 +
-                                random.uniform(-0.02, 0.11)),
-                           random.uniform(0.017, 0.024), 1)
+                                random.uniform(-0.02, 0.1)),
+                           random.uniform(0.024, 0.03), 1)
         if random.random() < 0.5:
-            add_sphere(bm, (p.x, p.y, FLOOR_Z + 0.17), 0.02, 1)
+            add_sphere(bm, (p.x, p.y, FLOOR_Z + 0.16), 0.028, 1)
     bm_object('Ribosomes_on_RER', bm, coll, [M['ribosome']])
     OCCUPIED.append((ox + width / 2, oy + rows * gap / 2, width * 0.55))
 
@@ -670,25 +709,33 @@ def build_phagolysosome(coll, M, c, R=0.5):
     bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, 0.14),
                            plane_no=(0, 0, 1), clear_outer=True)
     mem = bm_object('Phagolysosome', bm, coll, [M['phago'], M['phago_rim']])
-    add_mod(mem, 'SOLIDIFY', thickness=0.05, offset=-1, use_rim=True,
+    add_mod(mem, 'SOLIDIFY', thickness=0.075, offset=-1, use_rim=True,
             material_offset_rim=1)
     add_mod(mem, 'SUBSURF', levels=1, render_levels=1)
     mem.location = (cx, cy, cz)
+    bm = bmesh.new()
+    add_sphere(bm, (0, 0, 0), R * 0.97, 4)
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, -0.02),
+                           plane_no=(0, 0, 1), clear_outer=True)
+    bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary])
+    lumen = bm_object('Phagolysosome_Lumen', bm, coll, [M['phago_lumen']])
+    lumen.location = (cx, cy, cz)
     keys = ['debris_g', 'debris_y', 'debris_p', 'debris_w']
     bms = {k: bmesh.new() for k in keys}
     for i in range(90):
         a = random.uniform(0, 2 * math.pi)
         r = R * 0.8 * math.sqrt(random.random())
         p = (cx + math.cos(a) * r, cy + math.sin(a) * r,
-             cz + random.uniform(-0.15, 0.12))
+             cz + random.uniform(-0.02, 0.06))
         b = bms[random.choice(keys)]
         if random.random() < 0.4:
-            add_capsule(b, p, random.uniform(0.08, 0.16),
-                        random.uniform(0.024, 0.036),
-                        rot=(random.uniform(0, 3), random.uniform(0, 3),
+            add_capsule(b, p, random.uniform(0.09, 0.16),
+                        random.uniform(0.032, 0.04),
+                        rot=(random.uniform(-0.4, 0.4), random.uniform(-0.4, 0.4),
                              random.uniform(0, 3)), subdiv=2)
         else:
-            add_sphere(b, p, random.uniform(0.026, 0.05), 1,
+            add_sphere(b, p, random.uniform(0.035, 0.055), 1,
                        scale=(random.uniform(0.7, 1.3),
                               random.uniform(0.7, 1.3),
                               random.uniform(0.7, 1.3)))
@@ -729,10 +776,10 @@ def build_lysosomes_and_dots(coll, M):
             placed += 1
     bm_object('Lysosomes', bm, coll, [M['lysosome']])
     # free ribosomes (blue) and red granules speckling the cytoplasm
-    for name, mat, count, rr in (('Free_Ribosomes', M['ribosome'], 520,
-                                  (0.016, 0.032)),
-                                 ('Granules', M['granule'], 220,
-                                  (0.01, 0.02))):
+    for name, mat, count, rr in (('Free_Ribosomes', M['ribosome'], 480,
+                                  (0.024, 0.036)),
+                                 ('Granules', M['granule'], 200,
+                                  (0.02, 0.026))):
         bm = bmesh.new()
         n = tries = 0
         while n < count and tries < 30000:
@@ -772,14 +819,14 @@ def build_cytoskeleton(coll, M):
             ctrl.append(tuple(p))
         if len(ctrl) >= 2:
             sps.append((catmull(ctrl, 0.04), None))
-    curve_object('Cytoskeleton', sps, coll, M['cytoskeleton'], bevel=0.007,
+    curve_object('Cytoskeleton', sps, coll, M['cytoskeleton'], bevel=0.02,
                  bevel_res=1)
 
 
 # ---------------------------------------------------------------------------
 # Bacteria (with pili)
 # ---------------------------------------------------------------------------
-def add_bacterium(bm, center, length, radius, rot, bend=0.0, pili=14,
+def add_bacterium(bm, center, length, radius, rot, bend=0.0, pili=10,
                   pili_bm=None):
     add_capsule(bm, center, length, radius, rot=rot, subdiv=3, bend=bend)
     if pili_bm is None:
@@ -797,39 +844,49 @@ def add_bacterium(bm, center, length, radius, rot, bend=0.0, pili=14,
         base = Vector((x, 0, 0)) + nrm * radius * 0.95
         if bend:
             base.y += bend * (x / (half + radius)) ** 2
-        L = random.uniform(0.05, 0.1)
+        L = random.uniform(0.06, 0.1)
         Mc = (M @ Matrix.Translation(base + nrm * L / 2) @
               nrm.to_track_quat('Z', 'Y').to_matrix().to_4x4())
         bmesh.ops.create_cone(pili_bm, cap_ends=True, segments=5,
-                              radius1=0.011, radius2=0.003, depth=L,
+                              radius1=0.024, radius2=0.012, depth=L,
                               matrix=Mc)
 
 
 def build_bacteria(coll, M, cup_c, cup_R):
+    """Every bacterium is seated on (half-buried in) membrane so the model
+    has no floating parts."""
     bms = {'bact_a': bmesh.new(), 'bact_b': bmesh.new()}
     pili = bmesh.new()
+    rnd = random.Random(SEED + 5)
 
     def bact(p, rot, L=None):
-        b = bms['bact_a' if random.random() < 0.55 else 'bact_b']
-        add_bacterium(b, p, L or random.uniform(0.45, 0.62),
-                      random.uniform(0.08, 0.1), rot,
-                      bend=random.uniform(-0.05, 0.05), pili_bm=pili)
+        b = bms['bact_a' if rnd.random() < 0.55 else 'bact_b']
+        add_bacterium(b, p, L or rnd.uniform(0.45, 0.62),
+                      rnd.uniform(0.085, 0.1), rot,
+                      bend=rnd.uniform(-0.05, 0.05), pili_bm=pili)
 
-    for i in range(9):          # inside the phagocytic cup
-        a = random.uniform(0, 2 * math.pi)
-        r = random.uniform(0.0, 0.34)
+    # cluster pressed into the phagocytic cup
+    for i in range(9):
+        a = rnd.uniform(0, 2 * math.pi)
+        r = rnd.uniform(0.0, 0.3)
         p = cup_c + cup_R @ Vector((math.cos(a) * r, math.sin(a) * r,
-                                    random.uniform(-0.1, 0.12)))
-        bact(p, (random.uniform(0, 3.1), random.uniform(0, 3.1),
-                 random.uniform(0, 3.1)))
-    approach = [(-3.6, 3.0, 0.5, 0.3, 0.4), (-3.0, 3.35, 0.2, -0.2, 1.2),
-                (-4.2, 2.75, 0.3, 0.1, -0.5), (-2.6, 2.75, 0.75, 0.5, 0.2),
-                (-3.35, 2.45, 0.9, 0.2, 2.0), (-4.0, 3.4, -0.2, -0.4, 0.8),
-                (-2.2, 3.2, 0.5, 0.1, -0.9), (-4.6, 2.3, 0.6, 0.4, 0.3)]
-    for (x, y, z, ry, rz) in approach:
-        bact(Vector((x, y, z)), (0.4, ry, rz), random.uniform(0.5, 0.68))
-    for p in [(-4.3, 1.55, 0.05), (-4.75, 0.6, 0.0), (-4.2, -0.9, -0.05)]:
-        bact(Vector(p), (random.uniform(0, 3), random.uniform(0, 3), 0.5))
+                                    rnd.uniform(-0.24, -0.14)))
+        bact(p, (rnd.uniform(0, 3.1), rnd.uniform(0, 3.1),
+                 rnd.uniform(0, 3.1)))
+    # bacteria caught on the flames (front faces and upper edges)
+    cands = [f for f in FLAMES if f[1] > -1.2 and 95 < f[0] < 215]
+    rnd.shuffle(cands)
+    for i, (th, zr, pts, radii) in enumerate(cands[:11]):
+        k = int(len(pts) * rnd.uniform(0.45, 0.72))
+        p, r = pts[k], radii[k]
+        if i % 2 == 0:      # lying on the front face of the flame
+            off = Vector((0, 0, r * 1.6 * 0.55 * 0.5 + 0.015))
+        else:               # perched on the upper edge
+            off = Vector((0, r * 1.6 * 0.5 + 0.01, 0))
+        tang = (pts[min(k + 1, len(pts) - 1)] - pts[k - 1]).normalized()
+        ang = math.atan2(tang.y, tang.x) + rnd.uniform(-0.6, 0.6)
+        bact(p + off, (rnd.uniform(-0.3, 0.3), rnd.uniform(-0.3, 0.3), ang),
+             rnd.uniform(0.5, 0.66))
     for k, b in bms.items():
         ob = bm_object('Bacteria_' + k[-1].upper(), b, coll, [M[k]])
         add_mod(ob, 'SUBSURF', levels=1, render_levels=1)
@@ -872,7 +929,7 @@ def build_ecm(coll, M):
             ang += random.uniform(-0.35, 0.35)
             t = (s + 1) / nseg
             p = p + Vector((math.cos(ang), math.sin(ang), 0)) * L / nseg
-            z = PED_TOP + 0.08 + (start.z - PED_TOP) * (1 - t) ** 2.2 + \
+            z = PED_TOP + 0.03 + (start.z - PED_TOP) * (1 - t) ** 2.2 + \
                 lift * math.sin(t * math.pi) * 0.25
             ctrl.append(Vector((p.x, p.y, z)))
         if math.hypot(p.x, p.y) > 4.15:
@@ -881,7 +938,8 @@ def build_ecm(coll, M):
             ctrl[-1] = Vector((p.x * s, p.y * s, ctrl[-1].z))
         pts = catmull(ctrl, 0.05)
         n = len(pts)
-        rad = [r_scale * (1.0 - 0.75 * (k / n) ** 0.8) for k in range(n)]
+        rad = [max(0.42, r_scale * (1.0 - 0.6 * (k / n) ** 0.8))
+               for k in range(n)]
         out_list.append((pts, rad))
         for b in range(branches):
             k = random.randint(n // 4, n // 2)
@@ -967,8 +1025,8 @@ TARGET = Vector((-0.9, 0.3, 2.75))
 VIEWS = {               # name: (azimuth deg from front, distance, height)
     'front': (0, 19.0, 1.4),
     'back': (180, 19.0, 1.4),
-    'left34': (42, 18.5, 2.4),
-    'right34': (-42, 18.5, 2.4),
+    'left34': (58, 18.5, 2.4),
+    'right34': (-58, 18.5, 2.4),
 }
 
 
@@ -1080,6 +1138,8 @@ def build_materials():
                              spec=0.7)
     M['phago'] = make_mat('Phagolysosome_Membrane', (0.55, 0.2, 0.9),
                           rough=0.05, trans=0.55, coat=0.8, sss=0.2)
+    M['phago_lumen'] = make_mat('Phagolysosome_Lumen', (0.4, 0.15, 0.7),
+                                rough=0.2, sss=0.3, coat=0.5)
     M['phago_rim'] = make_mat('Phagolysosome_Cut', (0.85, 0.5, 0.95),
                               rough=0.2, sss=0.4)
     M['fringe'] = make_mat('Phagolysosome_Fringe', (0.6, 0.28, 0.18),
@@ -1188,6 +1248,148 @@ def contact_sheet(paths, out):
 
 
 # ---------------------------------------------------------------------------
+# 3D-print export: one watertight, manifold solid
+# ---------------------------------------------------------------------------
+PRINT_SIZE_MM = 150.0      # longest side of the printed model
+PRINT_VOXEL = 0.022        # remesh resolution in scene units (~0.33 mm)
+PRINT_MAX_TRIS = 1_000_000
+
+
+def _apply_modifiers(ob):
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    old = ob.data
+    ob.modifiers.clear()
+    ob.data = me
+    bpy.data.meshes.remove(old)
+
+
+def _keep_largest_island(me):
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    seen = set()
+    islands = []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, comp = [v], []
+        seen.add(v.index)
+        while stack:
+            cur = stack.pop()
+            comp.append(cur)
+            for e in cur.link_edges:
+                o = e.other_vert(cur)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        islands.append(comp)
+    islands.sort(key=len, reverse=True)
+    removed = sum(len(c) for c in islands[1:])
+    if len(islands) > 1:
+        bmesh.ops.delete(bm, geom=[v for c in islands[1:] for v in c],
+                         context='VERTS')
+    bm.to_mesh(me)
+    bm.free()
+    return len(islands) - 1, removed
+
+
+def write_stl(me, path):
+    """Binary STL writer (independent of the exporter add-on/selection)."""
+    import struct
+    import numpy as np
+    me.calc_loop_triangles()
+    n = len(me.loop_triangles)
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get('co', co)
+    co = co.reshape(-1, 3)
+    tri = np.empty(n * 3, dtype=np.int32)
+    me.loop_triangles.foreach_get('vertices', tri)
+    tri = tri.reshape(-1, 3)
+    v0, v1, v2 = co[tri[:, 0]], co[tri[:, 1]], co[tri[:, 2]]
+    nrm = np.cross(v1 - v0, v2 - v0)
+    ln = np.linalg.norm(nrm, axis=1, keepdims=True)
+    nrm = nrm / np.where(ln == 0, 1, ln)
+    rec = np.zeros(n, dtype=[('n', '<f4', 3), ('a', '<f4', 3), ('b', '<f4', 3),
+                             ('c', '<f4', 3), ('attr', '<u2')])
+    rec['n'], rec['a'], rec['b'], rec['c'] = nrm, v0, v1, v2
+    with open(path, 'wb') as f:
+        f.write(b'Macrophage cell - printable solid (mm)'.ljust(80, b' '))
+        f.write(struct.pack('<I', n))
+        f.write(rec.tobytes())
+
+
+def make_print_model(colls, out_path=None, size_mm=PRINT_SIZE_MM,
+                     voxel=PRINT_VOXEL):
+    """Fuse every part into a single solid and export it as STL (mm)."""
+    for mb in bpy.data.metaballs:          # full-detail metaballs
+        mb.resolution = mb.render_resolution
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    bm = bmesh.new()
+    for c in colls:
+        for ob in c.all_objects:
+            if ob.type not in ('MESH', 'CURVE', 'META', 'FONT'):
+                continue
+            ev = ob.evaluated_get(dg)
+            try:
+                me = ev.to_mesh()
+            except RuntimeError:
+                continue
+            if me is None or not len(me.vertices):
+                ev.to_mesh_clear()
+                continue
+            me.transform(ob.matrix_world)
+            bm.from_mesh(me)
+            ev.to_mesh_clear()
+    me = bpy.data.meshes.new('Print_Model')
+    bm.to_mesh(me)
+    bm.free()
+    pc = bpy.data.collections.get('Print') or new_coll('Print')
+    ob = bpy.data.objects.new('Print_Model', me)
+    pc.objects.link(ob)
+    add_mod(ob, 'REMESH', mode='VOXEL', voxel_size=voxel, adaptivity=0.0,
+            use_smooth_shade=True)
+    _apply_modifiers(ob)
+    islands, verts = _keep_largest_island(ob.data)
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    if tris > PRINT_MAX_TRIS:
+        add_mod(ob, 'DECIMATE', decimate_type='COLLAPSE',
+                ratio=PRINT_MAX_TRIS / tris, use_collapse_triangulate=True)
+        _apply_modifiers(ob)
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bad = sum(1 for e in bm.edges if not e.is_manifold)
+    vol = bm.calc_volume()
+    tris = sum(len(f.verts) - 2 for f in bm.faces)
+    bm.free()
+    xs = [v.co for v in ob.data.vertices]
+    lo = Vector((min(v.x for v in xs), min(v.y for v in xs),
+                 min(v.z for v in xs)))
+    hi = Vector((max(v.x for v in xs), max(v.y for v in xs),
+                 max(v.z for v in xs)))
+    size = hi - lo
+    scale = size_mm / max(size)
+    # put the model on the build plate (z = 0), centred, in millimetres
+    ob.data.transform(Matrix.Scale(scale, 4) @
+                      Matrix.Translation(-Vector(((lo.x + hi.x) / 2,
+                                                  (lo.y + hi.y) / 2, lo.z))))
+    ob.data.materials.append(bpy.data.materials.get('Print_Clay') or
+                             make_mat('Print_Clay', (0.75, 0.72, 0.7),
+                                      rough=0.5))
+    pc.hide_render = True
+    report = ('PRINT  islands removed: %d (%d verts) | non-manifold edges: %d'
+              ' | triangles: %d | size: %.1f x %.1f x %.1f mm | volume: %.1f cm3'
+              % (islands, verts, bad, tris, size.x * scale, size.y * scale,
+                 size.z * scale, abs(vol) * scale ** 3 / 1000.0))
+    print(report)
+    if out_path:
+        write_stl(ob.data, out_path)
+        print('PRINT  exported', out_path)
+    return ob
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -1235,6 +1437,13 @@ def main():
     cams = build_cameras(C['Camera_Lights'])
     build_lights(C['Camera_Lights'])
     setup_render(samples, percent)
+
+    stl = arg('--print')
+    if stl:
+        make_print_model([C['Cell'], C['Organelles'], C['Bacteria'],
+                          C['ECM'], C['Pedestal']], os.path.abspath(stl),
+                         float(arg('--print-size', PRINT_SIZE_MM)),
+                         float(arg('--voxel', PRINT_VOXEL)))
 
     save = arg('--save')
     if save:
