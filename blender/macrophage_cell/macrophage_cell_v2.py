@@ -1021,12 +1021,12 @@ def build_environment(coll, M):
     bg.inputs['Strength'].default_value = 1.0
 
 
-TARGET = Vector((-0.9, 0.3, 2.75))
+TARGET = Vector((-0.9, 0.3, 3.05))
 VIEWS = {               # name: (azimuth deg from front, distance, height)
-    'front': (0, 19.0, 1.4),
-    'back': (180, 19.0, 1.4),
-    'left34': (58, 18.5, 2.4),
-    'right34': (-58, 18.5, 2.4),
+    'front': (0, 20.5, 1.4),
+    'back': (180, 20.5, 1.4),
+    'left34': (58, 20.5, 2.2),
+    'right34': (-58, 20.5, 2.2),
 }
 
 

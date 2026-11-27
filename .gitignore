@@ -35,3 +35,4 @@ assets/audio-cache/
 # Blender backups / python cache
 *.blend1
 __pycache__/
+blender/macrophage_cell/print/*.stl
