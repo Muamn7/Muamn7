@@ -36,3 +36,27 @@ blender -b -P macrophage_cell.py -- --render out.png --samples 256 --save cell.b
 - أعلى السكربت: `CELL_TILT` (ميلان الخلية)، `RENDER_SAMPLES`، `SHOW_LABELS`، `SEED` (يغيّر التوزيع العشوائي).
 - كل الخامات Principled BSDF عادية، عدّلها مباشرة من Shader Editor.
 - لتغيير نص أي لوحة: قائمة `LABELS` في السكربت، أو عدّل كائن النص `Label_XX_Text` في Blender.
+
+---
+
+# النسخة الثانية v2 – خلية قائمة بمقطع عمودي (4 زوايا)
+
+![v2](renders_v2/macrophage_v2_grid.png)
+
+| الملف | الوصف |
+|---|---|
+| `macrophage_cell_v2.py` | سكربت النسخة الثانية |
+| `macrophage_cell_v2.blend` | المشهد جاهز (Blender 5.3) |
+| `renders_v2/` | رندر للزوايا الأربع + صورة مجمعة 2×2 |
+
+**الفروق عن النسخة الأولى (مأخوذة من الصورة المرجعية الثانية):**
+- الخلية واقفة والمقطع عمودي يواجه الكاميرا، والظهر مغلق ومليء بالنتوءات (Blebs).
+- غشاء لامع جداً (Coat كامل) بألوان فوشي/بنفسجي مشبعة، وحافة المقطع مخرزة (Beads).
+- الأقدام الكاذبة على شكل ألسنة لهب مسطحة ومدببة ومنحنية، بعضها يتجه للخلف.
+- بكتيريا عليها شعيرات (Pili).
+- جذور ECM زرقاء متوهجة متفرعة فوق قاعدة بطبقتين، بدون لوحات شرح.
+- 4 كاميرات جاهزة: `Cam_front`, `Cam_back`, `Cam_left34`, `Cam_right34`.
+
+```
+blender -b -P macrophage_cell_v2.py -- --render out.png --views front,back,left34,right34 --samples 256
+```
