@@ -389,7 +389,7 @@ GAP = 68.0                           # membrane-to-membrane distance at the TCR
 ROD_XY = [Vector((-128, 26)), Vector((128, 26))]
 ROD_BOTTOM = 12.0
 POSTS = [Vector((-34, -10)), Vector((34, -10)), Vector((-34, 30)), Vector((34, 30))]
-M_NOTCH = (-30.0, 60.0, 94.0)        # back wall from x=-30..60 (y=0), 45 deg side walls, floor z=94
+M_NOTCH = (-30.0, 60.0, 118.0)       # back wall from x=-30..60 (y=0), 45 deg side walls, floor above the pseudopodia
 
 # ================================================================ macrophage
 log("macrophage body")
@@ -433,8 +433,10 @@ for i in range(16):                                      # finger-like pseudopod
     if min(abs((ang - ra + 180) % 360 - 180) for ra in ROD_ANG) < 8:
         continue
     pod(ang, random.uniform(92, 106), random.uniform(46, 60), random.uniform(-8, 8), random.uniform(11.5, 13), 6.4, 0.86)
-for i in range(10):                                      # pseudopodia on the upper dome
+for i in range(10):                                      # pseudopodia on the upper dome (none across the cut)
     ang = i * 36 + 18 + random.uniform(-10, 10)
+    if 190 < ang % 360 < 350:
+        continue
     pod(ang, random.uniform(126, 146), random.uniform(30, 40), random.uniform(18, 40), random.uniform(9, 10.5), 5.8, 0.84)
 
 macro = metaball_object("Macrophage_Body", els, 1.6, C_MAC)
@@ -799,7 +801,7 @@ def nucleus(name, centre, r, c, vox, cutter, kind):
 
 
 TN_C, TN_R = Vector((0, -7, Z_T + 2)), 25.0
-MN_C, MN_R = Vector((14, -6, 116)), 32.0
+MN_C, MN_R = Vector((14, -6, 130)), 30.0
 t_nuc = nucleus("T_Nucleus", TN_C, TN_R, C_TC, 0.4 / QUALITY, cut_T, "bumpy")
 m_nuc = nucleus("M_Nucleus", MN_C, MN_R, C_MAC, 0.35 / QUALITY, cut_M, "brain")
 
@@ -814,7 +816,6 @@ T_SPECS = [
     ("Mitochondria", "mito", "left", -5 + 46.5 * math.cos(math.radians(200)), Z + 2 + 46.5 * math.sin(math.radians(200)), 290, dict(L=13, W=6.8)),
     ("Mitochondria", "mito", "right", 5 + 46.5 * math.cos(math.radians(40)), Z + 2 + 46.5 * math.sin(math.radians(40)), 130, dict(L=13, W=6.8)),
     ("Mitochondria", "mito", "right", 5 + 46.5 * math.cos(math.radians(-25)), Z + 2 + 46.5 * math.sin(math.radians(-25)), 65, dict(L=13, W=6.8)),
-    ("Mitochondria", "mito", "floor", 24, -30, -45, dict(L=13, W=6.8)),
 ]
 T_SCATTER = {"left": (-52, -3, Z - 38, Z + 52, 45), "right": (3, 52, Z - 38, Z + 52, 45), "floor": (-40, 40, -50, -3, 15)}
 PT = Placer(BV_T, HS_T, [(TN_C, TN_R)])
@@ -825,20 +826,19 @@ M_FACES = {"back": face_matrix((0, 0, 0), (1, 0, 0), (0, 0, 1)),
            "right": face_matrix((xb, 0, 0), (SQ, -SQ, 0), (0, 0, 1)),              # u > 0
            "floor": face_matrix((0, 0, zf), (1, 0, 0), (0, 1, 0))}
 M_SPECS = [
-    ("Golgi", "stack", "floor", MN_C.x, MN_C.y, 0, dict(r_in=36, r_out=46, a0=188, a1=262, h=13, layers=4)),
-    ("Rough_ER", "stack", "floor", MN_C.x, MN_C.y, 0, dict(r_in=36, r_out=45, a0=278, a1=338, h=10, layers=3, rib=True)),
-    ("Golgi", "arcs", "left", -36, 104, 0, dict(n=3, r0=5, a0=-60, a1=60)),
-    ("Lysosome", "caps", "left", -14, 134, 80, dict(L=18, W=9)),
-    ("Mitochondria", "mito", "back", 14, 159, 0, dict(L=18, W=7.5)),
-    ("Mitochondria", "mito", "right", 11, 124, 80, dict(L=15, W=7)),
-    ("Mitochondria", "mito", "left", -30, 132, 60, dict(L=14, W=7)),
-    ("Rings", "ring", "right", 20, 104, 0, dict(R=4.0, r=1.6)),
-    ("Rings", "ring", "back", -24, 152, 0, dict(R=4.0, r=1.6)),
-    ("Rings", "ring", "back", 52, 152, 0, dict(R=3.6, r=1.5)),
-    ("Phagosome", "disk", "floor", -45, -40, 0, dict(r=6.5)),
-    ("Mitochondria", "mito", "floor", -20, -58, 10, dict(L=14, W=7)),
+    ("Golgi", "stack", "floor", MN_C.x, MN_C.y, 0, dict(r_in=35, r_out=44, a0=208, a1=256, h=12, layers=4)),
+    ("Rough_ER", "stack", "floor", MN_C.x, MN_C.y, 0, dict(r_in=35, r_out=43, a0=284, a1=330, h=9, layers=3, rib=True)),
+    ("Golgi", "arcs", "left", -34, 132, 0, dict(n=3, r0=5, a0=-60, a1=60)),
+    ("Lysosome", "caps", "left", -13, 145, 80, dict(L=17, W=9)),
+    ("Mitochondria", "mito", "back", -22, 147, 90, dict(L=14, W=7)),
+    ("Mitochondria", "mito", "back", 52, 140, 90, dict(L=14, W=7)),
+    ("Mitochondria", "mito", "floor", 14, -44, 90, dict(L=13, W=6.5)),
+    ("Rings", "ring", "right", 9, 136, 0, dict(R=3.6, r=1.5)),
+    ("Rings", "ring", "back", -22, 128, 0, dict(R=3.4, r=1.4)),
+    ("Rings", "ring", "back", 50, 160, 0, dict(R=3.4, r=1.4)),
+    ("Phagosome", "disk", "floor", -21, -9, 0, dict(r=6.0)),
 ]
-M_SCATTER = {"back": (-29, 59, 96, 170, 40), "left": (-60, -2, 96, 165, 40), "right": (2, 40, 96, 150, 30),
+M_SCATTER = {"back": (-29, 59, 120, 175, 40), "left": (-60, -2, 120, 172, 40), "right": (2, 40, 120, 165, 30),
              "floor": (-70, 90, -80, -3, 40)}
 PM = Placer(BV_M, HS_M, [(MN_C, MN_R)])
 m_org = build_organelles("M_", PM, M_FACES, M_SPECS, cut_M, C_MAC, 0.3 / QUALITY, M_SCATTER)
@@ -989,7 +989,7 @@ log("leader wires")
 TREES = [bvh(o) for o in [macro, tcell, mhc, tcr, pep, cd4, cd28, b7] + rods]
 TARGETS = {
     "tcell": Vector((-40, -18, Z_T + 2)), "tcr": Vector((X0 - SEP - 1, PY, cz)), "pep": Vector((X0 - 2, PY, zp)),
-    "macro": Vector((-88, 0, 118)), "cd4": Vector((XC4 + 4, PY, (zt4 + d2z) / 2 + 4)),
+    "macro": Vector((-88, 0, 112)), "cd4": Vector((XC4 + 4, PY, (zt4 + d2z) / 2 + 4)),
     "cd28": Vector((X1 + SEP1 + 2, PY, zpb + 4)), "syn": Vector((X1 + SEP1, PY, zbb[1] + 5)),
 }
 for pl, tx, side, z, tgt, xc, w in label_objs:
