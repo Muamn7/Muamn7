@@ -60,3 +60,21 @@ blender -b -P macrophage_cell.py -- --render out.png --samples 256 --save cell.b
 ```
 blender -b -P macrophage_cell_v2.py -- --render out.png --views front,back,left34,right34 --samples 256
 ```
+
+## الطباعة ثلاثية الأبعاد (v2)
+
+![print](print/print_model_preview.png)
+
+ملف جاهز للطباعة: `print/macrophage_print_150mm.zip` (بداخله STL).
+
+- **جسم واحد مغلق (Watertight)**: كل الأجزاء (الخلية، العضيات، البكتيريا، ألياف ECM، القاعدة) مدموجة بـ Voxel Remesh، و**0 حواف غير سليمة (Non-manifold)**، ولا أجزاء طائرة.
+- **المقاس**: 150 × 142 × 125.5 مم، الوحدة مليمتر، والقاعدة واقفة على سطح الطباعة (z = 0).
+- **الحجم**: ~315 سم³ (مصمت). للريزن يفضَّل التفريغ (Hollow) بسماكة 2–3 مم مع فتحات تصريف.
+- **أقل سماكة** عند مقاس 150 مم ≈ 0.7–1 مم (المستقبلات، الشعيرات، الأعراف). لو بتطبع أصغر من 100 مم كبّر هذه الأجزاء أو اطبع بالريزن.
+- **الدعامات (Supports)**: ضرورية تحت ألسنة اللهب والأقدام الكاذبة الأفقية (Tree supports في FDM أو دعامات خفيفة في الريزن).
+
+تصدير بمقاس أو دقة مختلفة:
+```
+blender -b -P macrophage_cell_v2.py -- --print cell.stl --print-size 200 --voxel 0.018
+```
+`--voxel` أصغر = تفاصيل أدق وملف أكبر.
