@@ -653,8 +653,9 @@ def frame(origin, normal):
     return Matrix(((X.x, Y.x, N.x, o.x), (X.y, Y.y, N.y, o.y), (X.z, Y.z, N.z, o.z), (0, 0, 0, 1)))
 
 
-def organic_cutter(name, poly, z0, z1, scoops, voxel=2.0, rounding=22, noise=3.0):
-    """prism cut volume -> rounded, scooped and gently undulating, so the cut surface is curved with depth"""
+def organic_cutter(name, poly, z0, z1, scoops, voxel=2.0, rounding=22, noise=3.0, clamp=None):
+    """prism cut volume -> rounded, scooped and gently undulating, so the cut surface is curved with depth.
+    clamp = (centre, radii): keeps the cut inside the cell body so the pseudopodia are never sliced"""
     bm = bmesh.new()
     p_prism(bm, poly, z0, z1)
     for c, r in scoops:
@@ -662,9 +663,14 @@ def organic_cutter(name, poly, z0, z1, scoops, voxel=2.0, rounding=22, noise=3.0
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     ob = obj_from_bm(name, bm)
     remesh(ob, voxel)
+    if clamp:
+        cb = bmesh.new()
+        p_ellipsoid(cb, Matrix.Translation(clamp[0]), *clamp[1], 64, 32)
+        boolean(ob, obj_from_bm(name + "_clamp", cb), 'INTERSECT')
+        remesh(ob, voxel)
     smooth(ob, 0.9, rounding)
-    displace(ob, 18.0, noise)
-    smooth(ob, 0.6, 3)
+    displace(ob, 22.0, noise)
+    smooth(ob, 0.7, 6)
     return ob
 
 
@@ -682,7 +688,7 @@ ta, tb = rot2(VIEW, 50), rot2(VIEW, -50)
 poly = [(T_C.x, T_C.y), (T_C.x + tb.x * L, T_C.y + tb.y * L), (T_C.x + VIEW.x * L * 1.4, T_C.y + VIEW.y * L * 1.4),
         (T_C.x + ta.x * L, T_C.y + ta.y * L)]
 cut_T = organic_cutter("cut_T", poly, T_FLOOR, T_C.z + 120,
-                       [(T_C + VIEW * 16 + Vector((0, 0, 4)), (28.0, 28.0, 36.0))], voxel=1.6, rounding=14, noise=2.0)
+                       [(T_C + VIEW * 16 + Vector((0, 0, 4)), (28.0, 28.0, 36.0))], voxel=1.0, rounding=30, noise=1.2)
 
 M_FLOOR = 93.0
 K = px_axis(545, 553, 2, M_FLOOR)                         # back-left corner of the floor (photo)
@@ -702,7 +708,8 @@ MN_C.z = M_FLOOR + MN_R * 0.55
 cut_M = organic_cutter("cut_M", [(p.x, p.y) for p in pts], M_FLOOR, M_C.z + M_RZ + 40,
                        [(MN_C - n_back * 10 + Vector((0, 0, 6)), (44.0, 34.0, 36.0)),        # scoop around the nucleus
                         (K + back_dir * 75 + n_back * 4 + Vector((0, 0, 28)), (30.0, 22.0, 34.0))],
-                       voxel=2.0, rounding=22, noise=3.0)
+                       voxel=1.2, rounding=40, noise=1.2,
+                       clamp=(Vector((M_C.x + 22, M_C.y - 40, M_C.z + 30)), (92.0, 112.0, 118.0)))   # same rounded bowl as the T cell
 
 boolean(tcell, cut_T)
 boolean(macro, cut_M)
@@ -832,9 +839,8 @@ def cisternae(prefix, color, C, r0, n, az0, az1, el0, el1, t=2.2, gap=1.3, slice
             bm.faces.new((O[nu][j], I[nu][j], I[nu][j + 1], O[nu][j + 1]))
     g = G(prefix, color, slice_)
     for i in range(n):
-        sh = i * 3.0
-        patch(g, r0 + i * (t + gap), t, az0 + sh, az1 - sh, el0 + sh * 0.6, el1 - sh * 0.6)
-    patch(g, r0 + (n - 1) * (t + gap) / 2, (n - 1) * (t + gap) + t, az0 + (az1 - az0) * 0.45, az0 + (az1 - az0) * 0.55, el0, el1)
+        patch(g, r0 + i * (t + gap), t, az0, az1, el0, el1)
+    patch(g, r0 + (n - 1) * (t + gap) / 2, (n - 1) * (t + gap) + t, az0, az0 + (az1 - az0) * 0.06, el0, el1)   # joining spine at the hidden end
 
 
 vaz = math.degrees(math.atan2(VIEW.y, VIEW.x))
@@ -852,7 +858,7 @@ if gM:
     az_n, el_n = math.degrees(math.atan2(nrm.y, nrm.x)), math.degrees(math.asin(max(-1, min(1, nrm.z))))
     cisternae("T_", "Golgi", gM @ Vector((0, 0, 0)), 7.5, 4, az_n - 38, az_n + 38, el_n - 30, el_n + 30, t=1.6, gap=1.0, slice_=True)
 nucleolus = TN_C + (VIEW * 0.85 + Vector((0.25, 0, 0.35))).normalized() * (TN_R - 2.5)
-sphere("T_", Matrix.Translation(nucleolus), 6.0, "Nucleolus")
+p_ellipsoid(G("T_", "Nucleolus"), Matrix.Translation(nucleolus), 6.0, 6.0, 6.0, 64, 32)
 cM = place("T_", 640, 238, 1.0)
 if cM:
     p_cyl(G("T_", "Centrioles"), cM @ Vector((-4.0, 0, 0.8)), cM @ Vector((3.0, 0, 0.8)), 1.8, 9)
@@ -868,14 +874,17 @@ for (u, v, r, c, dpt) in ((618, 90, 3.0, "Vesicles", -0.8), (568, 90, 2.4, "Gran
 # ---- macrophage ----
 cisternae("M_", "Golgi", MN_C, MN_R + 1.5, 5, vaz - 128, vaz - 58, -30, 68)
 ER_AZ0, ER_AZ1 = vaz - 8, vaz + 100
-for i in range(5):                                       # rough ER: stacked sheets curving round the nucleus
-    z0 = M_FLOOR + 1.5 + i * 3.6
+for i in range(5):                                       # rough ER: thin stacked sheets curving round the nucleus
+    z0 = M_FLOOR + 2.0 + i * 3.8
     rz = math.sqrt(max(4.0, MN_R ** 2 - (z0 + 0.9 - MN_C.z) ** 2))
-    r_in, r_out = rz - 1.0, rz + 15.0 - i * 1.0
-    pts_ = arc_pts(MN_C.x, MN_C.y, (r_in + r_out) / 2, ER_AZ0 + i * 3, ER_AZ1 - i * 3, 36)
-    p_strip(G("M_", "Rough_ER"), pts_, r_out - r_in, z0 - 6, z0 + 1.9, Matrix())
-    for x, y in arc_pts(MN_C.x, MN_C.y, r_out - 0.9, ER_AZ0 + i * 3 + 4, ER_AZ1 - i * 3 - 4, 12):
-        sphere("M_", Matrix.Translation((x, y, z0 + 2.0)), 0.85, "Rough_ER")
+    r_in, r_out = rz - 1.5, rz + 14.0
+    pts_ = arc_pts(MN_C.x, MN_C.y, (r_in + r_out) / 2, ER_AZ0, ER_AZ1, 48)
+    p_strip(G("M_", "Rough_ER"), pts_, r_out - r_in, z0, z0 + 1.8, Matrix())
+    for x, y in arc_pts(MN_C.x, MN_C.y, r_out - 3.0, ER_AZ0 + 5, ER_AZ1 - 5, 14):
+        sphere("M_", Matrix.Translation((x, y, z0 + 1.9)), 0.75, "Rough_ER")
+a_end = math.radians(ER_AZ1)                             # thin end wall joins the sheets into one printable piece
+p_strip(G("M_", "Rough_ER"), [(MN_C.x + r * math.cos(a_end), MN_C.y + r * math.sin(a_end)) for r in (MN_R - 6, MN_R + 12)],
+        1.6, M_FLOOR - 2, M_FLOOR + 2.0 + 4 * 3.8 + 1.8, Matrix())
 mito3d("M_", place("M_", 672, 468, 0.5, -32), 24, 15)
 mito3d("M_", place("M_", 505, 455, 1.0, 70), 15, 9)
 mito3d("M_", place("M_", 700, 585, 0.0, 15), 16, 9)
@@ -932,7 +941,8 @@ org_objs = []
 for name, gbm in groups.items():
     prefix = name[:2]
     ob = obj_from_bm(name, gbm, C_TC if prefix == "T_" else C_MAC)
-    remesh(ob, 0.3 / QUALITY)
+    if not name.endswith("Nucleolus"):
+        remesh(ob, 0.3 / QUALITY)
     if name in grooves:
         boolean(ob, obj_from_bm("gr", grooves[name]))
     if name in sliced:
@@ -941,6 +951,11 @@ for name, gbm in groups.items():
         kill(ob)
         continue
     org_objs.append(ob)
+for o in org_objs:
+    if o.name in ("M_Rough_ER", "M_Golgi"):
+        boolean(o, m_nuc)
+    if o.name == "T_ER":
+        boolean(o, t_nuc)
 nl = next((o for o in org_objs if o.name == "T_Nucleolus"), None)
 if nl:
     boolean(t_nuc, nl)
@@ -982,7 +997,7 @@ inclusions("T_Inclusions", t_core0, tcell, 30, 1.1, 1.6, C_TC)
 CUT_FACE_IDX = {}
 for ob, cutter in ((macro, cut_M), (tcell, cut_T)):
     tree = bvh(cutter)
-    CUT_FACE_IDX[ob.name] = [p.index for p in ob.data.polygons if tree.find_nearest(p.center)[3] < 0.8]
+    CUT_FACE_IDX[ob.name] = [p.index for p in ob.data.polygons if tree.find_nearest(p.center)[3] < 1.6]
 
 
 # ================================================================ rods, posts, collars
