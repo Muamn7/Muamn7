@@ -44,7 +44,7 @@
 | الملف | الوصف |
 |---|---|
 | `immune_synapse_model.py` | السكربت الكامل (يحتوي الكاميرا المعايَرة وكل القياسات) |
-| `immune_synapse_model.blend` | ملف بلندر جاهز (الكاميرا مضبوطة على زاوية الصورة) |
+| `immune_synapse_model_blend.zip` (ملف بلندر — يُرسل مباشرة، أكبر من حد GitHub؛ أو شغّل السكربت لإعادة بنائه) | ملف بلندر جاهز (الكاميرا مضبوطة على زاوية الصورة) |
 | `immune_synapse_STL_part1_macrophage.zip` + `immune_synapse_STL_part2_tcell_proteins_base_labels.zip` | كل القطع STL بالمليمتر + `mesh_report.txt` |
 | `preview_render.png` | الرندر النهائي بزاوية الصورة |
 | `compare_reference_vs_model.png` | المقارنة جنب-لجنب |
