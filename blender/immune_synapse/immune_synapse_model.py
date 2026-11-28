@@ -456,14 +456,30 @@ BACK_PODS = [(45, 95, 34), (80, 92, 30), (115, 98, 34), (150, 92, 30), (20, 120,
 
 
 def pod_balls(start, tip, r0, rt, droop=0.0):
+    """organic arm: individual thickness, a lateral S-bend, bulges along its length, sometimes a side bud"""
+    axis = (tip - start).normalized()
+    side = axis.cross(Vector((0, 0, 1)))
+    side = side.normalized() if side.length > 1e-3 else Vector((1, 0, 0))
+    up = side.cross(axis)
+    thick = random.uniform(0.82, 1.22)
+    bulge, phase = random.uniform(0.06, 0.22), random.uniform(0, 2 * math.pi)
+    wig = side * random.uniform(-5, 5) + up * random.uniform(-3, 3)
     ctrl = start + (tip - start) * 0.5 + Vector((0, 0, droop))
     L = (tip - start).length
     n = max(10, int(L / 2.0))
     for k in range(n + 1):
         t = k / n
+        p = (1 - t) ** 2 * start + 2 * (1 - t) * t * ctrl + t * t * tip + wig * math.sin(math.pi * t) * (1 - t * 0.3)
+        r = (r0 * thick * (1 - t) ** 0.55 + rt * t) * 0.8 * (1 + bulge * math.sin(2.5 * math.pi * t + phase) * (1 - t))
+        els.append(E_ball(p, r))
+    els.append(E_ball(tip, rt * random.uniform(1.0, 1.2)))
+    if random.random() < 0.45 and L > 25:                  # small side bud
+        t = random.uniform(0.35, 0.6)
         p = (1 - t) ** 2 * start + 2 * (1 - t) * t * ctrl + t * t * tip
-        els.append(E_ball(p, (r0 * (1 - t) ** 0.55 + rt * t) * 0.8))
-    els.append(E_ball(tip, rt * 1.1))
+        d = (side * random.choice((-1, 1)) + up * random.uniform(-0.3, 0.6)).normalized()
+        rb = r0 * 0.42
+        for j in range(5):
+            els.append(E_ball(p + d * (rb * 0.6 + j * 1.6), rb * (1 - j * 0.12)))
 
 
 for spec in PODS:
@@ -624,51 +640,8 @@ b7 = protein("B7_CD80_CD86", [
 for a, b in ((mhc, pep), (tcr, pep), (tcr, mhc), (cd4, mhc), (cd4, tcr), (cd28, b7)):
     boolean(a, b, 'DIFFERENCE')
 
-# ================================================================ cut-aways
-log("cut-aways")
-L = 400.0
-# T cell: 90 deg wedge opening towards the viewer, floor 44 mm below the centre
-T_FLOOR = T_C.z - 44.0
-ta, tb = rot2(VIEW, 45), rot2(VIEW, -45)
-bm = bmesh.new()
-poly = [(T_C.x, T_C.y), (T_C.x + tb.x * L, T_C.y + tb.y * L), (T_C.x + (VIEW.x) * L * 1.5, T_C.y + VIEW.y * L * 1.5),
-        (T_C.x + ta.x * L, T_C.y + ta.y * L)]
-p_prism(bm, poly, T_FLOOR, T_C.z + 200)
-bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-cut_T = obj_from_bm("cut_T", bm)
-
-# macrophage: back wall + left wall + floor, read from the photo
-M_FLOOR = 93.0
-K = px_axis(545, 553, 2, M_FLOOR)                         # back-left corner of the floor
-Bp = px_axis(740, 548, 2, M_FLOOR)                        # floor back edge, right
-Wf = px_axis(470, 594, 2, M_FLOOR)                        # floor front-left corner
-back_dir = (Bp - K).normalized()
-left_dir = (Wf - K).normalized()
-RIGHT_X = Vector((-VIEW.y, VIEW.x, 0))                   # viewer's right
-Rp = px_axis(768, 560, 2, M_FLOOR)                       # right end of the floor
-far = K + back_dir * ((Rp - K).dot(RIGHT_X) / back_dir.dot(RIGHT_X))
-bm = bmesh.new()
-pts = [K, far, far + VIEW * L, K + left_dir * L]
-p_prism(bm, [(p.x, p.y) for p in pts], M_FLOOR, 400)
-bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-cut_M = obj_from_bm("cut_M", bm)
-
-boolean(tcell, cut_T)
-boolean(macro, cut_M)
-boolean(tcell, cutter_cyls("holes_T", peg_holes_T, 2.0 + CLR))
-ENTRY = [px_axis(455, 207, 2, ROD_Z), px_axis(722, 172, 2, ROD_Z)]
-rod_ends = []
-for s in (-1, 1):
-    x_surf = T_C.x + s * T_RX * math.sqrt(max(0.0, 1 - ((ROD_Z - T_C.z) / T_RZ) ** 2 - ((ROD_Y - T_C.y) / T_RX) ** 2))
-    rod_ends.append(x_surf - s * 14.0)
-boolean(tcell, cutter_cyls("rodholes_T", [((s * 300, ROD_Y, ROD_Z), (e - s * 0.8, ROD_Y, ROD_Z)) for s, e in zip((-1, 1), rod_ends)],
-                           ROD_R + CLR))
-boolean(macro, cutter_cyls("holes_M", peg_holes_M, 2.0 + CLR))
-boolean(macro, cutter_cyls("rodclear", [((s * ROD_X, ROD_Y, 0), (s * ROD_X, ROD_Y, 300)) for s in (-1, 1)], ROD_R + 0.8))
-boolean(macro, cutter_cyls("posttops", [((p.x, p.y, 0), (p.x, p.y, top + 4)) for p, top in POSTS], ROD_R + CLR))
-
-# ================================================================ organelles (pixel-driven)
-log("organelles")
+# ================================================================ cut-aways (organic, scooped, with real depth)
+log("organic cut-aways")
 
 
 def frame(origin, normal):
@@ -680,21 +653,120 @@ def frame(origin, normal):
     return Matrix(((X.x, Y.x, N.x, o.x), (X.y, Y.y, N.y, o.y), (X.z, Y.z, N.z, o.z), (0, 0, 0, 1)))
 
 
-def face_point(face, u, v):
-    o, n = face
-    return px_plane(u, v, n, o)
+def organic_cutter(name, poly, z0, z1, scoops, voxel=2.0, rounding=22, noise=3.0):
+    """prism cut volume -> rounded, scooped and gently undulating, so the cut surface is curved with depth"""
+    bm = bmesh.new()
+    p_prism(bm, poly, z0, z1)
+    for c, r in scoops:
+        p_ellipsoid(bm, Matrix.Translation(c), r[0], r[1], r[2], 40, 20)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = obj_from_bm(name, bm)
+    remesh(ob, voxel)
+    smooth(ob, 0.9, rounding)
+    displace(ob, 18.0, noise)
+    smooth(ob, 0.6, 3)
+    return ob
 
 
-def at(face, u, v, ang=0.0):
-    o, n = face
-    return frame(face_point(face, u, v), n) @ Matrix.Rotation(math.radians(ang), 4, 'Z')
+def offset_copy(ob, dist, name):
+    o = duplicate(ob, name)
+    m = o.modifiers.new("off", 'DISPLACE')
+    m.strength, m.mid_level = dist, 0.0
+    apply_mods(o)
+    return o
 
 
-groups = {}
-grooves = {}
+L = 210.0
+T_FLOOR = T_C.z - 46.0
+ta, tb = rot2(VIEW, 50), rot2(VIEW, -50)
+poly = [(T_C.x, T_C.y), (T_C.x + tb.x * L, T_C.y + tb.y * L), (T_C.x + VIEW.x * L * 1.4, T_C.y + VIEW.y * L * 1.4),
+        (T_C.x + ta.x * L, T_C.y + ta.y * L)]
+cut_T = organic_cutter("cut_T", poly, T_FLOOR, T_C.z + 120,
+                       [(T_C + VIEW * 16 + Vector((0, 0, 4)), (28.0, 28.0, 36.0))], voxel=1.6, rounding=14, noise=2.0)
+
+M_FLOOR = 93.0
+K = px_axis(545, 553, 2, M_FLOOR)                         # back-left corner of the floor (photo)
+Bp = px_axis(740, 548, 2, M_FLOOR)                        # floor back edge, right
+Wf = px_axis(470, 594, 2, M_FLOOR)                        # floor front-left corner
+back_dir = (Bp - K).normalized()
+left_dir = (Wf - K).normalized()
+RIGHT_X = Vector((-VIEW.y, VIEW.x, 0))
+Rp = px_axis(768, 560, 2, M_FLOOR)
+far = K + back_dir * ((Rp - K).dot(RIGHT_X) / back_dir.dot(RIGHT_X))
+n_back = Vector((-back_dir.y, back_dir.x, 0))
+n_back = n_back if n_back.dot(VIEW) > 0 else -n_back
+pts = [K, far, far + VIEW * L, K + left_dir * L]
+MN_R = 52 * MM_PX
+MN_C = px_plane(607, 520, n_back, K + n_back * 12)
+MN_C.z = M_FLOOR + MN_R * 0.55
+cut_M = organic_cutter("cut_M", [(p.x, p.y) for p in pts], M_FLOOR, M_C.z + M_RZ + 40,
+                       [(MN_C - n_back * 10 + Vector((0, 0, 6)), (44.0, 34.0, 36.0)),        # scoop around the nucleus
+                        (K + back_dir * 75 + n_back * 4 + Vector((0, 0, 28)), (30.0, 22.0, 34.0))],
+                       voxel=2.0, rounding=22, noise=3.0)
+
+boolean(tcell, cut_T)
+boolean(macro, cut_M)
+boolean(tcell, cutter_cyls("holes_T", peg_holes_T, 2.0 + CLR))
+rod_ends = []
+for s in (-1, 1):
+    x_surf = T_C.x + s * T_RX * math.sqrt(max(0.0, 1 - ((ROD_Z - T_C.z) / T_RZ) ** 2 - ((ROD_Y - T_C.y) / T_RX) ** 2))
+    rod_ends.append(x_surf - s * 14.0)
+boolean(tcell, cutter_cyls("rodholes_T", [((s * 300, ROD_Y, ROD_Z), (e - s * 0.8, ROD_Y, ROD_Z)) for s, e in zip((-1, 1), rod_ends)],
+                           ROD_R + CLR))
+boolean(macro, cutter_cyls("holes_M", peg_holes_M, 2.0 + CLR))
+boolean(macro, cutter_cyls("rodclear", [((s * ROD_X, ROD_Y, 0), (s * ROD_X, ROD_Y, 300)) for s in (-1, 1)], ROD_R + 0.8))
+boolean(macro, cutter_cyls("posttops", [((p.x, p.y, 0), (p.x, p.y, top + 4)) for p, top in POSTS], ROD_R + CLR))
+
+# ================================================================ nuclei: complete spheres in sockets
+log("nuclei")
+TN_R = 44 * MM_PX
+TN_C = px_plane(595, 177, VIEW, T_C + VIEW * 12)
+bm = bmesh.new()
+p_ellipsoid(bm, Matrix.Translation(TN_C), TN_R, TN_R, TN_R, 64, 32)
+t_nuc = obj_from_bm("T_Nucleus", bm, C_TC)
+remesh(t_nuc, 0.4 / QUALITY)
+displace(t_nuc, 3.0, 1.1)
+displace(t_nuc, 9.0, 1.3)
+smooth(t_nuc, 0.5, 1)
+bm = bmesh.new()
+p_ellipsoid(bm, Matrix.Translation(MN_C), MN_R, MN_R, MN_R, 64, 32)
+m_nuc = obj_from_bm("M_Nucleus", bm, C_MAC)
+remesh(m_nuc, 0.35 / QUALITY)
+brain(m_nuc, MN_C, MN_R, 8.0, 0.085, 2.8)
+smooth(m_nuc, 0.5, 1)
+for body, c, r in ((tcell, TN_C, TN_R), (macro, MN_C, MN_R)):
+    bm = bmesh.new()
+    p_ellipsoid(bm, Matrix.Translation(c), r - 0.4, r - 0.4, r - 0.4, 48, 24)
+    boolean(body, obj_from_bm("nuc_socket", bm))
+
+# ================================================================ thick curved membrane + gel cytoplasm
+log("membranes")
 
 
-def G(prefix, name):
+def make_membrane(body, full, thick, core_name, coll, voxel):
+    core0 = offset_copy(full, -thick, core_name + "_offset")
+    remesh(core0, voxel)
+    smooth(core0, 0.5, 2)
+    core = duplicate(core0, core_name, coll)
+    boolean(core, body, 'INTERSECT')                     # cytoplasm keeps every cut, hole and socket
+    boolean(body, core0)                                 # body becomes the membrane shell
+    return core, core0
+
+
+m_core, m_core0 = make_membrane(macro, macro_full, 5.0, "Macrophage_Cytoplasm", C_MAC, 1.0 / QUALITY)
+t_core, t_core0 = make_membrane(tcell, tcell_full, 4.5, "T_Cell_Cytoplasm", C_TC, 0.8 / QUALITY)
+CORE_TREE = {"T_": bvh(t_core), "M_": bvh(m_core)}
+CUTTER = {"T_": cut_T, "M_": cut_M}
+SLICER = {k: offset_copy(v, -0.6, "slicer" + k) for k, v in CUTTER.items()}   # organelles end 0.6 mm proud of the cut
+
+# ================================================================ organelles embedded in the gel (pixel-driven)
+log("organelles")
+groups, grooves, sliced = {}, {}, set()
+
+
+def G(prefix, name, slice_=False):
+    if slice_:
+        sliced.add(prefix + name)
     return groups.setdefault(prefix + name, bmesh.new())
 
 
@@ -702,210 +774,187 @@ def GR(prefix, name):
     return grooves.setdefault(prefix + name, bmesh.new())
 
 
-def mito(prefix, M, Lm, W, color="Mitochondria"):
-    """cut-open mitochondrion: outer membrane cup + folded cristae inside (two colours)"""
-    p_ellipsoid(G(prefix, color), M, Lm / 2, W / 2, W * 0.45, 28, 14)
-    p_ellipsoid(GR(prefix, color), M @ Matrix.Translation((0, 0, W * 0.2)), Lm / 2 - 1.3, W / 2 - 1.3, W * 0.45, 28, 14)
-    n = max(4, int(Lm / 3.2))
+def hit(prefix, u, v):
+    o, d = px_ray(u, v)
+    loc, nrm, i, dist = CORE_TREE[prefix].ray_cast(o, d)
+    return loc, nrm
+
+
+def place(prefix, u, v, depth=0.0, ang=0.0):
+    """frame on the curved cut surface at photo pixel (u, v); depth > 0 sinks it into the gel"""
+    loc, nrm = hit(prefix, u, v)
+    if loc is None:
+        log("  (no surface at pixel %d,%d)" % (u, v))
+        return None
+    if nrm.dot(VIEW) < 0:
+        nrm = -nrm
+    return frame(loc - nrm * depth, nrm) @ Matrix.Rotation(math.radians(ang), 4, 'Z')
+
+
+def mito3d(prefix, M, Lm, W):
+    """whole mitochondrion inside the gel; the cut slices it open to show the cristae"""
+    if M is None:
+        return
+    p_ellipsoid(G(prefix, "Mitochondria", True), M, Lm / 2, W / 2, W / 2, 32, 16)
+    n = max(4, int(Lm / 3.0))
     for k in range(n):
         x = -Lm / 2 * 0.72 + Lm * 0.72 * k / (n - 1)
-        yy = (W / 2 - 1.0) * math.sqrt(max(0.05, 1 - (2 * x / Lm) ** 2))
-        pts = [(x + 0.9 * math.sin(j * 1.3), -yy + 2 * yy * j / 8) for j in range(9)]
-        p_strip(G(prefix, "Cristae"), pts, 0.9, -1.0, W * 0.36, M)
+        f = math.sqrt(max(0.05, 1 - (2 * x / Lm) ** 2))
+        ry = (W / 2 - 1.1) * f
+        p_ellipsoid(G(prefix, "Cristae", True), M @ Matrix.Translation((x, 0, 0)) @ Matrix.Rotation(0.25 * (-1) ** k, 4, 'Z'),
+                    0.45, ry, ry, 16, 10)
+        p_ellipsoid(GR(prefix, "Mitochondria"), M @ Matrix.Translation((x, 0, 0)) @ Matrix.Rotation(0.25 * (-1) ** k, 4, 'Z'),
+                    0.5, ry + 0.05, ry + 0.05, 16, 10)
 
 
-def dot(prefix, M, r, color):
-    p_ellipsoid(G(prefix, color), M, r, r, r, 14, 7)
+def sphere(prefix, M, r, color, slice_=False):
+    if M is not None:
+        p_ellipsoid(G(prefix, color, slice_), M, r, r, r, 18, 9)
 
 
-def relief_arcs(prefix, color, M, r0, n, a0, a1, w=2.4, gap=1.4, h=3.0):
-    for i in range(n):
-        p_strip(G(prefix, color), arc_pts(0, 0, r0 + i * (w + gap), a0 + i * 2, a1 - i * 2), w, -2.5, h, M)
-
-
-def p_shell_patch(bm, C, R, t, az0, az1, el0, el1, nu=28, nv=14):
-    def P_(r, i, j):
-        az = math.radians(az0 + (az1 - az0) * i / nu)
-        el = math.radians(el0 + (el1 - el0) * j / nv)
-        return bm.verts.new(C + Vector((math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el))) * r)
-    O = [[P_(R + t / 2, i, j) for j in range(nv + 1)] for i in range(nu + 1)]
-    I = [[P_(R - t / 2, i, j) for j in range(nv + 1)] for i in range(nu + 1)]
-    for i in range(nu):
+def cisternae(prefix, color, C, r0, n, az0, az1, el0, el1, t=2.2, gap=1.3, slice_=False):
+    def patch(bm, R, th, a0, a1, e0, e1, nu=28, nv=14):
+        def P_(r, i, j):
+            az = math.radians(a0 + (a1 - a0) * i / nu)
+            el = math.radians(e0 + (e1 - e0) * j / nv)
+            return bm.verts.new(C + Vector((math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el))) * r)
+        O = [[P_(R + th / 2, i, j) for j in range(nv + 1)] for i in range(nu + 1)]
+        I = [[P_(R - th / 2, i, j) for j in range(nv + 1)] for i in range(nu + 1)]
+        for i in range(nu):
+            for j in range(nv):
+                bm.faces.new((O[i][j], O[i + 1][j], O[i + 1][j + 1], O[i][j + 1]))
+                bm.faces.new((I[i][j], I[i][j + 1], I[i + 1][j + 1], I[i + 1][j]))
+        for i in range(nu):
+            bm.faces.new((O[i][0], I[i][0], I[i + 1][0], O[i + 1][0]))
+            bm.faces.new((O[i][nv], O[i + 1][nv], I[i + 1][nv], I[i][nv]))
         for j in range(nv):
-            bm.faces.new((O[i][j], O[i + 1][j], O[i + 1][j + 1], O[i][j + 1]))
-            bm.faces.new((I[i][j], I[i][j + 1], I[i + 1][j + 1], I[i + 1][j]))
-    for i in range(nu):
-        bm.faces.new((O[i][0], I[i][0], I[i + 1][0], O[i + 1][0]))
-        bm.faces.new((O[i][nv], O[i + 1][nv], I[i + 1][nv], I[i][nv]))
-    for j in range(nv):
-        bm.faces.new((O[0][j], O[0][j + 1], I[0][j + 1], I[0][j]))
-        bm.faces.new((O[nu][j], I[nu][j], I[nu][j + 1], O[nu][j + 1]))
-
-
-def cisternae(prefix, color, C, r0, n, az0, az1, el0, el1, t=2.2, gap=1.3):
+            bm.faces.new((O[0][j], O[0][j + 1], I[0][j + 1], I[0][j]))
+            bm.faces.new((O[nu][j], I[nu][j], I[nu][j + 1], O[nu][j + 1]))
+    g = G(prefix, color, slice_)
     for i in range(n):
-        shrink = i * 3.0
-        p_shell_patch(G(prefix, color), C, r0 + i * (t + gap), t, az0 + shrink, az1 - shrink, el0 + shrink * 0.6, el1 - shrink * 0.6)
-    # thin spine joining the stack at its back so it prints as one piece
-    p_shell_patch(G(prefix, color), C, r0 + (n - 1) * (t + gap) / 2, (n - 1) * (t + gap) + t, az0 + (az1 - az0) * 0.45,
-                  az0 + (az1 - az0) * 0.55, el0, el1)
+        sh = i * 3.0
+        patch(g, r0 + i * (t + gap), t, az0 + sh, az1 - sh, el0 + sh * 0.6, el1 - sh * 0.6)
+    patch(g, r0 + (n - 1) * (t + gap) / 2, (n - 1) * (t + gap) + t, az0 + (az1 - az0) * 0.45, az0 + (az1 - az0) * 0.55, el0, el1)
 
-
-def standing_stack(prefix, color, centre, z0, r_in, n, az0, az1, h, w=2.6, gap=1.3, top_bulge=0.0):
-    """concentric curved cisternae standing on a floor (solid at the base so it prints)"""
-    M = Matrix.Translation((centre.x, centre.y, z0))
-    for i in range(n):
-        r = r_in + i * (w + gap)
-        p_strip(G(prefix, color), arc_pts(0, 0, r, az0, az1, 36), w, -2.0, h - i * 1.2, M)
-    p_strip(G(prefix, color), arc_pts(0, 0, r_in + (n - 1) * (w + gap) / 2, az0, az1, 36), (n - 1) * (w + gap) + w, -2.0, 2.0, M)
-
-
-# ---- T cell interior (faces of the V-cut) ----
-face_TL = (T_C, ta)        # left face (normal faces right-front)
-face_TR = (T_C, tb)        # right face
-TN_R = 44 * MM_PX
-TN_C = px_plane(595, 177, VIEW, T_C + VIEW * 12)
-bm = bmesh.new()
-p_ellipsoid(bm, Matrix.Translation(TN_C), TN_R, TN_R, TN_R, 64, 32)
-t_nuc = obj_from_bm("T_Nucleus", bm, C_TC)
-remesh(t_nuc, 0.4 / QUALITY)
-displace(t_nuc, 3.0, 1.2)
-displace(t_nuc, 9.0, 1.4)
-smooth(t_nuc, 0.5, 1)
-bm = bmesh.new()
-p_ellipsoid(bm, Matrix.Translation(TN_C), TN_R + 0.3, TN_R + 0.3, TN_R + 0.3, 48, 24)
-boolean(tcell, obj_from_bm("nuc_socket", bm))
-
-
-def nuc_on_face(face):
-    o, n = face
-    q = TN_C - n * (TN_C - o).dot(n)
-    return frame(q, n)
-
-
-MTL = nuc_on_face(face_TL)
-MTR = nuc_on_face(face_TR)
-relief_arcs("T_", "ER", MTL, TN_R + 2.0, 5, 100, 190, w=2.0, gap=1.2)
-relief_arcs("T_", "ER", MTR, TN_R + 2.0, 5, -88, -12, w=2.0, gap=1.2)
-mito("T_", at(face_TR, 645, 123, 125), 22, 14)
-mito("T_", at(face_TL, 552, 218, 80), 20, 12)
-mito("T_", at(face_TL, 515, 120, 40), 15, 9)
-mito("T_", at(face_TR, 690, 160, 95), 14, 8.5)
-# Golgi stack on the right face, ribosomes along the ER, nucleolus, centrioles, lysosomes
-relief_arcs("T_", "Golgi", at(face_TR, 690, 105, 0) @ Matrix.Translation((-14, -10, 0)), 9.0, 4, 30, 100, w=1.6, gap=1.0, h=2.2)
-for M_, a0, a1 in ((MTL, 102, 188), (MTR, -86, -14)):
-    for k in range(14):
-        a = math.radians(a0 + (a1 - a0) * k / 13)
-        r = TN_R + 2.0 + (k % 5) * 3.2 + 1.0
-        dot("T_", M_ @ Matrix.Translation((r * math.cos(a), r * math.sin(a), 2.6)), 0.8, "Ribosomes")
-nucleolus = TN_C + (VIEW * 0.85 + Vector((0.25, 0, 0.35))).normalized() * (TN_R - 2.5)
-dot("T_", Matrix.Translation(nucleolus), 6.0, "Nucleolus")
-Mc = at(face_TR, 640, 238)                                # pair of centrioles at right angles
-p_cyl(G("T_", "Centrioles"), Mc @ Vector((-4.0, 0, 0.6)), Mc @ Vector((3.0, 0, 0.6)), 1.8, 9)
-p_cyl(G("T_", "Centrioles"), Mc @ Vector((4.5, -3.0, 0.6)), Mc @ Vector((4.5, 3.5, 0.6)), 1.8, 9)
-for (u, v, r) in ((660, 210, 3.4), (528, 190, 3.0)):
-    dot("T_", at(face_TL if u < 600 else face_TR, u, v), r, "Lysosomes_dense")
-for (u, v, r, c) in ((618, 90, 3.0, "Vesicles"), (568, 90, 2.4, "Granules"), (668, 165, 2.6, "Granules"), (530, 161, 2.4, "Vesicles"),
-                     (575, 245, 2.4, "Lysosome"), (690, 225, 2.2, "Vesicles"), (540, 250, 2.0, "Granules"),
-                     (595, 75, 2.0, "Vesicles"), (650, 80, 1.8, "Granules"), (705, 135, 2.0, "Vesicles"), (500, 150, 1.8, "Granules"),
-                     (512, 210, 2.0, "Vesicles"), (600, 262, 1.8, "Vesicles"), (675, 240, 1.8, "Granules"), (545, 105, 1.6, "Vesicles")):
-    face = face_TL if u < 600 else face_TR
-    dot("T_", at(face, u, v), r, c)
-
-# ---- macrophage interior ----
-face_MB = (K, Vector((-back_dir.y, back_dir.x, 0)) if Vector((-back_dir.y, back_dir.x, 0)).dot(VIEW) > 0 else Vector((back_dir.y, -back_dir.x, 0)))
-face_ML = (K, Vector((-left_dir.y, left_dir.x, 0)) if Vector((-left_dir.y, left_dir.x, 0)).dot(back_dir) > 0 else Vector((left_dir.y, -left_dir.x, 0)))
-face_MF = (Vector((0, 0, M_FLOOR)), Vector((0, 0, 1)))
-MN_R = 52 * MM_PX
-MN_C = px_plane(607, 520, face_MB[1], face_MB[0] + face_MB[1] * 12)
-MN_C.z = M_FLOOR + MN_R * 0.55                         # the floor cuts through the lower nucleus (photo)
-bm = bmesh.new()
-p_ellipsoid(bm, Matrix.Translation(MN_C), MN_R, MN_R, MN_R, 64, 32)
-m_nuc = obj_from_bm("M_Nucleus", bm, C_MAC)
-remesh(m_nuc, 0.35 / QUALITY)
-brain(m_nuc, MN_C, MN_R, 8.0, 0.085, 2.8)
-smooth(m_nuc, 0.5, 1)
-boolean(m_nuc, cut_M, 'INTERSECT')
 
 vaz = math.degrees(math.atan2(VIEW.y, VIEW.x))
+
+# ---- Helper T cell ----
+cisternae("T_", "ER", TN_C, TN_R + 1.6, 5, vaz - 150, vaz - 62, -20, 62)          # rough ER wrapping the nucleus (left)
+cisternae("T_", "ER", TN_C, TN_R + 1.6, 5, vaz + 40, vaz + 125, -62, 8)          # and lower right
+mito3d("T_", place("T_", 645, 123, 0.5, 125), 22, 13)
+mito3d("T_", place("T_", 552, 218, 0.0, 80), 20, 12)
+mito3d("T_", place("T_", 515, 120, 1.5, 40), 15, 9)
+mito3d("T_", place("T_", 690, 160, 2.5, 95), 14, 8.5)
+gM = place("T_", 690, 104, 9.0)
+if gM:
+    nrm = gM.to_3x3() @ Vector((0, 0, 1))
+    az_n, el_n = math.degrees(math.atan2(nrm.y, nrm.x)), math.degrees(math.asin(max(-1, min(1, nrm.z))))
+    cisternae("T_", "Golgi", gM @ Vector((0, 0, 0)), 7.5, 4, az_n - 38, az_n + 38, el_n - 30, el_n + 30, t=1.6, gap=1.0, slice_=True)
+nucleolus = TN_C + (VIEW * 0.85 + Vector((0.25, 0, 0.35))).normalized() * (TN_R - 2.5)
+sphere("T_", Matrix.Translation(nucleolus), 6.0, "Nucleolus")
+cM = place("T_", 640, 238, 1.0)
+if cM:
+    p_cyl(G("T_", "Centrioles"), cM @ Vector((-4.0, 0, 0.8)), cM @ Vector((3.0, 0, 0.8)), 1.8, 9)
+    p_cyl(G("T_", "Centrioles"), cM @ Vector((4.5, -3.0, 0.8)), cM @ Vector((4.5, 3.5, 0.8)), 1.8, 9)
+for (u, v, r, c, dpt) in ((618, 90, 3.0, "Vesicles", -0.8), (568, 90, 2.4, "Granules", 0.6), (668, 165, 2.6, "Granules", 0.0),
+                          (530, 161, 2.4, "Vesicles", 1.2), (575, 245, 2.4, "Lysosome", -0.5), (690, 225, 2.2, "Vesicles", 0.8),
+                          (540, 250, 2.0, "Granules", -0.4), (595, 75, 2.0, "Vesicles", 1.0), (650, 80, 1.8, "Granules", 0.0),
+                          (705, 135, 2.0, "Vesicles", -0.6), (500, 150, 1.8, "Granules", 0.9), (512, 210, 2.0, "Vesicles", 0.0),
+                          (600, 262, 1.8, "Vesicles", 0.5), (675, 240, 1.8, "Granules", -0.3), (545, 105, 1.6, "Vesicles", 0.4),
+                          (660, 210, 3.4, "Lysosomes_dense", 0.8), (528, 190, 3.0, "Lysosomes_dense", 0.2)):
+    sphere("T_", place("T_", u, v, dpt * r), r, c)
+
+# ---- macrophage ----
 cisternae("M_", "Golgi", MN_C, MN_R + 1.5, 5, vaz - 128, vaz - 58, -30, 68)
 ER_AZ0, ER_AZ1 = vaz - 8, vaz + 100
-for i in range(5):                                       # stacked sheets hugging the lower nucleus
+for i in range(5):                                       # rough ER: stacked sheets curving round the nucleus
     z0 = M_FLOOR + 1.5 + i * 3.6
     rz = math.sqrt(max(4.0, MN_R ** 2 - (z0 + 0.9 - MN_C.z) ** 2))
     r_in, r_out = rz - 1.0, rz + 15.0 - i * 1.0
-    pts = arc_pts(MN_C.x, MN_C.y, (r_in + r_out) / 2, ER_AZ0 + i * 3, ER_AZ1 - i * 3, 36)
-    p_strip(G("M_", "Rough_ER"), pts, r_out - r_in, z0, z0 + 1.9, Matrix())
+    pts_ = arc_pts(MN_C.x, MN_C.y, (r_in + r_out) / 2, ER_AZ0 + i * 3, ER_AZ1 - i * 3, 36)
+    p_strip(G("M_", "Rough_ER"), pts_, r_out - r_in, z0 - 6, z0 + 1.9, Matrix())
     for x, y in arc_pts(MN_C.x, MN_C.y, r_out - 0.9, ER_AZ0 + i * 3 + 4, ER_AZ1 - i * 3 - 4, 12):
-        dot("M_", Matrix.Translation((x, y, z0 + 2.0)), 0.85, "Rough_ER")
-a_end = math.radians(ER_AZ1)
-end_pts = [(MN_C.x + r * math.cos(a_end), MN_C.y + r * math.sin(a_end)) for r in (MN_R - 14, MN_R + 12)]
-p_strip(G("M_", "Rough_ER"), end_pts, 2.0, M_FLOOR - 1, M_FLOOR + 1.5 + 4 * 3.6 + 1.9, Matrix())   # end wall joins the stack
-mito("M_", at(face_MB, 672, 468, -32), 24, 15)
-mito("M_", at(face_ML, 505, 455, 70), 15, 9)
-mito("M_", at(face_MF, 700, 585, 15), 16, 9)
-# smooth ER tubules on the back wall, dense lysosomes
-for k in range(3):
-    pts = [(x, 1.6 * math.sin(x / 3.2 + k)) for x in [-12 + 24 * j / 30 for j in range(31)]]
-    p_strip(G("M_", "Smooth_ER"), pts, 1.6, -2.0, 2.0, at(face_MB, 735, 455 + k * 9, -20) @ Matrix.Translation((0, 0, 0)))
-for (face, u, v, r) in ((face_MB, 742, 498, 4.2), (face_MF, 680, 575, 3.6), (face_ML, 488, 470, 3.6), (face_MB, 560, 440, 3.2)):
-    dot("M_", at(face, u, v), r, "Lysosomes_dense")
-mvb = at(face_MB, 712, 500)
-p_torus(G("M_", "Vesicles_MVB"), mvb, 7.6, 1.9, 40, 12)
-p_ellipsoid(G("M_", "Vesicles_MVB"), mvb, 7.0, 7.0, 1.2, 32, 8)
-for k in range(7):
-    a = k * 2 * math.pi / 7
-    dot("M_", mvb @ Matrix.Translation((3.6 * math.cos(a), 3.6 * math.sin(a), 1.2)), 1.1, "Granules")
-p_ellipsoid(G("M_", "Lysosome"), at(face_ML, 515, 496, 85), 13.5, 5.8, 4.5, 28, 14)
-ph = Matrix.Translation(face_point(face_MF, 555, 571))
-p_cyl(G("M_", "Phagosome"), ph @ Vector((0, 0, -2)), ph @ Vector((0, 0, 2.6)), 10.5, 48)
-p_ellipsoid(G("M_", "Phagosome"), ph @ Matrix.Translation((0, 0, 2.6)), 7.5, 7.5, 1.4, 32, 8)
-for (face, u, v, r, c) in ((face_MB, 625, 437, 2.8, "Vesicles"), (face_MB, 735, 522, 2.2, "Granules"), (face_MB, 700, 455, 2.0, "Granules"),
-                           (face_MB, 760, 545, 2.6, "Vesicles"), (face_ML, 470, 525, 2.6, "Vesicles"), (face_ML, 490, 548, 2.0, "Granules"),
-                           (face_MF, 595, 568, 2.0, "Granules"), (face_MF, 720, 565, 2.4, "Vesicles"), (face_MF, 505, 580, 2.0, "Granules"),
-                           (face_MB, 680, 525, 1.8, "Vesicles"), (face_MB, 755, 470, 1.8, "Granules"), (face_MB, 655, 440, 1.6, "Vesicles"),
-                           (face_ML, 515, 545, 1.8, "Vesicles"), (face_ML, 478, 500, 1.6, "Granules"), (face_MF, 640, 585, 1.8, "Vesicles"),
-                           (face_MF, 750, 562, 1.6, "Granules"), (face_MF, 530, 588, 1.6, "Vesicles"), (face_MB, 590, 430, 1.6, "Granules")):
-    dot("M_", at(face, u, v), r, c)
+        sphere("M_", Matrix.Translation((x, y, z0 + 2.0)), 0.85, "Rough_ER")
+mito3d("M_", place("M_", 672, 468, 0.5, -32), 24, 15)
+mito3d("M_", place("M_", 505, 455, 1.0, 70), 15, 9)
+mito3d("M_", place("M_", 700, 585, 0.0, 15), 16, 9)
+mito3d("M_", place("M_", 760, 520, 3.0, 60), 14, 8)
+mvb = place("M_", 712, 500, 1.0)                         # multivesicular body: sliced open, vesicles inside
+if mvb:
+    p_ellipsoid(G("M_", "Vesicles_MVB", True), mvb, 8.5, 8.5, 8.5, 32, 16)
+    p_ellipsoid(GR("M_", "Vesicles_MVB"), mvb, 7.0, 7.0, 7.0, 32, 16)
+    for k in range(9):
+        a = k * 2 * math.pi / 9
+        sphere("M_", mvb @ Matrix.Translation((3.8 * math.cos(a), 3.8 * math.sin(a), 0.5 * (-1) ** k)), 1.3, "Granules", True)
+lys = place("M_", 515, 496, -1.5, 85)
+if lys:
+    p_ellipsoid(G("M_", "Lysosome"), lys, 13.5, 5.8, 5.8, 28, 14)
+ph = place("M_", 555, 571, 1.5)                          # phagosome: sliced, engulfed particle inside
+if ph:
+    p_ellipsoid(G("M_", "Phagosome", True), ph, 11.0, 11.0, 6.5, 40, 20)
+    p_ellipsoid(GR("M_", "Phagosome"), ph, 7.5, 7.5, 5.0, 32, 16)
+    p_ellipsoid(G("M_", "Phagosome_core", True), ph, 7.3, 7.3, 4.8, 32, 16)
+for k in range(3):                                       # smooth ER tubules weaving through the gel
+    M0 = place("M_", 735, 455 + k * 9, 1.2 + 0.8 * k, -20)
+    if M0:
+        p_tube(G("M_", "Smooth_ER", True), [M0 @ Vector((x, 1.8 * math.sin(x / 3.0 + k), 1.2 * math.cos(x / 4.0))) for x in
+                                            [-13 + 26 * j / 40 for j in range(41)]], 1.0, 12)
+for (u, v, r, c, dpt) in ((742, 498, 4.2, "Lysosomes_dense", 0.6), (680, 575, 3.6, "Lysosomes_dense", -0.4), (488, 470, 3.6, "Lysosomes_dense", 0.3),
+                          (560, 440, 3.2, "Lysosomes_dense", 1.0), (625, 437, 2.8, "Vesicles", -0.6), (735, 522, 2.2, "Granules", 0.4),
+                          (700, 455, 2.0, "Granules", 0.0), (760, 545, 2.6, "Vesicles", 0.8), (470, 525, 2.6, "Vesicles", -0.5),
+                          (490, 548, 2.0, "Granules", 0.3), (595, 568, 2.0, "Granules", -0.3), (720, 565, 2.4, "Vesicles", 0.6),
+                          (505, 580, 2.0, "Granules", 0.0), (680, 525, 1.8, "Vesicles", 1.0), (755, 470, 1.8, "Granules", -0.4),
+                          (655, 440, 1.6, "Vesicles", 0.5), (515, 545, 1.8, "Vesicles", 0.0), (478, 500, 1.6, "Granules", 0.8),
+                          (640, 585, 1.8, "Vesicles", -0.2), (750, 562, 1.6, "Granules", 0.4), (530, 588, 1.6, "Vesicles", 0.2),
+                          (590, 430, 1.6, "Granules", 0.6)):
+    sphere("M_", place("M_", u, v, dpt * r), r, c)
+
+# deeper granules floating in the gel (seen through the translucent cytoplasm)
+for prefix, (u0, u1, v0, v1), n in (("T_", (505, 700, 75, 255), 22), ("M_", (480, 770, 430, 595), 34)):
+    tree = CORE_TREE[prefix]
+    k = 0
+    for _ in range(n * 8):
+        if k >= n:
+            break
+        u, v = random.uniform(u0, u1), random.uniform(v0, v1)
+        r = random.uniform(1.0, 2.0)
+        M = place(prefix, u, v, random.uniform(3.0, 7.0))
+        if M is None:
+            continue
+        c = M @ Vector((0, 0, 0))
+        if all(inside(tree, c + d * (r + 0.6), 0.0) for d in (Vector((1, 0, 0)), Vector((-1, 0, 0)), Vector((0, 1, 0)),
+                                                             Vector((0, -1, 0)), Vector((0, 0, 1)), Vector((0, 0, -1)))):
+            sphere(prefix, M, r, random.choice(["Deep_granules", "Vesicles", "Granules"]))
+            k += 1
 
 org_objs = []
-for name, gbm in sorted(groups.items(), key=lambda kv: kv[0].endswith("Cristae")):
-    coll_ = C_TC if name.startswith("T_") else C_MAC
-    ob = obj_from_bm(name, gbm, coll_)
+for name, gbm in groups.items():
+    prefix = name[:2]
+    ob = obj_from_bm(name, gbm, C_TC if prefix == "T_" else C_MAC)
     remesh(ob, 0.3 / QUALITY)
     if name in grooves:
         boolean(ob, obj_from_bm("gr", grooves[name]))
-    boolean(ob, cut_T if name.startswith("T_") else cut_M, 'INTERSECT')
-    if name.endswith("Cristae"):
-        mobj = next((o for o in org_objs if o.name == name.replace("Cristae", "Mitochondria")), None)
-        if mobj:
-            boolean(ob, mobj)
-    tree = BV_T if name.startswith("T_") else BV_M
-    bad = sum(1 for v in list(ob.data.vertices)[::25] if not inside(tree, v.co, 0.0))
-    if bad:
-        log("  note: %s has %d sample points outside the cell" % (name, bad))
+    if name in sliced:
+        boolean(ob, SLICER[prefix])                      # opened by the curved cut, interior exposed
+    if len(ob.data.polygons) == 0:
+        kill(ob)
+        continue
     org_objs.append(ob)
-
 nl = next((o for o in org_objs if o.name == "T_Nucleolus"), None)
 if nl:
-    boolean(t_nuc, nl)                                   # nucleolus sits in a socket of the nucleus
+    boolean(t_nuc, nl)
 
-
-def make_membrane(body, full, thick, core_name, coll, voxel):
-    core0 = duplicate(full, core_name + "_offset")
-    m = core0.modifiers.new("off", 'DISPLACE')
-    m.strength, m.mid_level = -thick, 0.0
-    apply_mods(core0)
-    remesh(core0, voxel)
-    smooth(core0, 0.5, 2)
-    core = duplicate(core0, core_name, coll)
-    boolean(core, body, 'INTERSECT')                     # cytoplasm keeps every cut and hole
-    boolean(body, core0)                                 # body becomes the membrane shell
-    return core, core0
+# sockets: every organelle (and the nuclei) sits embedded in the gel
+log("sockets")
+for ob in org_objs + [t_nuc, m_nuc]:
+    core = t_core if ob.name.startswith("T_") else m_core
+    if ob.name in ("T_Nucleolus",):
+        continue
+    boolean(core, ob)
 
 
 def inclusions(name, core0, shell, n, rmin, rmax, coll):
-    tree = bvh(core0)
     shell_tree = bvh(shell)
     bm = bmesh.new()
     placed = 0
@@ -915,38 +964,26 @@ def inclusions(name, core0, shell, n, rmin, rmax, coll):
         if v.normal.dot(VIEW) < 0.15:
             continue
         r = random.uniform(rmin, rmax)
-        c = v.co + v.normal * 1.8
+        c = v.co + v.normal * 2.4
         if all(inside(shell_tree, c + d * r * 1.1, 0.0) for d in (Vector((1, 0, 0)), Vector((-1, 0, 0)), Vector((0, 1, 0)),
                                                                    Vector((0, -1, 0)), Vector((0, 0, 1)), Vector((0, 0, -1)))):
             p_ellipsoid(bm, Matrix.Translation(c), r, r, r, 16, 8)
             placed += 1
     ob = obj_from_bm(name, bm, coll)
     remesh(ob, 0.3)
-    boolean(shell, ob)                                   # sockets in the membrane
+    boolean(shell, ob)
     return ob
 
 
-log("membranes")
-m_core, m_core0 = make_membrane(macro, macro_full, 3.5, "Macrophage_Cytoplasm", C_MAC, 1.0 / QUALITY)
-t_core, t_core0 = make_membrane(tcell, tcell_full, 4.0, "T_Cell_Cytoplasm", C_TC, 0.8 / QUALITY)
-inclusions("M_Inclusions", m_core0, macro, 45, 1.1, 1.6, C_MAC)
+inclusions("M_Inclusions", m_core0, macro, 45, 1.1, 1.8, C_MAC)
 inclusions("T_Inclusions", t_core0, tcell, 30, 1.1, 1.6, C_TC)
 
+# membrane rim faces (where the cut opened the membrane) get the rim material
+CUT_FACE_IDX = {}
+for ob, cutter in ((macro, cut_M), (tcell, cut_T)):
+    tree = bvh(cutter)
+    CUT_FACE_IDX[ob.name] = [p.index for p in ob.data.polygons if tree.find_nearest(p.center)[3] < 0.8]
 
-def mark_cut_faces(ob, planes):
-    for poly in ob.data.polygons:
-        c, n = poly.center, poly.normal
-        for p0, pn in planes:
-            pn = Vector(pn).normalized()
-            if abs((c - Vector(p0)).dot(pn)) < 0.05 and abs(n.dot(pn)) > 0.995:
-                poly.material_index = 1
-                break
-
-
-CUT_PLANES = {"T_Cell_Body": [(T_C, ta), (T_C, tb), (Vector((0, 0, T_FLOOR)), (0, 0, 1))],
-              "Macrophage_Body": [(K, face_MB[1]), (K, face_ML[1]), (Vector((0, 0, M_FLOOR)), (0, 0, 1)), (far, -RIGHT_X)]}
-CUT_PLANES["T_Cell_Cytoplasm"] = CUT_PLANES["T_Cell_Body"]
-CUT_PLANES["Macrophage_Cytoplasm"] = CUT_PLANES["Macrophage_Body"]
 
 # ================================================================ rods, posts, collars
 log("rods / posts / collars")
@@ -1151,8 +1188,10 @@ PLATE = mat("Plate gold (satin)", (0.9, 0.78, 0.55), metal=0.85, rough=0.35)
 MATS = {
     "Macrophage_Body": membrane_mat("Macrophage membrane (glossy translucent)", (0.85, 0.74, 1.0), (0.7, 0.55, 0.95), 0.035),
     "T_Cell_Body": membrane_mat("T cell membrane (glossy translucent)", (1.0, 0.72, 0.42), (1.0, 0.5, 0.15), 0.04),
-    "Macrophage_Cytoplasm": mat("Macrophage cytoplasm", (0.62, 0.46, 0.86), rough=0.3, sss=0.45),
-    "T_Cell_Cytoplasm": mat("T cell cytoplasm", (1.0, 0.42, 0.06), rough=0.3, sss=0.4),
+    "Macrophage_Cytoplasm": mat("Macrophage cytoplasm (gel)", (0.64, 0.5, 0.86), rough=0.15, sss=0.6, trans=0.3, coat=0.6),
+    "T_Cell_Cytoplasm": mat("T cell cytoplasm (gel)", (1.0, 0.55, 0.22), rough=0.15, sss=0.6, trans=0.3, coat=0.6),
+    "Phagosome_core": mat("Engulfed particle (brown)", (0.35, 0.16, 0.06), rough=0.45),
+    "Deep_granules": mat("Granules in the gel (plum)", (0.5, 0.15, 0.4), rough=0.3),
     "Cristae": mat("Mitochondrial cristae (deep red)", (0.42, 0.06, 0.04), rough=0.35),
     "Smooth_ER": mat("Smooth ER (pale violet)", (0.62, 0.5, 0.9), rough=0.3),
     "Ribosomes": mat("Ribosomes (dark red)", (0.45, 0.07, 0.05), rough=0.35),
@@ -1189,8 +1228,7 @@ MATS = {
 PRINT_COLLS = [C_BASE, C_MAC, C_TC, C_PROT, C_ROD, C_LAB, C_WIRE]
 CYTO = {"Macrophage_Body": mat("Macrophage membrane rim (cut)", (0.7, 0.55, 0.9), rough=0.15, trans=0.6, coat=1.0),
         "T_Cell_Body": mat("T cell membrane rim (cut)", (1.0, 0.7, 0.45), rough=0.15, trans=0.6, coat=1.0),
-        "Macrophage_Cytoplasm": mat("Macrophage cytoplasm (cut face)", (0.46, 0.35, 0.58), rough=0.35, sss=0.25),
-        "T_Cell_Cytoplasm": mat("T cell cytoplasm (cut face)", (0.7, 0.36, 0.13), rough=0.35, sss=0.25)}
+        }
 for c in PRINT_COLLS:
     for ob in c.objects:
         key = ob.name if ob.name in ("T_ER", "T_Golgi") else next((k for k in sorted(MATS, key=len, reverse=True) if k in ob.name), None)
@@ -1199,7 +1237,8 @@ for c in PRINT_COLLS:
             ob.data.materials.append(MATS[key])
             if ob.name in CYTO:
                 ob.data.materials.append(CYTO[ob.name])
-                mark_cut_faces(ob, CUT_PLANES[ob.name])        # after the slots exist (clear() resets indices)
+                for i_ in CUT_FACE_IDX.get(ob.name, ()):      # membrane rim on the cut (after the slots exist)
+                    ob.data.polygons[i_].material_index = 1
         for p in ob.data.polygons:
             p.use_smooth = ob.name.split("_")[0] not in ("Base",) and p.material_index == 0
 
